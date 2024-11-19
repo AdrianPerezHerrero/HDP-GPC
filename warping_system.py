@@ -1,31 +1,22 @@
 ## A package to implement all compressed functions to compute a warp between a model and some observations.
 import torch
 import pyro
-import pyro.contrib.gp as gp
 import pyro.distributions as dist
 import gpytorch
 
 import numpy as np
 
 import matplotlib.pyplot as plt
-#Colours palette
-import seaborn as sns
 
 dtype = torch.float64
 torch.set_default_dtype(dtype)
 
-import time
-
-from util_get_data import get_data
 from util_plots import plot_gp_gpytorch, plot_gp_pyro, print_hyperparams
 from GP_models_pytorch import ExactGPModel, AlignmentGPModel, LinearExactGPModel
 from GPI_model import GPI_model
-from GPI import IterativeGaussianProcess as GPI
-from itertools import chain
 from sklearn.gaussian_process.kernels import RBF, WhiteKernel, ConstantKernel
 import warnings
 
-# gpytorch.settings.cholesky_jitter()
 class Warping_system():
     
     def __init__(self, x_basis_warp, noise_warp, bound_noise_warp, recursive=False, cuda=False, bayesian=True, mode='balanced'):
@@ -85,16 +76,10 @@ class Warping_system():
         
     #Function to construct a monotonic sequence from a bunch of variables.
     def monotonic_sequence(self, x, x_post):
-        # N = x.shape[0]
-        # x = torch.cat([torch.tensor([min(x)]),torch.cat([x,torch.tensor([max(x)])])])
-        #N = x_post.shape[0]
         N = x_post[-1]
         N_0 = x_post[0]
-        #x = torch.cat([torch.tensor([-10.0]), x, torch.tensor([-10.0])])
-        #x[0] = x[0] - x[0]
         x = torch.nn.functional.softmax(x, dim=0)
         x = torch.atleast_2d((N - N_0 + 2) * torch.cumsum(x, dim=0) + N_0 - 2).T
-        #x = x[1:-1]
         if x.detach().shape[0] != x_post.detach().shape[0]:
             x = torch.cholesky_solve(x - self.x_fixed, self.L)
             if self.cuda and torch.cuda.is_available():
@@ -109,29 +94,20 @@ class Warping_system():
             x = x_post + torch.matmul(K_Xs_X, x)
         x = (x - min(x)) / (max(x) - min(x)) * N
         x = x.T[0]
-        # return soft#[1:-1]
         return x
     
     def compute_gp_warp(self, x_model, noise_warp, verbose):
         warp_lik = gpytorch.likelihoods.GaussianLikelihood(noise_constraint=gpytorch.constraints.Interval(noise_warp, noise_warp*1.1))
         warp_gp = LinearExactGPModel(x_model, x_model, warp_lik)
-        # warp_lik.noise_covar.noise_constraint = gpytorch.constraints.Interval(1.0, 1.01)
         warp_gp.covar_module.base_kernel.raw_lengthscale_constraint = gpytorch.constraints.Interval(1.0, 1.01)
         warp_lik.train()
         warp_gp.train()
     
         training_iter = 1500
     
-        # optimizer = torch.optim.Adam([{'params': U_var}, {'params': warp_gp.parameters(), 'lr': 0.1}], lr= 0.01)
-        
         optimizer_warp = torch.optim.Adam(warp_gp.parameters(), lr=0.5)
-        # optimizer = torch.optim.SGD([{'params': U_var},], lr=0.001)
-        # models = gpytorch.models.IndependentModelList(fixed_model, warp_gp)
         mll_warp = gpytorch.mlls.ExactMarginalLogLikelihood(warp_lik, warp_gp)
-        # likelihoods = gpytorch.likelihoods.LikelihoodList(likelihood_fixed,warp_lik)
-        # mll_join = gpytorch.mlls.SumMarginalLogLikelihood(likelihoods, models)
     
-        
         losses_warp = []
         
         #CUDA OPTION
@@ -178,7 +154,6 @@ class Warping_system():
             K_X_X = torch.from_numpy(self.kernel(self.x_fixed, self.x_fixed))
             if torch.cuda.is_available() and self.cuda:
                 K_X_X = K_X_X.cuda()
-            #K_X_X = K_X_X + self.warp_gp.Sigma[-1]
             K_X_X = K_X_X + self.jitter
             self.x_fixed = torch.from_numpy(self.x_fixed)
             self.L = torch.linalg.cholesky(K_X_X)
@@ -281,9 +256,6 @@ class Warping_system():
                             and np.isclose(losses_fixed[-2], losses_fixed[-3],rtol=1e-5):
                         break
             
-            # if torch.cuda.is_available() and self.cuda:
-            #     fixed_model = fixed_model.cpu()
-            #     likelihood_fixed = likelihood_fixed.cpu()
             fixed_model.eval()
             likelihood_fixed.eval()
             
@@ -298,12 +270,10 @@ class Warping_system():
             
             size_var_warp = self.x_fixed.shape[0]
             if not self.recursive or self.T < 2:
-                # U_dist = pyro.nn.PyroSample(dist.LogNormal(-200.0, 1e-2))
                 U_dist = pyro.nn.PyroSample(dist.LogNormal(0.0, 1e-4))
                 U_var = U_dist[0].sample((size_var_warp,)).detach()
                 self.prior = torch.cat((self.prior, U_var.clone().view(-1, size_var_warp)), 0).view(-1, size_var_warp)
             else:
-                # U_var = torch.mean(self.prior,0)
                 U_var = self.prior[-1]
 
             if torch.cuda.is_available() and self.cuda:
@@ -317,33 +287,16 @@ class Warping_system():
                 G_prior = G_prior.cuda()
 
             f, cov = self.warp_gp.observe_last(torch.atleast_2d(x_model).T)
-            #f, cov = self.warp_gp.observe_last(torch.atleast_2d(self.x_fixed.T[0]).T)
             noise_warp = torch.diag(cov)# * 0.5
-            #noise_warp = torch.sqrt(noise_warp)
             warp_lik = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(noise_warp)
-            #f = f.T[0] + x_model
-            #warp_lik = gpytorch.likelihoods.GaussianLikelihood(
-            #    noise_constraint=gpytorch.constraints.Interval(0.5, 0.51))
-            # warp_gp = LinearExactGPModel(x_model, f, warp_lik)
             warp_gp = LinearExactGPModel(x_model, G_prior, warp_lik)
-            #warp_gp = torch.compile(warp_gp)
-            #warp_gp = ExactGPModel(x_model, G_prior, warp_lik)
-            # warp_lik.noise_covar.noise_constraint = gpytorch.constraints.Interval(1.0, 1.01)
-            #lengthscale_warp = self.warp_gp.gp.kernel.k1.get_params()['length_scale']
-            #warp_gp.covar_module.base_kernel.raw_lengthscale_constraint = \
-            #    gpytorch.constraints.Interval(lengthscale_warp*0.9, lengthscale_warp*1.1)
             warp_gp.covar_module.base_kernel.raw_lengthscale_constraint = \
                gpytorch.constraints.Interval(1.0, 1.01)
             if torch.cuda.is_available() and self.cuda:
                 warp_gp = warp_gp.cuda()
                 warp_lik = warp_lik.cuda()
-            #warp_lik.train()
-            #warp_gp.train()
 
             training_iter = 1500
-
-            # optimizer = torch.optim.Adam([{'params': U_var}, {'params': warp_gp.parameters(), 'lr': 0.1}], lr=0.02)
-            # optimizer = torch.optim.RMSprop([{'params': U_var}, {'params': warp_gp.parameters(), 'lr': 0.1}], lr=0.02)
             if self.mode == 'fine' or self.mode == 'balanced':
                 lr_ = 0.01
                 lr_p = 0.3
@@ -353,19 +306,11 @@ class Warping_system():
             else:
                 lr_ = 0.01
                 lr_p = 0.3
-            #optimizer = torch.optim.Rprop([{'params': U_var}], lr=lr_)
-            # if self.mode == 'rough':
-            #     optimizer = torch.optim.Rprop([{'params': U_var}, {'params': warp_gp.parameters(), 'lr': lr_p}], lr=lr_)
-            # else:
             optimizer = torch.optim.Adam([{'params': U_var}, {'params': warp_gp.parameters(), 'lr': lr_p}], lr=lr_)
-            #optimizer = torch.optim.Adam([{'params': U_var}], lr=lr_)
             models = gpytorch.models.IndependentModelList(fixed_model, warp_gp)
             mll_warp = gpytorch.mlls.ExactMarginalLogLikelihood(warp_lik, warp_gp)
             likelihoods = gpytorch.likelihoods.LikelihoodList(likelihood_fixed, warp_lik)
             mll_join = gpytorch.mlls.SumMarginalLogLikelihood(likelihoods, models)
-
-            # optimizer = torch.optim.Adam([{'params': U_var},], lr=0.01)
-            # optimizer = torch.optim.Adam([{'params': U_var}, ], lr=0.05)
             losses = []
 
             if self.mode == 'fine':
@@ -380,7 +325,6 @@ class Warping_system():
                 lim = 200
                 training_iter = 1500
                 tol_ = 1e-2
-            # training_iter = 700
 
             for i in range(training_iter):
                 # Zero gradients from previous iteration
@@ -389,9 +333,7 @@ class Warping_system():
                 G_prior = self.monotonic_sequence(U_var, torch.atleast_2d(x_model).T)
                 #Working one
                 output = models(G_prior, x_model)
-                #output = fixed_model(G_prior)
                 # Calc loss and backprop gradients
-                #loss = -mll_fixed(output, y_target) + torch.sum(torch.square(U_var))
                 loss = -mll_join(output, [y_target, G_prior]) + torch.sum(torch.square(U_var))
                 # loss.backward(retain_graph=True)
                 loss.backward()
@@ -400,16 +342,11 @@ class Warping_system():
                     with torch.no_grad():
                         print('Iter %d/%d - Loss: %.3f - Sq.U_var: %.3f' % (
                             i + 1, training_iter, loss.item(), torch.sum(torch.square(U_var))))
-                        # print('Lengtscale: %.3f - Noise: %.3f' % (
-                        #     warp_gp.covar_module.base_kernel.lengthscale.item(), warp_gp.likelihood.noise.item()))
                 optimizer.step()
                 if len(losses) > lim:
                     if np.isclose(np.sum(np.subtract(losses[-10:], losses[-11:-1])), 0, atol=tol_):
                         break
-                    # if np.isclose(np.sum(np.subtract(losses[-10:],losses[-11:-1])),0,atol=5e-1):
-                    #     break
-            
-           
+                        
             if visualize:
                 plt.figure(77, figsize=(12,6))
                 plt.title("Losses of warp computing")
@@ -436,18 +373,11 @@ class Warping_system():
 
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                # lik_warp = self.mll_warp(self.warp_gp(x_model),G_prior).detach()
-                # lik_warp = self.warp_gp.log_lik_sample(np.atleast_2d(G_prior.detach().numpy()-x_model.detach().numpy()).T).item()
-                # if self.T == 0:
-                #     lik_warp = 0.0
-                # else:
                 if torch.cuda.is_available() and self.cuda:
                     wp_ = G_prior.detach() - x_model.detach()
                 else:
                     wp_ = np.atleast_2d(G_prior.detach().numpy()-x_model.detach().numpy()).T
                 lik_warp = self.warp_gp.log_sq_error(torch.atleast_2d(x_model).T, wp_).item()
-                # lik_warp = (lik_warp + self.warp_gp.log_sq_error(wp_, wp_gp.f_star[0], wp_gp.cov_f[0],
-                #                                                  wp_gp.C[0], wp_gp.Sigma[0]).item())/2.0
                 
             if torch.cuda.is_available() and self.cuda:
                 x_warp = G_prior - x_model
