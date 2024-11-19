@@ -330,7 +330,7 @@ class IterativeGaussianProcess():
         J = []
 
         for t in range(T):
-            P.append(torch.matmul(A_prior, torch.matmul(covars[t], A_prior.T)) + Gamma_prior
+            P.append(torch.matmul(A_prior, torch.matmul(covars[t], A_prior.T)) + Gamma_prior)
             J.append(torch.linalg.solve(P[t].T, torch.matmul(A_prior, covars[t].T)).T)
 
         for t in range(T - 1):
