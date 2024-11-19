@@ -711,7 +711,7 @@ class GPI_HDP():
                         break
                     else:
                         elbo = elbo_
-                        q, q_lat, warp_computed = self.compute_warp_actual_state(x_trains, y_trains, q=q
+                        q, q_lat, warp_computed = self.compute_warp_actual_state(x_trains, y_trains, q=q, q_lat=q_lat)
                 else:
                     elbo = elbo_
             else:
@@ -1752,7 +1752,7 @@ class GPI_HDP():
         q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_), self.weight_mean(q_lat_, snr_), self.gpmodels, self.M, snr=snr_)
         q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux), self.weight_mean(q_lat, snr_aux), gpmodels_temp, M, snr=snr_aux)
         update_snr = False
-        if q_bas + elbo_bas < q_bas_post + elbo_post
+        if q_bas + elbo_bas < q_bas_post + elbo_post:
             self.gpmodels = gpmodels_temp
             if reorder.shape[0] == self.f_ind_old.shape[0]:
                 self.f_ind_old = self.f_ind_old[reorder]

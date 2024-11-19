@@ -6,10 +6,10 @@ import os
 
 homedir = os.getenv('HOME')
 if homedir is None:
-    os.chdir("D:/Programs/Workspaces/spyder-workspace/just-experiments/HDP-SLDS-GP")
+    os.chdir("D:/Programs/Workspaces/spyder-workspace/HDP-GPC")
 else:
     try:
-        os.chdir(homedir + "/Documents/just-experiments/HDP-SLDS-GP")
+        os.chdir(homedir + "/Documents/HDP-GPC")
     except FileNotFoundError:
         aux_dir = input("Please specify directory:\n")
         os.chdir(aux_dir)
