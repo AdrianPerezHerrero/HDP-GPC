@@ -14,7 +14,7 @@ from sklearn.utils import check_random_state
 import warnings
 import torch
 import gpytorch
-from GP_models_pytorch import ExactGPModel, ProjectedGPModel, VarProjectedGPModel
+from GPI_models_pytorch import ExactGPModel, ProjectedGPModel, VarProjectedGPModel
 from util_plots import print_hyperparams
 from tqdm import trange
 torch.set_default_dtype(torch.float64)

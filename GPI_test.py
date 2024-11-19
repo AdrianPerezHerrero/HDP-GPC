@@ -21,15 +21,12 @@ cwd = os.getcwd()
 import GPI_HDP as hdpgp
 import numpy as np
 import torch
-import pickle as plk
-from sklearn.metrics import confusion_matrix
 
 dtype = torch.float64
 torch.set_default_dtype(dtype)
 
-from get_data import get_data, compute_initial_statistics, take_standard_labels, compute_generation_ratio
-from util_plots import plot_models, plot_warp, print_results, plot_MDS
-import matplotlib.pyplot as plt
+from get_data import get_data, take_standard_labels
+from util_plots import plot_models, print_results
 
 import time
 start_ini_time = time.time()
