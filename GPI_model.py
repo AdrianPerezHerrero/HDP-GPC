@@ -1198,7 +1198,7 @@ class matrix_normal_inv_wishart():
             #Step by step computation
             new_scale = ((self.n0 - 2) * self.scale + e2) / (new_n0 - 2)
         else:
-            e = (y_k - torch.matmul(new_m_mean, y_k_)
+            e = (y_k - torch.matmul(new_m_mean, y_k_))
             e2 = torch.matmul(e, e.T)
             new_scale = ((self.n0 - 2) * self.scale + e2) / (new_n0 - 2)
 
