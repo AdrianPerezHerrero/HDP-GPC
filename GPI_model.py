@@ -118,22 +118,18 @@ class GPI_model():
         self.Sigma_def = self.cond_to_cuda(self.cond_to_torch(ini_Sigma))
         self.var.append(np.atleast_2d(np.diag(ini_Gamma)).T)
         self.y_var.append(np.atleast_2d(np.diag(ini_Sigma)).T)
-        # self.x_train.append(self.x_basis)
         # DEGREES OF FREEDOM AT LEAST 3
         if self.bayesian:
-            # self.internal_params = matrix_normal_inv_wishart(ini_A, np.eye(ini_A.shape[0]),
-            #                                                  ini_A.shape[0] + 3, ini_Gamma)
             self.internal_params = matrix_normal_inv_wishart(ini_A, np.eye(ini_A.shape[0]),  self.free_deg_MNIV, ini_Gamma)
             if torch.all(ini_Gamma == torch.zeros(ini_Gamma.shape)):
                 self.observation_params = inv_wishart(self.free_deg_MNIV, ini_Sigma, ini_C)
             else:
-                # self.observation_params = inv_wishart(5, ini_Sigma, ini_C)
                 self.observation_params = matrix_normal_inv_wishart(ini_C, np.eye(ini_C.shape[0]), self.free_deg_MNIV, ini_Sigma)
-                # self.observation_params = matrix_normal_inv_wishart(ini_C, np.eye(ini_C.shape[0]),
-                #                                                     ini_C.shape[0] + 3, ini_Sigma)
 
 
     def GPR_static(self, ini_Sigma=None):
+        """ Define static conditions using initial Sigma as a double.
+        """
         shape = len(self.x_basis)
         ini_A = torch.eye(shape)
         ini_Gamma = torch.zeros((shape, shape))
@@ -145,6 +141,8 @@ class GPI_model():
         return ini_A, ini_Gamma, ini_C, ini_Sigma
 
     def GPR_dynamic(self, gamma=None, sigma=None):
+        """ Define dynamic conditions using initial Sigma as a double.
+        """
         shape = len(self.x_basis)
         ini_A = torch.eye(shape)
         if gamma is None:
@@ -159,11 +157,8 @@ class GPI_model():
         return ini_A, ini_Gamma, ini_C, ini_Sigma
 
     def fit_kernel_params(self, x_train, y, alpha_ini, gamma_ini, valid=True):
-        # print("fitting....")
-        # param, likelihood = self.gp.fit(self.cond_to_cpu(self.x_basis), self.cond_to_cpu(y),
-        #                                 self.cond_to_cpu(alpha_ini), self.cond_to_cpu(gamma_ini),
-        #                                 n_restarts_optimizer=25, valid=valid)
-
+        """ Optimize RBF kernel hyperparameters
+        """
         alph_ = self.cond_to_torch(alpha_ini[0][0])
         gam_ = self.cond_to_torch(gamma_ini[0][0])
         if valid:
@@ -193,18 +188,18 @@ class GPI_model():
             self.internal_params.set_scale(self.Gamma[-1])
             self.internal_params.m_mean = self.A[-1]
         self.fitted = True
-
-        #self.K = ini_cov
-        #jitter = 10e-4
-        #self.K_inv = torch.linalg.solve(ini_cov + jitter, id)
         return self.x_basis, ini_cov
 
     def log_lik_sample(self, y):
+        """Returns log-likelihood of a single sample using the last state of the model.
+        """
         lik_post = self.gp.log_likelihood(self.N, self.N, self.f_star_sm, self.cov_f_sm, self.A[-1], self.Gamma[-1], y,
                                           self.C[-1], self.Sigma[-1])
         return lik_post
 
     def log_sq_error(self, x_train, y, mean=None, cov=None, C=None, Sigma=None, i=None, proj=False, first=False):
+        """Compute the log-squared-error of a sample assuming a specific iteration of the model.
+        """
         y = self.cond_to_torch(y)
         mean = self.cond_to_torch(mean)
         cov = self.cond_to_torch(cov)
@@ -217,13 +212,6 @@ class GPI_model():
             params = None
         else:
             params = [mean, cov, C, Sigma]
-        # Maybe here should be considered compute for each y[t] with mean[t]
-
-        # if torch.all(x_train == self.x_basis):
-        #     y_p = y
-        #     y_p_cov = self.cond_to_cuda(torch.zeros(cov.shape))
-        # else:
-        # y_p, y_p_cov = self.gp.project_y(x_train, y, C, Sigma, self.x_basis)
 
         if i is not None:
             f_star, cov_f = self.observe(x_train, i, params, proj=proj)
@@ -242,7 +230,7 @@ class GPI_model():
                 else:
                     C = torch.eye(x_train.shape[0], device=self.device)
 
-        #If first we add the kernel noise.
+        #If first iteration we add the kernel noise.
         if first:
             ini_noise = self.cond_to_cuda(self.cond_to_torch(self.gp.kernel.get_params()["k2__noise_level"])) * 1e-2
             cov_f = cov_f + torch.mul(ini_noise, torch.eye(len(x_train), device=ini_noise.device))
@@ -251,32 +239,18 @@ class GPI_model():
         #if len(self.x_basis) / len(x_train) <= 0.5:
             #cov_f = 0.5 * torch.diag(torch.diag(cov_f))
             #cov_f = 0.01 * cov_f + 0.99 * torch.diag(torch.diag(cov_f))
-        # cov_f = (cov_f + cov_f.T) / 2.0
-        # if i is not None and len(self.indexes) > i:
-        #     Sigma = self.Sigma[i]
-        #     cov = self.cov_f_sm[i]
-        #     mean = self.f_star_sm[i]
-        #     C = self.C[i]
-        # Sigma = (Sigma + Sigma.T) / 2# + y_p_cov
-        # Sigma = (y_p_cov + y_p_cov.T) / 2
         exp_t_t = lat_cov + torch.matmul(lat_f, lat_f.T)
-        # exp_t_t = (exp_t_t + exp_t_t.T) / 2
         Sigma_inv = torch.linalg.solve(cov_f, self.cond_to_cuda(torch.eye(t)))
-        # Sigma_inv = torch.linalg.solve(Sigma, self.cond_to_cuda(torch.eye(Sigma.shape[0])))
-        # exp_t_t = cov + torch.matmul(mean, mean.T)
         err = -1 / 2 * torch.linalg.multi_dot([y.T, Sigma_inv, y])\
               + torch.linalg.multi_dot([y.T, Sigma_inv, f_star]) \
               - 1 / 2 * torch.trace(torch.linalg.multi_dot([C.T, Sigma_inv, C, exp_t_t]))
-        # err = -1 / 2 * torch.linalg.multi_dot([y_p.T, Sigma_inv, y_p]) \
-        #       + torch.linalg.multi_dot([y_p.T, Sigma_inv, C, mean]) \
-        #       - 1 / 2 * torch.trace(torch.linalg.multi_dot([Sigma_inv, exp_t_t]))
-        # err = -1 / 2 * y.T.dot(Sigma_inv.dot(y)) + y.T.dot(Sigma_inv).dot(mean) - 1 / 2 * np.trace(
-        #     Sigma_inv.dot(exp_t_t))
         #Scale with dimension:
         #err = err / y.shape[0]
         return err
 
-    def log_lat_error(self, i):
+    def log_lat_error(self, I):
+        """Compute the log-squared-error of the latent process.
+        """
         err = 0.0
         if i > 1:
             cov_f_ = self.cov_f_sm[i]
@@ -288,10 +262,7 @@ class GPI_model():
             t = Gamma.shape[0]
             exp_t_t_ = cov_f_ + torch.matmul(lat_f_, lat_f_.T)
             exp_t_t = cov_f + torch.matmul(lat_f, lat_f.T)
-            # exp_t_t = (exp_t_t + exp_t_t.T) / 2
             Gamma_inv = torch.linalg.solve(Gamma, self.cond_to_cuda(torch.eye(t)))
-            # Sigma_inv = torch.linalg.solve(Sigma, self.cond_to_cuda(torch.eye(Sigma.shape[0])))
-            # exp_t_t = cov + torch.matmul(mean, mean.T)
             err = -1 / 2 * torch.linalg.multi_dot([lat_f.T, Gamma_inv, lat_f]) \
                   + torch.linalg.multi_dot([lat_f.T, Gamma_inv, A, lat_f_]) \
                   - 1 / 2 * torch.trace(torch.linalg.multi_dot([A.T, Gamma_inv, A, exp_t_t_]))
@@ -299,7 +270,8 @@ class GPI_model():
         return err
 
     def include_sample(self, index, x_train, y, x_warped=None, h=1.0, posterior=True, embedding=True, include_index=False):
-        # h = np.exp(h)
+        """ Method to include sample in the model, compute the posterior and add the data.
+        """
         if posterior:
             self.N = self.N + 1
             self.indexes.append(index)
@@ -312,7 +284,6 @@ class GPI_model():
             self.f_star_sm.append(f_star_)
             self.cov_f.append(cov_f_)
             self.cov_f_sm.append(cov_f_)
-            # self.likelihood.append(self.log_lik_sample(y))
             return self.f_star_sm[-1], self.cov_f_sm[-1]
         else:
             if include_index:
@@ -327,16 +298,18 @@ class GPI_model():
             return self.f_star_sm[-1], self.cov_f_sm[-1]
 
     def include_weighted_sample(self, index, x_train, x_warped, y, h, snr=None):
+        """Method to include the sample depending on the responsibility h.
+        """
         y = self.cond_to_cuda(self.cond_to_torch(y))
         x_train = self.cond_to_cuda(self.cond_to_torch(x_train))
         new_x_basis = self.x_basis
+        #Responsability truncated to 0.9 for stability purposes.
         if h > 0.9:
             if self.N == 0 and not self.fitted:
                 if torch.allclose(torch.from_numpy(self.gp.kernel.theta), torch.from_numpy(self.ini_kernel_theta)):
                     new_x_basis, _ = self.fit_kernel_params(x_train, y, self.Sigma[-1], self.Gamma[-1], valid=True)
                 else:
                     new_x_basis, _ = self.fit_kernel_params(x_train, y, self.Sigma[-1], self.Gamma[-1], valid=False)
-            # self.include_sample(index, x_train, y, h=h)
             if snr is not None:
                 if snr > 0.5:
                     self.include_sample(index, x_train, y, x_warped, h=1.0)
@@ -346,118 +319,38 @@ class GPI_model():
                 self.include_sample(index, x_train, y, x_warped, h=1.0)
         else:
             self.include_sample(index, x_train, y, x_warped, posterior=False)
-            # print("The responsability of y assigned to this state is 0")
         return new_x_basis
 
     def full_pass_weighted(self, x_trains, y_trains, resp, q=None, q_lat=None, snr=None):
+        """ Full forward pass method. Compute the full forward message passing and reestimation of 
+            dynamic parameters in a bayesian way.
+            Used in the offline scheme.
 
-        # self.include_weighted_sample(index, x_trains, x_trains, y_trains, resp)
-        # if reparam and index < self.estimation_limit:
-        #     self.backwards()
-        #     self.bayesian_new_params(resp)
-        # if q_ == 0.0:
-        #     q__ =  self.log_sq_error(x_trains, y_trains, i=-1)
-        # else:
-        #     mean, cov, C, Sigma = self.smoother_weighted_index(x_trains, y_trains, 1.0, -1)
-        #     q__ = self.log_sq_error(x_trains, y_trains, mean, cov, C, Sigma, i=-1)
-        #Standarize q to reestimation of parameters
+            Returns:
+            q : squared error of each of the observations
+
+            q_lat: accumulated squared error of the latent process.
+        """
         q_ = torch.zeros(len(x_trains), device=self.device)
         q_lat_ = torch.zeros(1, device=self.device)
         ind = torch.where(resp > self.cond_to_cuda(self.cond_to_torch(0.9)))[0]
         if len(ind) == 0:
             return q, q_lat
-        # q_aux = q_[ind]
-        # if len(ind) > 1:
-        #     q__[ind] = (q_aux - torch.min(q_aux))/(torch.max(q_aux)-torch.min(q_aux))
         n_samp = x_trains.shape[0]
-        #lik_pre = self.return_LDS_param_likelihood()
         step_lik = 0
         if len(ind) > 0:
             for index in trange(n_samp, desc="Forward_pass"):
-                #ind = self.find_closest_lower(index)
-                #mean, cov, C, Sigma = self.smoother_weighted_index(x_trains[index], y_trains[index], resp[index], ind)
-                #q_[index] = self.log_sq_error(x_trains[index], y_trains[index], mean, cov, C, Sigma, i=ind)
-                #q_[index] = self.log_sq_error(x_trains[index], y_trains[index])
                 self.include_weighted_sample(index, x_trains[index], x_trains[index],
                                              y_trains[index], resp[index])#, snr=snr_)
                 self.backwards_pair(resp[index])  # , snr=snr_)
                 self.bayesian_new_params(resp[index])
-                #q_[index] = self.log_sq_error(x_trains[index], y_trains[index])
-                #mean, cov, C, Sigma = self.smoother_weighted_index(x_trains[index], y_trains[index], 1.0, index)
-                #q_[index] = self.log_sq_error(x_trains[index], y_trains[index], mean, cov, C, Sigma, i=index)
-            # while True:
-            #     print("Full pass step: " + str(step_lik + 1))
-            #self.backwards()
-            #self.bayesian_new_params(1.0, full_data=True)
-                # lik_post = self.return_LDS_param_likelihood()
-                # if torch.isclose(lik_pre, lik_post):
-                #     break
-                # else:
-                #     lik_pre = lik_post
-                #     step_lik = step_lik + 1
-                #     self.reinit_LDS(save_last=True)
-                #self.backwards_pair(resp[index])#, snr=snr_)
-                #self.backwards()
-                #self.bayesian_new_params(resp[index])#, snr=snr_)
-                #self.backwards_pair(resp[index])
-                #self.bayesian_new_params(resp[index])
-                #self.bayesian_new_params(resp[index])
-                #if reparam and len(self.indexes) < self.estimation_limit and resp[index] > 0.9:
-                   #self.backwards_pair(resp[index])
-            #self.bayesian_new_params(1.0, full_data=True)
-            #self.backwards()
-        #self.bayesian_new_params(1.0, full_data=True)
-        #self.backwards()
-        #self.reinit_LDS(save_last=True)
         q_ = self.compute_sq_err_all(x_trains, y_trains)
         q_lat_ = self.compute_q_lat_all(x_trains)
-            # if len(self.indexes) > 0 or q_[index] == 0.0:
-            #     q__[index] =  self.log_sq_error(x_trains[index], y_trains[index], i=-1)
-            # else:
-            #     mean, cov, C, Sigma = self.smoother_weighted_index(x_trains[index], y_trains[index], 1.0, -1)
-            #     q__[index] = self.log_sq_error(x_trains[index], y_trains[index], mean, cov, C, Sigma, i=-1)
-            #if reparam:
-                #self.backwards_pair()
-                #self.bayesian_new_params(q__[index])
-                #self.bayesian_new_params(resp[index])
-        #if not reparam:
-        # for i in range(2):
-        #     self.backwards()
-        #     self.bayesian_new_params(1.0, full_data=True)
-        #     self.reinit_LDS(save_last=True)
-        #self.backwards()
-        #self.bayesian_new_params(1.0, full_data=True)
-        #self.backwards()
-            # self.backwards()
-            #self.bayesian_new_params(1.0, full_data=True)
-        # self.reinit_LDS(save_last=True)
-        #
-        # self.reinit_GP()
-        # for index in trange(n_samp, desc="Forward_pass"):
-        #     self.include_weighted_sample(index, x_trains[index], x_trains[index], y_trains[index], resp[index])
-        # self.backwards()
-        #if reparam:
-            # for index in trange(n_samp, desc="New_params_pass"):
-            #     self.bayesian_new_params(resp[index])
-        # if reparam:
-            # self.bayesian_new_params(1.0, full_data=True)
-            # self.reinit_LDS()
-            # for index in trange(n_samp, desc="Forward_pass"):
-            #     self.include_weighted_sample(index, x_trains[index], x_trains[index], y_trains[index], resp[index], second_pass=True)
-            # self.backwards()
-            # self.bayesian_new_params(1.0, full_data=True)
-            # for t in range(4):
-            #     print("Dynamic_params_estimator")
-            #     self.bayesian_new_params(1.0, full_data=True)
-            #     self.reinit_LDS()
-            #     for index in trange(n_samp, desc="Forward_pass"):
-            #         self.include_weighted_sample(index, x_trains[index], x_trains[index], y_trains[index], resp[index], second_pass=True)
-            #     self.backwards()
-            # self.bayesian_new_params(1.0, full_data=True)
         return q_, q_lat_
 
     def reinit_GP(self, save_last=False, save_index=False):
-
+        """ Method to reinitiate GP parameters. Can save some of them.
+        """
         if save_last:
             self.y_var = [self.y_var[0],self.y_var[-1]]
             self.var = [self.var[0],self.var[-1]]
@@ -485,6 +378,8 @@ class GPI_model():
 
 
     def reinit_LDS(self, save_last=False, return_likelihood=False):
+        """ Method to reinitiate LDS parameters. Can save some of them.
+        """
         if save_last:
             ind_ = -1
             ini_A, ini_Gamma, ini_C, ini_Sigma = self.A[ind_], self.Gamma[ind_], self.C[ind_], self.Sigma[ind_]
@@ -502,8 +397,9 @@ class GPI_model():
             return self.internal_params.log_likelihood_MNIW(A_, Gam_), self.observation_params.log_likelihood_MNIW(C_, Sig_)
 
     def return_LDS_param_likelihood(self, first=False):
+        """ Method to compute the likelihood of LDS parameters over the prior.
+        """
         ini_A, ini_Gamma, ini_C, ini_Sigma = self.A_def, self.Gamma_def, self.C_def, self.Sigma_def
-        #A_, Gam_, C_, Sig_ = self.A[-1], torch.diag(torch.diag(self.Gamma[-1])), self.C[-1], torch.diag(torch.diag(self.Sigma[-1]))
         if first:
             ini_noise = self.cond_to_cuda(self.cond_to_torch(self.gp.kernel.get_params()["k2__noise_level"])) * 2.0
             A_, Gam_, C_, Sig_ = (self.A[-1], self.Gamma[-1], self.C[-1],
@@ -513,49 +409,41 @@ class GPI_model():
             A_, Gam_, C_, Sig_ = self.A[-1], self.Gamma[-1], self.C[-1], self.Sigma[-1]
         int_params = matrix_normal_inv_wishart(ini_A, torch.eye(ini_A.shape[0], device=self.device), self.free_deg_MNIV, ini_Gamma)
         obs_params = matrix_normal_inv_wishart(ini_C, torch.eye(ini_C.shape[0], device=self.device), self.free_deg_MNIV, ini_Sigma)
-        #int_params = self.internal_params
-        #obs_params = self.observation_params
         return int_params.log_likelihood_MNIW(A_, Gam_) + obs_params.log_likelihood_MNIW(C_, Sig_)
 
     def compute_sq_err_all(self, x_trains, y_trains):
+        """ Method to compute the squared error over all provided examples y_trains.
+        """
         n_samps = x_trains.shape[0]
         sq_err = torch.zeros(n_samps, device=x_trains[0].device)
         for index in trange(n_samps, desc="Compute_sq_error"):
             if len(self.indexes) > 0:
                 if index in self.indexes:
                     ind = self.indexes.index(index) + 1
-                    #ind = np.max([self.find_closest_lower(index), 1])
-                    #mean, cov, C, Sigma = self.smoother_weighted_index(x_trains[index], y_trains[index], 1.0, ind)
                     if ind == 1:
                         sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], i=ind, first=True)
-                        #sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], mean, cov, C, Sigma, i=ind, first=True)
                     else:
                         sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], i=ind)
-                        #sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], mean, cov, C, Sigma, i=ind)
                 else:
                     ind = np.max([self.find_closest_lower(index), 1])
-                    #mean, cov, C, Sigma = self.smoother_weighted_index(x_trains[index], y_trains[index], 1.0, ind)
-                    #sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], mean, cov, C, Sigma, i=ind)
                     sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], i=ind)
         return sq_err
 
     def compute_q_lat_all(self, x_trains):
-        #n_samps = x_trains.shape[0]
+        """Method to compute the latent squared error accumulated.
+        """
         sq_err = torch.zeros(1, device=x_trains[0].device)
         for j, index in enumerate(self.indexes):
             sq_err = sq_err + self.log_lat_error(j)
         return sq_err
 
     def posterior_weighted(self, x_train, y, h, t=None):
+        """ Method to compute the posterior depending on the responsibility h.
+        """
         y = self.cond_to_torch(y)
         x_train = self.cond_to_torch(x_train)
         if h > 0.0:
-            # if self.N == 0:
-            #     self.fit_kernel_params(x_train, y, self.Sigma[0], self.Gamma[0], valid=False)
-            #Also changed this posterior computation to use the non smoothed mean
             if t is not None and len(self.indexes) > t:
-                # f_star_sm_, cov_f_sm_ = self.resample_latent_mean(x_train, t)
-                #f_star_sm_, cov_f_sm_ = self.f_star_sm[t], self.cov_f_sm[t]
                 f_star_sm_, cov_f_sm_ = self.f_star[t], self.cov_f[t]
                 A, Gamma, C, Sigma = self.get_params(t)
             else:
@@ -565,19 +453,16 @@ class GPI_model():
                 Gamma = self.Gamma[-1]
                 C = self.C[-1]
                 Sigma = self.Sigma[-1]
-            # if self.N == 0:
-            #     cov_f_sm_ = 1.1*cov_f_sm_
             f_star_, cov_f_ = self.gp.posterior(f_star_sm_, cov_f_sm_, y, A,
                                                 Gamma * h, C, Sigma * h, x_train=x_train)
-            # f_star_, cov_f_ = self.gp.posterior(f_star_sm_, cov_f_sm_, y, A,
-            #                                     Gamma, C, Sigma, x_train=x_train)
-            #f_star_, cov_f_ = f_star_sm_, cov_f_sm_
         else:
             f_star_ = torch.clone(self.f_star[-1])
             cov_f_ = torch.clone(self.cov_f[-1])
         return f_star_, cov_f_
 
     def find_closest_lower(self, t):
+        """Method to compute the closest last sample added to the model.
+        """
         #List is assumed sorted
         lst = self.indexes
         idx = bisect_right(lst, t)
@@ -587,6 +472,8 @@ class GPI_model():
             return 0
 
     def step_forward_last(self, x_post, params=None):
+        """ Compute the observation over new x_post.
+        """
         if params is None:
             C = self.C[-1]
             A = self.A[-1]
@@ -601,23 +488,17 @@ class GPI_model():
             cov = params[1]
             C = params[2]
             Sigma = params[3]
-        # mean = torch.matmul(C, self.f_star_sm[-1])
-        # mean = torch.linalg.multi_dot([C, A, mean])
         mean = torch.linalg.multi_dot([C, mean])
-        # cov = np.diag(self.var[-1].T[0])
-        # cov = self.Sigma[-1]
         Sigma = Sigma# + torch.linalg.multi_dot([C, Gamma, C.T])
-        # cov = torch.linalg.multi_dot([C, self.cov_f[-1], C.T]) + Sigma
-        # cov = self.cov_f_sm[-1]
         x_basis = self.x_basis
-        # Sig_ = Sigma
         return self.gp.pred_dist(x_post, x_basis, mean, Sigma)
 
     def observe_last(self, x_post):
+        """ Compute the last observation distribution over new x_post.
+        """
         C = self.C[-1]
         Sigma = self.Sigma[-1]
         mean = torch.matmul(C, self.f_star_sm[-1])
-        #cov = torch.linalg.multi_dot([C, self.cov_f_sm[-1], C.T]) + self.Gamma[-1]
         x_basis = self.x_basis
         return self.gp.pred_dist(x_post, x_basis, mean, Sigma)
 
@@ -634,44 +515,41 @@ class GPI_model():
                 C = self.C[0]
                 Sigma = self.Sigma[0]
                 mean = torch.matmul(C, self.f_star[0])
-                #cov = torch.zeros(self.cov_f_sm[0].shape, device=self.device)
             #Case when computing error with last (predict)
             elif len(self.indexes) <= t:
                 C = self.C[-1]
                 Sigma = self.Sigma[-1]
                 A = self.A[-1]
                 Gamma = self.Gamma[-1]
-                # mean = torch.matmul(C, self.f_star_sm[-1])
                 mean = torch.linalg.multi_dot([C, self.f_star[-1]])
-                # cov = torch.zeros(self.cov_f_sm[-1].shape)
-                #cov = torch.linalg.multi_dot([A, self.cov_f_sm[-1], A.T]) + Gamma
             elif self.estimation_limit <= t:
                 C = self.C[-1]
                 Sigma = self.Sigma[-1]
                 if proj:
                     Sigma = Sigma + self.Gamma[-1]
                 mean = torch.matmul(C, self.f_star[t])
-                #cov = torch.zeros(self.cov_f_sm[t].shape, device=self.device)
             else:
                 A, Gamma, C, Sigma = self.get_params(t)
                 if proj:
                     Sigma = Sigma + Gamma
                 mean = torch.matmul(C, self.f_star[t])
-                #cov = torch.zeros(self.cov_f_sm[t].shape, device=self.device)
         else:
             mean = params[0]
             Sigma = params[3]
             mean = torch.matmul(params[2], mean)
-            # cov = torch.zeros(cov.shape)
         x_basis = self.x_basis
         return self.gp.pred_dist(x_post, x_basis, mean, Sigma)
 
     def get_params(self, t):
+        """Method to return params on a specific iteration of the model
+        """
         rest_len = len(self.C)
         ind = t if t < rest_len else -1
         return self.A[ind], self.Gamma[ind], self.C[ind], self.Sigma[ind]
 
     def resample_latent_mean(self, x_post, t=None, params=None):
+        """Method to resample the latent process on a specific iteration of the model
+        """
         if params is None:
             if t is None or t> len(self.indexes):
                 mean = self.f_star[-1]
@@ -686,6 +564,8 @@ class GPI_model():
         return self.gp.pred_latent_dist(x_post, x_basis, mean, cov)
 
     def backwards(self, h=1.0):
+        """Method to compute backward recursion weighted by the responsibility.
+        """
         if h > 0.99:
             mean = self.f_star_sm[1:]
             covs = self.cov_f_sm[1:]
@@ -695,6 +575,8 @@ class GPI_model():
                 self.cov_f_sm[i + 1] = aux_cov_f[i]
 
     def backwards_pair(self, h, snr=None):
+        """ Fast method to compute the last two backward iterations.
+        """
         if len(self.indexes) > 1:
             if h > 0.9:
                 if snr is None:
@@ -714,6 +596,8 @@ class GPI_model():
                             self.cov_f_sm[-(i + 1)] = aux_cov_f[-(i + 1)]
 
     def smoother_weighted(self, x_train, y, h):
+        """ Method to compute the conditioned posterior and distribution if a sample is added.
+        """
         f_star_aux, cov_f_aux = self.posterior_weighted(x_train, y, h)
         means = self.f_star.copy()
         means.append(f_star_aux)
@@ -723,15 +607,18 @@ class GPI_model():
         C.append(self.C[-1])
         Sigma = self.Sigma.copy()
         Sigma.append(self.Sigma[-1])
-        # means, covs = self.gp.backward(self.A[-1], self.Gamma[-1], means, covs)
         return means, covs, C, Sigma
 
     def smoother_weighted_index(self, x_train, y, h, t):
+        """ Method to return the conditioned posterior and LDS parameters of a specific iteration of the model.
+        """
         f_star_aux, cov_f_aux = self.posterior_weighted(x_train, y, h, t)
         A, Gamma, C, Sigma = self.get_params(t)
         return f_star_aux, cov_f_aux, C, Sigma
 
     def new_params(self, batch=None, reestimate=True, model_type='dynamic', verbose=True, check_var=False):
+        """ Maximum Likelihood computation of the new LDS params.
+        """
         if batch is None or batch >= self.N:
             batch = self.N
         if reestimate:
@@ -771,9 +658,6 @@ class GPI_model():
                     A_new, Gamma_new, C_new, Sigma_new = self.gp.new_params_LDS(A_prior, Gamma_prior, C_prior, Sigma_prior,
                                                                                 y_samples[N - batch:], means[N - batch:],
                                                                                 covs[N - batch:], model_type)
-                    # if np.isclose(np.linalg.det(Gamma_new),0,0.1):
-                    #     Gamma_new = Gamma_prior
-                    #     print("Singular noise matrix")
                     means, covs = self.gp.backward(A_new, Gamma_new, means, covs)
                     lik_post = self.gp.log_likelihood(N - batch, batch - 1, means[N - batch:], covs[N - batch:], A_new,
                                                       Gamma_new, y_samples[N - batch:], C_new, Sigma_new)
@@ -849,6 +733,8 @@ class GPI_model():
             self.y_var.append(torch.atleast_2d(torch.diag(self.Sigma[-1])).T)
 
     def check_bound_sigma(self, S):
+        """ Method to check variance bounds (not actually used)
+        """
         bounds = np.exp(self.gp.kernel.bounds[0]) ** 2
         for i in range(S.shape[0]):
             if S[i][i] < bounds[0]:
@@ -857,10 +743,10 @@ class GPI_model():
                 S[i][i] = bounds[1]
         return S
 
-    # It has been changed the num_included from self.N to len(self.indexes) because now N
-    # is the full range of y_trains included, this allow us to compute h for all t.
     def new_params_weighted(self, h, batch=None, reestimate=True, model_type='dynamic', min_samples=1, max_samples=6,
                             div_samples=15, verbose=True, check_var=False):
+        """ Method to compute iteratively LDS params conditioned on the responsibility.
+        """
         if not np.isclose(h, 0, rtol=1e-1, atol=1e-1):
             num_included = self.N
             if num_included > 500:
@@ -873,6 +759,8 @@ class GPI_model():
                 self.new_params(0, reestimate=False, verbose=verbose)
 
     def revise_constraint_noise_step(self, Sigma_prior, Sigma_new):
+        """ Method of natural gradient for covariance estimation (not actually used)
+        """
         # Condition to ensure a minimal variance is required (occurs when two samples
         # are so similar and we assume a very certain model)
         if np.trace(Sigma_new) / np.trace(Sigma_prior) < 0.3 or np.trace(Sigma_new) / np.trace(Sigma_prior) > 2.0:
@@ -881,6 +769,8 @@ class GPI_model():
         return Sigma_new
 
     def KL_divergence(self, t, gpmodel, t_gp, smoothed=True, x_bas=None):
+        """ Method to compute the Kullback-Leibler divergence over every iteration of two LDS models.
+        """
         l1 = t
         l2 = t_gp
         if smoothed:
@@ -913,9 +803,13 @@ class GPI_model():
             return self.gp.KL_divergence(mean1, cov1, mean2, cov2)
 
     def compute_mean(self):
+        """ Method to resample mean (usually zero mean)
+        """
         return self.gp.compute_mean(self.x_basis)
 
     def plot_last(self, num_model):
+        """ Predefined method to plot last iteration of the model.
+        """
         if len(self.indexes) == 0:
             y = np.repeat(0, len(self.x_basis))
         else:
@@ -925,11 +819,10 @@ class GPI_model():
                        np.dot(self.C[-1], self.f_star[-1]), np.sqrt(self.var[-1]),
                        self.x_train[-1], y, np.sqrt(self.y_var[-1]),
                        title=True, label_model=num_model, labels=True)
-        # self.gp.plotGP(len(self.indexes)+num_model,self.x_basis,self.f_star_sm[-1],
-        #                np.sqrt(self.var[-1]),self.x_train[-1],y,np.sqrt(self.y_var[-1]),
-        #                title=True,label_model=num_model,labels=True)
 
     def sample_last(self, num_samples=1, random_state=0):
+        """ Method to resample last GP as a distribution.
+        """
         samples = self.gp.sample_y(self.f_star_sm[-1], self.cov_f_sm[-1], self.C[-1], self.Sigma[-1], num_samples,
                                    random_state).T
         rav_samples = []
@@ -941,6 +834,9 @@ class GPI_model():
         return self.gp.projection_matrix(x_basis, x_train)
 
     def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, force=False, snr=1.0):
+        """ Method to compute the variational Bayesian step for LDS parameters. Can deal with dynamic or static models.
+            Can use full data batch n-step estimation or 1-step estimation.
+        """
         if h > 0.9:
             if snr > 0.5:
                 if (full_data and 1 < self.N) or 1 < self.N < self.estimation_limit or force:
@@ -979,19 +875,12 @@ class GPI_model():
                                         torch.linalg.solve(P.T, torch.matmul(A, self.cov_f_sm[t].T)).T,
                                         self.cov_f_sm[t + 1])
                                 cov_cross = (cov_cross + cov_cross.T)/2.0
-                                if False:
-                                    cov = torch.zeros(cov.shape, device=cov.device)
-                                    cov_ = torch.zeros(cov.shape, device=cov.device)
-                                    cov_cross = torch.zeros(cov.shape, device=cov.device)
-                            # samples_A = self.f_star[-1]
-                            # samples_A_ = self.f_star[-2]
                             if not full_data:
                                 N_k = 1
                             elif self.estimation_limit != np.PINF:
                                 N_k = self.estimation_limit
                             else:
                                 N_k = samples_A.shape[1]
-                            #N_k = 1 if not full_data else samples_A.shape[1]
                             new_int_dist = self.internal_params.posterior(N_k, samples_A, samples_A_, cov, cov_, cov_cross,
                                                                           annealing=self.annealing)
                         elif model_type == 'static':
@@ -1007,18 +896,10 @@ class GPI_model():
                             if model_type == 'static':
                                 samples_C_, _ = self.resample_latent_mean(self.x_train[-1])
                             samples_C_ = self.cond_to_cuda(samples_C_)
-                            cov_ = self.cov_f_sm[-1]
                             C, Sigma = self.C[-1], self.Sigma[-1]
-                            cov = Sigma
-                            #cov = torch.zeros(cov.shape, device=cov.device)
-                            P = torch.matmul(C, torch.matmul(cov_, C.T)) + Sigma
-                            cov_cross = torch.matmul(
-                                    torch.linalg.solve(P.T, torch.matmul(C, cov_.T)).T, Sigma)
-                            #cov_cross = torch.zeros(cov_.shape, device=cov_.device)
-                            if True:
-                                cov = torch.zeros(cov.shape, device=cov.device)
-                                cov_ = torch.zeros(cov.shape, device=cov.device)
-                                cov_cross = torch.zeros(cov.shape, device=cov.device)
+                            cov = torch.zeros(cov.shape, device=cov.device)
+                            cov_ = torch.zeros(cov.shape, device=cov.device)
+                            cov_cross = torch.zeros(cov.shape, device=cov.device)
                         else:
                             samples_C  = torch.stack(self.y_train[:n_f])[:, :, 0].T
                             samples_C_ = torch.stack(self.f_star_sm[1:n_f+1])[:, :, 0].T
@@ -1040,12 +921,6 @@ class GPI_model():
                             project_mat = None
                         else:
                             project_mat = self.reduce_noise_matrix(self.x_basis, self.x_train[-1])
-                        # obs_mean, obs_cov = self.observe_last(self.x_basis)
-                        # samples_C, cov_C = self.gp.project_y(self.x_train[-1], self.y_train[-1], obs_cov,
-                        #                                  self.C[-1], self.Sigma[-1], self.x_basis)
-                        # samples_C_ = self.f_star_sm[-1]
-
-                        # samples_C_, _ = self.resample_latent_mean(self.x_train[-1])
                         new_obs_dist = self.observation_params.posterior(N_k, samples_C, samples_C_, cov, cov_, cov_cross,
                                                                          sse_matrix=project_mat, annealing=self.annealing)
                     except torch.linalg.LinAlgError:
@@ -1059,7 +934,6 @@ class GPI_model():
                 self.observation_params = new_obs_dist
                 if 1 < self.N:
                     Gamma_ = new_int_dist.get_scale(final=full_data)
-                    # Sigma_ = self.reduce_noise_matrix(new_obs_dist.get_scale(), self.x_basis, self.x_train[-1])
                     Sigma_ = new_obs_dist.get_scale(final=full_data)
                 else:
                     Gamma_ = self.Gamma[-1]
@@ -1099,7 +973,7 @@ class GPI_model():
                 self.y_var.append(torch.atleast_2d(torch.sqrt(torch.diag(Sigma_))).T)
 
 
-
+    #Methods to perform the conversion from NumPy to torch and from Cuda to cpu. Still have to solve this.
     def cond_to_numpy(self, x):
         if x is not None:
             if type(x) is torch.Tensor:
@@ -1262,6 +1136,8 @@ class GPI_model():
         self.gp.cuda = False
 
 class matrix_normal_inv_wishart():
+    """ Class to define the Matrix Normal Inverse Wishart distribution (MNIW) for the LDS parameters.
+    """
     def __init__(self, m_mean, m_r_cov, n0, scale):
         if type(m_mean) is torch.Tensor:
             self.m_mean = m_mean
@@ -1291,40 +1167,22 @@ class matrix_normal_inv_wishart():
             id_x = id_x.cuda()
         if sse_matrix is None:
             sse_matrix = id
-        # scale = torch.linalg.multi_dot([sse_matrix, self.scale, sse_matrix.T])
-        #p_mean = torch.linalg.multi_dot([sse_matrix, self.m_mean, sse_matrix.T])
-        #scale = self.scale
         scale = self.m_r_cov
-        # new_n0 = self.n0 + n_k
-        # scale= self.get_scale()
         jitter = 1e-2 * id
         scale = (scale + scale.T)/2 + jitter
         scale_c = torch.linalg.cholesky(scale)
         #
         if n_k == 1:
             scale_inv = torch.cholesky_solve(id, scale_c)
-            #scale_inv = scale
         else:
-            #scale_c = torch.linalg.cholesky(scale * new_n0)
             scale_inv = torch.cholesky_solve(id, scale_c)
-            #scale_inv = scale
         exp_f_f_ = torch.linalg.multi_dot([sse_matrix, torch.linalg.multi_dot([y_k_, y_k_.T]) + cov_, sse_matrix.T])
         exp_ff_ = torch.linalg.multi_dot([sse_matrix, torch.linalg.multi_dot([y_k, y_k_.T]) + cov_cross, sse_matrix.T])
         exp_ff = torch.linalg.multi_dot([sse_matrix,torch.linalg.multi_dot([y_k, y_k.T]) + cov, sse_matrix.T])
-        # exp_f_f_ = torch.linalg.multi_dot([sse_matrix, torch.linalg.multi_dot([y_k_, y_k_.T]), sse_matrix.T])
-        # exp_ff_ = torch.linalg.multi_dot([sse_matrix, torch.linalg.multi_dot([y_k, y_k_.T]), sse_matrix.T])
-        # exp_ff = torch.linalg.multi_dot([sse_matrix, torch.linalg.multi_dot([y_k, y_k.T]), sse_matrix.T])
 
         S__ = exp_f_f_ + scale_inv
-        # S__ = (S__ + S__.T) / 2
         S_ = exp_ff_ + torch.linalg.multi_dot([self.m_mean, scale_inv])
-        #S__ = exp_f_f_
-        #S_ = exp_ff_
-        #S = exp_ff
         S = exp_ff + torch.matmul(self.m_mean, torch.matmul(scale_inv, self.m_mean.T))
-
-        # if torch.linalg.det(S__) == 0.0:
-        #     S__ = S__ + torch.eye(S__.shape[0])*1e-10
         S__c = torch.linalg.cholesky(S__)
         S__inv = torch.cholesky_solve(id, S__c)
         part_mean = torch.linalg.multi_dot([S_, S__inv])
@@ -1332,52 +1190,25 @@ class matrix_normal_inv_wishart():
             #Step by step computation
             new_m_mean = ((self.n0 - 2) * self.m_mean + part_mean) / (new_n0 - 2)
         else:
-            # new_m_mean = self.m_mean * self.n0 + part_mean * n_k
-            # new_m_mean = new_m_mean / new_n0
-            #new_m_mean = ((self.n0 - 2) * self.m_mean + part_mean) / (new_n0 - 2)
             new_m_mean = part_mean
-        # new_m_mean = ((self.n0 - self.m_mean.shape[0]) * self.m_mean + torch.matmul(S_, S__inv)) / (new_n0 - self.m_mean.shape[0])
-        # if y_k_.shape[0] == self.m_mean.shape[0]:
-        #     y_k_ = torch.matmul(self.m_mean, y_k_)
-        #S_ = torch.matmul(y_k, y_k_.T) + torch.matmul(new_m_mean, scale_inv)
-
-        #S = e2 + torch.matmul(new_m_mean, torch.matmul(scale_inv, new_m_mean.T))
         if n_k == 1:
-            #e = (y_k - torch.matmul(new_m_mean, y_k_))
             e = (y_k - y_k_)
             e2 = torch.matmul(e, e.T)
             e2 = torch.linalg.multi_dot([sse_matrix, e2, sse_matrix.T])
             #Step by step computation
-            #prop = n_k/new_n0
-            #new_scale = self.scale * self.n0 * (1 - prop) + e2/n_k * prop
             new_scale = ((self.n0 - 2) * self.scale + e2) / (new_n0 - 2)
-            #new_scale = self.scale * self.n0 + (S - torch.matmul(S_, torch.matmul(S__inv, S_.T)))
-            #new_scale = new_scale / new_n0
         else:
-            #new_scale = e2
-            e = (y_k - torch.matmul(new_m_mean, y_k_))
-            #e = (y_k - y_k_)
+            e = (y_k - torch.matmul(new_m_mean, y_k_)
             e2 = torch.matmul(e, e.T)
-            #e2 = torch.linalg.multi_dot([sse_matrix, e2, sse_matrix.T])
-            #new_scale = self.scale * self.n0 + (S - torch.matmul(S_, torch.matmul(S__inv, S_.T)))
-            #new_scale = new_scale / n_k
-            #prop = n_k/new_n0
-            #new_scale = self.scale * self.n0 * (1 - prop) + e2/n_k * prop
-            #new_scale = self.m_r_cov + e2
             new_scale = ((self.n0 - 2) * self.scale + e2) / (new_n0 - 2)
-        # new_scale = ((self.n0 - self.m_mean.shape[0]) * self.scale + e2) / (new_n0 - self.m_mean.shape[0])
-        # new_scale = (self.n0 * self.scale + e2) / new_n0
-        # new_scale = (self.n0 * self.scale + e2) / new_n0
-        # new_scale = ((self.n0 - self.m_mean.shape[0])  * self.scale +
-        #              (S - torch.matmul(S_, torch.matmul(S__inv, S_.T))))/(new_n0 - self.m_mean.shape[0])
-        # new_m_mean = (self.b * self.n0 * self.m_mean + torch.matmul(S_, S__inv)) / new_n0
-        # new_scale = self.scale + S - torch.matmul(S_, torch.matmul(S__inv, S_.T))
-        # new_m_mean = torch.matmul(S_, S__inv)
 
         new_m_r_cov = S__
         return matrix_normal_inv_wishart(new_m_mean, new_m_r_cov, new_n0, new_scale)
 
     def log_likelihood_MNIW(self, M, Sigma):
+        """ M<ethod to compute the likelihood of the MNIW parameters, some parts removed 
+            because of the inherent dependence on the prior.
+        """
         d = M.shape[0]
         id = torch.eye(self.scale.shape[0])
         if torch.cuda.is_available() and self.scale.is_cuda:
@@ -1400,27 +1231,20 @@ class matrix_normal_inv_wishart():
         #scale_lik = scale_lik / self.scale.shape[0]
         #return scale_lik / d
         #return (mean_lik + scale_lik) / d**2
-        return (mean_lik + scale_lik)# / 2.0
+        return (mean_lik + scale_lik)
 
 
     def get_mean(self):
         return self.m_mean
 
     def get_scale(self, final=False):
-        # return self.scale / (self.n0 - self.m_mean.shape[0] - 1)
         if final:
-            #return self.scale / (self.n0 - self.m_mean.shape[0] - 1)
             return self.scale
-            #return self.scale / (self.n0 - 2)
-            #return self.scale / (self.n0 - self.m_mean.shape[0] - 1)
         else:
             return self.scale * self.n0 / (self.n0 - 2)
-        #   return self.scale
 
 
     def set_scale(self, scale):
-        # scale = scale * (self.n0 - 2) / self.n0
-        # scale = scale * (self.n0 - self.m_mean.shape[0] - 1)
         if type(self.scale) is torch.Tensor:
             if self.scale.is_cuda:
                 self.scale = scale.cuda()
@@ -1464,6 +1288,8 @@ class matrix_normal_inv_wishart():
 
 
 class inv_wishart():
+    """ Class to define the Inverse Wishart distribution (IW) for the LDS static parameters.
+    """
     def __init__(self, n0, scale, C_fixed):
         if type(C_fixed) is torch.Tensor:
             self.C_fixed = C_fixed
@@ -1487,17 +1313,9 @@ class inv_wishart():
             sse_matrix = id
         # e = (y_k - torch.matmul(self.C_fixed, y_k_))
         e = (y_k - y_k_)
-        # K_nm = self.cond_to_torch(gp.gp.kernel(gp.x_train[-1].cpu(), gp.x_basis.cpu()))
         e2 =  torch.matmul(e, e.T)
         e2 = torch.linalg.multi_dot([sse_matrix, e2, sse_matrix.T])
-        # if torch.cuda.is_available() and self.scale.is_cuda:
-            # K_nm = K_nm.cuda()
-        # aux__ = torch.linalg.multi_dot([gp.gp.K_inv, K_nm.T, e2, K_nm, gp.gp.K_inv])
-        # aux__ = e2
-        # new_scale = ((self.n0) * self.scale + aux__) / (new_n0)
         new_scale = ((self.n0 - 2) * self.scale + e2) / (new_n0 - 2)
-        # new_scale = (self.b * self.n0 * self.scale + torch.linalg.multi_dot([e, e.T])) / new_n0
-        # new_scale = self.scale + torch.linalg.multi_dot([e, e.T])
         return inv_wishart(new_n0, new_scale, self.C_fixed)
 
     def get_scale(self, final=False):
