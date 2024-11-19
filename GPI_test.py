@@ -36,7 +36,7 @@ samples = [60, 140]
 M = 2
 #samples = [0, -1]
 rec = "102"
-data, labels = get_data(database="filtered", record=rec, deriv=0, test=False,
+data, labels = get_data(database="mitdb", record=rec, deriv=0, test=False,
                         scale_data=True, scale_type="mean", d2_data=False, samples=samples, ann='atr')
 dat_ = data
 data, data_2d, labels = take_standard_labels(data, labels, filter=labels)

@@ -20,15 +20,8 @@ import numpy as np
 import scipy.optimize
 import scipy.io
 from scipy.special import gammaln, digamma, polygamma
-import datetime
-import logging
 
-from bnpy.util.StickBreakUtil import rho2beta_active, beta2rho
-from bnpy.util.StickBreakUtil import sigmoid, invsigmoid
-from bnpy.util.StickBreakUtil import forceRhoInBounds, forceOmegaInBounds
-from bnpy.util.StickBreakUtil import create_initrho, create_initomega
-
-Log = logging.getLogger('bnpy')
+EPS = 1e-8
 
 
 def find_optimum_multiple_tries(sumLogPi=None,
@@ -441,31 +434,107 @@ def _get_flatLowTriIDs_KxK(K):
     return flatIDs
 
 
-def calc_fgrid(o_grid=None, o_pos=None,
-               r_grid=None, r_pos=None,
-               omega=None, rho=None, **kwargs):
-    ''' Evaluate the objective across range of values for one entry
-    '''
-    K = omega.size
-    if o_grid is not None:
-        assert o_pos >= 0 and o_pos < K
-        f_grid = np.zeros_like(o_grid)
-        omega_n = omega.copy()
-        for n in xrange(o_grid.size):
-            omega_n[o_pos] = o_grid[n]
-            f_grid[n] = objFunc_constrained(
-                np.hstack([rho, omega_n]),
-                **kwargs)
-    elif r_grid is not None:
-        assert r_pos >= 0 and r_pos < K
-        f_grid = np.zeros_like(r_grid)
-        rho_n = rho.copy()
-        for n in xrange(r_grid.size):
-            rho_n[o_pos] = r_grid[n]
-            f_grid[n] = objFunc_constrained(
-                np.hstack([rho_n, omega]),
-                **kwargs)
-    else:
-        raise ValueError("Must specify either o_grid or r_grid")
+def sigmoid(c):
+    ''' Calculates the sigmoid function at each entry of provided array.
 
-    return f_grid
+    sigmoid(c) = 1./(1+exp(-c))
+
+    Parameters
+    -------
+    c : array_like
+
+    Returns
+    ------
+    v : array of same size as c
+        v[k] = sigmoid(c[k])
+        Satisfies 0 <= v[k] <= 1
+
+    Notes
+    -------
+    Automatically enforces result away from "boundaries" [0, 1]
+    This step is crucial to avoid overflow/NaN problems in optimization
+    '''
+    v = 1.0 / (1.0 + np.exp(-c))
+    v = np.minimum(np.maximum(v, EPS), 1 - EPS)
+    return v
+
+def invsigmoid(v):
+    ''' Get the inverse of the sigmoid function at each entry of array.
+
+    Args
+    --------
+    v : array_like
+        Each entry satisifies 0 < v[k] < 1
+
+    Returns
+    -------
+    c : array_like, size of v
+        c[k] = invsigmoid(v[k]), or  v[k] = sigmoid(c[k]).
+    '''
+    assert np.max(v) <= 1 - EPS
+    assert np.min(v) >= EPS
+    return -np.log((1.0 / v - 1))
+
+def forceRhoInBounds(rho, EPS=EPS):
+    ''' Verify every entry of rho lies within [EPS, 1-EPS]
+
+    Guarantees numerical stability.
+
+    Returns
+    -------
+    rho : 1D array, size K
+        Each entry satisfies: EPS <= rho[k] <= 1-EPS.
+    '''
+    rho = np.maximum(np.minimum(rho, 1.0 - EPS), EPS)
+    return rho
+
+
+def forceOmegaInBounds(omega, EPS=EPS, maxOmegaVal=None, Log=None):
+    ''' Verify every entry of omega is bigger than EPS
+
+    Returns
+    -------
+    omega : 1D array, size K
+        Each entry satisfies: EPS <= omega[k]
+    '''
+    if Log is not None:
+        nUp = np.sum(omega < EPS)
+        if nUp > 0:
+            Log.error("Forcing %d omega entries above minOmegaVal=%.3e." % (
+                nUp, EPS))
+        if maxOmegaVal is not None:
+            nDown = np.sum(omega > maxOmegaVal)
+            if nDown > 0:
+                Log.error("Forcing %d omega entries below maxOmegaVal=%.3e" % (
+                    nDown, maxOmegaVal))
+
+    np.maximum(omega, EPS, out=omega)
+    if maxOmegaVal is not None:
+        np.minimum(omega, maxOmegaVal, out=omega)
+    return omega
+
+def create_initrho(K):
+    ''' Make vector rho that implies E[beta] is nearly uniform.
+
+    Returns
+    --------
+    rho : 1D array, size K
+        Each entry rho[k] >= 0.
+
+    Post Condition
+    -------
+    E[leftover mass] = r
+    E[beta_k] \approx (1-r)/K
+        where r is a small amount of remaining/leftover mass
+    '''
+    remMass = np.minimum(0.1, 1.0 / (K * K))
+    # delta = 0, -1 + r, -2 + 2r, ...
+    delta = (-1 + remMass) * np.arange(0, K, 1, dtype=np.float)
+    rho = (1 - remMass) / (K + delta)
+    return rho
+
+
+def create_initomega(K, nDoc, gamma):
+    ''' Make initial guess for omega.
+    '''
+    return (nDoc / K + gamma) * np.ones(K)

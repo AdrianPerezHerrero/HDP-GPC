@@ -897,7 +897,7 @@ class GPI_model():
                                 samples_C_, _ = self.resample_latent_mean(self.x_train[-1])
                             samples_C_ = self.cond_to_cuda(samples_C_)
                             C, Sigma = self.C[-1], self.Sigma[-1]
-                            cov = torch.zeros(cov.shape, device=cov.device)
+                            cov = torch.zeros(Sigma.shape, device=Sigma.device)
                             cov_ = torch.zeros(cov.shape, device=cov.device)
                             cov_cross = torch.zeros(cov.shape, device=cov.device)
                         else:
