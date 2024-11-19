@@ -8,9 +8,8 @@ Created on Wed Mar 10 18:56:03 2021
 import numpy as np
 import matplotlib.pyplot as plt
 from operator import itemgetter
-from scipy.linalg import cholesky, cho_solve, solve_triangular
+from scipy.linalg import cholesky, cho_solve
 import scipy.optimize
-from sklearn.utils.optimize import _check_optimize_result
 from sklearn.utils import check_random_state
 import warnings
 import torch
