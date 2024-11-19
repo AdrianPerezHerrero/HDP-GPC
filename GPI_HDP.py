@@ -17,7 +17,6 @@ from scipy.special._ufuncs import gammaln
 import pandas as pd
 from torchmetrics.audio import SignalNoiseRatio
 from tqdm import trange
-import matplotlib.pyplot as plt
 import torch
 torch.set_default_dtype(torch.float64)
 
