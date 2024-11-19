@@ -30,18 +30,64 @@ class GPI_HDP():
     an LDS with Gaussian Process Prior.
     Parameters
     ----------
-    M : (int) Number of states.
+    M : (int) initial number of states. (usually 2)
 
     x_basis : array-like of shape (s_samples) domain points.
 
-    model: list of strings indicating type of model for each state: 'static' or 'dynamic'. If for
+    n_outputs: int number of leads where receiving information. data should have dimensions
+        [number of examples, length of examples, n_outputs]
+
+    x_basis_warp: x_basis of the warp GP.
+
+    kernels: predefinition of the kernels to use, default if output_var * RBF(lengthscale) + sigma_var
+    
+    model_type: list of strings indicating type of model for each state: 'static' or 'dynamic'. If for
             index m the model is dynamic, arrays with index m of ini_gamma and ini_sigma should be added.
             In other case default parameters would be used gamma=0.01 and sigma=0.5.
 
-    ini_gamma : array of matrix of shape (Mxsxs_samples) initial noise of the process.
+    ini_lengthscale, bound_lengthscale: initial legthscale value for kernel.
+    
+    ini_gamma, bound_gamma: array of matrix of shape (Mxsxs_samples) initial noise of the process.
 
-    ini_sigma : array of matrix of shape (Mxsxs_samples) initial noise used to compute kernel hyperparameters.
+    ini_sigma, bound_sigma: array of matrix of shape (Mxsxs_samples) initial noise used to compute kernel hyperparameters.
+    
+    ini_outputscale: initial value for output_var of the kernel, usually max amplitude of the signal
 
+    noise_warp, bound_noise_warp: bound for noise of the GP warp.
+
+    reest_conditions: conditions for reestimating LDS when using Maximum Likelihood.
+
+    recursive_warp: use last computed warp to compute the next, not working.
+
+    warp_updating: give a static LDS structure to GP update for the warp.
+
+    method_compute_warp: 'standard', 'greedy', 'greedy_bound'
+
+    mode_warp: 'balanced', 'fine', 'rough'
+
+    verbose:
+
+    annealing: updates of LDS reducing over iterations (for ML approach only)
+
+    hmm_switch: if dependence over SLDS wants to be computed or LDS independent.
+
+    max_models: bound on number of models.
+
+    batch: number of samples to compute LDS parameters (for ML approach only)
+
+    check_var: if check bound for variance estimation (not used).
+
+    bayesian_params: if a bayesian update of LDS params is used.
+
+    cuda: if cuda computations
+
+    inducing_points: if x_basis is smaller than x_trains then should be setted True
+    
+    estimation_limit: bound for the estimation of LDS (both ML and Bayesian)
+
+    reestimate_initial_params: if reestimation of Sigma and Gamma wants to be performed for offline approach
+        using the classical estimation variance and 1-step variance.
+    
     Returns
     -------
     self : returns an instance of self..
@@ -225,6 +271,7 @@ class GPI_HDP():
             self.full_model_to_torch()
             self.full_model_to_cuda()
 
+    #Methods to compute HDP variational computations.
     def init_global_params(self, d_dim, M):
         self.rho = self.create_initrho(M)
         self.omega = (1.0 + self.gamma) * self.cond_cuda(torch.ones(M))
@@ -286,8 +333,10 @@ class GPI_HDP():
         startTheta[:M-1] += startStateCount[:M-1]
 
         return transTheta, startTheta
-
+        
     def compute_Pi(self):
+        """ Compute transition matrix
+        """
         return torch.exp(digamma(self.cond_cpu(self.transTheta)) -
                          torch.log(torch.sum(torch.exp(digamma(self.cond_cpu(self.transTheta))), axis=1))[:, np.newaxis])
 
@@ -322,6 +371,8 @@ class GPI_HDP():
 
 
     def keep_last_all(self):
+        """ Method to reset full model and save space
+        """
         for ld in range(self.n_outputs):
             for gp in self.gpmodels[ld]:
                 gp.reinit_LDS(save_last=True)
@@ -331,6 +382,8 @@ class GPI_HDP():
     def set_default_options(self, kernel, ini_sigma, ini_gamma, ini_outputscale, bound_sigma, bound_gamma,
                             bound_noise_warp, annealing, method_compute_warp,
                             model_type, recursive_warp, warp_updating, inducing_points, estimation_limit):
+        """ Default options definition.
+        """
         self.kernel_def = kernel.clone_with_theta(kernel.theta)
         self.ini_sigma_def = ini_sigma
         self.ini_gamma_def = ini_gamma
@@ -353,6 +406,8 @@ class GPI_HDP():
             self.estimation_limit_def
 
     def create_gp_default(self, i=None):
+        """ Create a GP default when a birth happens.
+        """
         if i is None or len(self.wp_sys) <= i:
             kernel, ini_sigma, ini_gamma, ini_outputscale, bound_sigma, bound_gamma, bound_noise_warp, annealing, method_compute_warp,\
                 model_type, recursive_warp, warp_updating, inducing_points, estimation_limit = self.get_default_options()
@@ -427,7 +482,7 @@ class GPI_HDP():
 
     def variational_local_terms(self, x_train, y_mod, transTheta=None, startTheta=None, liks=None, classify=False):
         """
-        Compute varional terms of the SLDS for one example.
+        Compute variational terms of the SLDS for one example. Online approach.
 
         Parameters
         ----------
@@ -449,24 +504,8 @@ class GPI_HDP():
         digammaSumTransTheta = torch.log(torch.sum(torch.exp(digamma(self.cond_cpu(transTheta[:M, :M + 1]))), axis=1))
         transPi = digamma(self.cond_cpu(transTheta[:M, :M])) - digammaSumTransTheta[:, np.newaxis]
         self.trans_A = transPi
-        # np.exp(transPi, out=transPi)
-        # Calculate LOG of start state prob vector
         startPi = digamma(self.cond_cpu(startTheta[:M])) - torch.log(torch.sum(torch.exp(digamma(self.cond_cpu(startTheta[:M + 1])))))
-        # for i in range(transPi.shape[0]):
-        #     transPi[i] = self.normalize_log(transPi[i])
-        # startPi = self.normalize_log(startPi)
-        # startPi = np.exp(startPi)
-        # Torch transformation
-        # y_mod = torch.tensor(np.array(y_mod))
-        #OPTIONS
-        # q = self.compute_q(x_train, y=y_mod, gpmodels=self.gpmodels)
         q = self.estimate_new(gpmodels=self.gpmodels, x_train=x_train, y=y_mod)
-        # if len(q) == t:
-        #     q[-1] = q[-1] + liks
-        #     axis = 1
-        # else:
-        #    q = q + liks
-        #     axis = 0
         liks_ = np.array(liks)[:,np.newaxis]# * 0.5
         q[-1] = q[-1] + liks_
         if classify:
@@ -474,28 +513,15 @@ class GPI_HDP():
                 q_aux[-1] = np.NINF
         m_ = np.argmax(self.weight_mean(q)[-1])
         q_, _ = self.LogLik(self.weight_mean(q))
-        # q[-1] = q[-1] + np.log(transTheta[-1])
-        # q = np.exp(q)
         alpha, margprob = self.forward(startPi, transPi, q_)
-        #alpha = torch.exp(alpha)
-        #margprob = torch.exp(margprob)
         beta = self.backward(transPi, q_, margprob)
-        #beta = torch.exp(beta)
-        # resp = self.compute_h(alpha, beta)
         resp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
         m_resp = np.argmax(self.cond_cpu(resp[-1]))
         respPair, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_, margprob), axis=1)
-        # respPair = self.sum_coupled_state_coef(alpha, beta, transPi, q)
-        # respPair = torch.exp(respPair)
         if m_ != m_resp:
             print("Mismatch between SSE ("+str(m_+1)+") and Resp ("+str(m_resp+1)+").")
         if torch.any(torch.isnan(resp)):
             print("Error")
-        #New condition, trying to detect outliers based on mean of sq error
-        # if m_resp != resp.shape[1]-1 and len(self.gpmodels[m_resp].indexes) > 5:
-        #    if q[-1][m_resp] < np.mean(np.array(q)[np.array(self.gpmodels[m_resp].indexes)], axis=0)[m_resp]*3.0:
-        #        resp[-1][m_resp] = resp[-1][-1]
-        #        resp[-1][-1] = 0.0
         if classify:
             return q, resp, respPair
         else:
@@ -534,6 +560,8 @@ class GPI_HDP():
         return SoftEv, lognormC
 
     def signaltonoise(self, a, axis=0, ddof=0):
+        """ Compute signal to noise ratio
+        """
         a = np.asanyarray(a)
         #m = a.mean(axis)** 2
         m = 100.0
@@ -542,6 +570,8 @@ class GPI_HDP():
         return np.where(sd == 0, 0, m / sd)
 
     def rolling_snr(self, signal, window_size: int):
+        """ Compute rolled signal to noise ratio.
+        """
         signal_series = pd.Series(signal)
         rolling_mean = signal_series.rolling(window=window_size).mean()[window_size:].mean()
         rolling_max = signal_series.rolling(window=window_size).max().max() ** 2
@@ -552,6 +582,8 @@ class GPI_HDP():
         return rolling_snr
 
     def weight_mean(self, q, snr=None):
+        """ Weight the log squared error with the snr computed to join the information on each lead.
+        """
         if len(q.shape) > 2:
             if snr is None:
                 return torch.einsum('ijk,ik->ij', q, self.snr_norm)
@@ -567,29 +599,9 @@ class GPI_HDP():
                 snr_frac = torch.sum(snr_, dim=0) / torch.sum(snr_)
                 return torch.einsum('ij,j->i', q, snr_frac)
 
-    # def compute_snr(self, y_trains):
-    #     n_samples = np.array(y_trains).shape[0]
-    #     n_outputs = np.array(y_trains).shape[2]
-    #     snr = torch.zeros((n_samples, n_outputs))
-    #     #for ld in range(n_outputs):
-    #     #    snr[:, ld] = torch.from_numpy(np.array([self.rolling_snr(y,
-    #     #                                                             20) for i, y in enumerate(y_trains[:, :, ld])]))
-    #     snr = torch.from_numpy(self.signaltonoise(y_trains, axis=1))
-    #     max_y = torch.zeros((n_samples, n_outputs))
-    #     for ld in range(n_outputs):
-    #         max_y[:, ld] = torch.from_numpy(np.array([pd.Series(y).rolling(window=20).max()[20:].max() for i, y in enumerate(y_trains[:, :, ld])]))
-    #     if snr.shape[1] == 1:
-    #         self.snr_norm = torch.softmax(snr, dim=1)
-    #     else:
-    #         snr = 1-torch.softmax(snr, dim=1)
-    #         self.snr_norm = ((snr - torch.min(snr, dim=1)[0][:, np.newaxis])/
-    #                          (torch.max(snr, dim=1)[0][:, np.newaxis] - torch.min(snr, dim=1)[0][:, np.newaxis]))
-    #     #Try to remove the samples affected by a low freq noise.
-    #     for i in np.where(max_y[:,1] > np.quantile(max_y[:,1], q=0.8))[0]:
-    #         if self.snr_norm[i,1] == 1.0:
-    #             self.snr_norm[i,:] = torch.from_numpy(np.array([1.0, 0.0]))
-
     def compute_snr_ini(self, y_trains):
+        """ Initial computation of snr
+        """
         n_samples = np.array(y_trains).shape[0]
         n_outputs = np.array(y_trains).shape[2]
         snr = torch.zeros(n_samples, n_outputs)
@@ -602,11 +614,15 @@ class GPI_HDP():
         self.snr_norm = torch.softmax(snr, dim=1)
 
     def compute_snr(self, y_trains, mean):
+        """ Iterative computation of snr
+        """
         snr_comp = SignalNoiseRatio()
         snr = torch.tensor([snr_comp(y, mean) for y in y_trains])
         return snr
 
     def normalize_snr(self, snr):
+        """ Normalize snr using softmax
+        """
         return torch.softmax(torch.max(torch.clone(snr), dim=1)[0], dim=1)
 
     def include_batch(self, x_trains, y_trains, with_warp=False, force_model=None, it_limit=None, warp=False):
@@ -628,9 +644,7 @@ class GPI_HDP():
         self.T = self.T + n_samples
         #Compute SNR to ponderate q on each lead.
         self.compute_snr_ini(y_trains)
-        #self.M = self.M + 1
         M = self.M
-        #self.init_global_params(n_samples, M)
         y_trains = self.cond_cuda(self.cond_to_torch(y_trains))
         x_trains = self.cond_cuda(self.cond_to_torch(x_trains))
         iteration = 0
@@ -658,18 +672,11 @@ class GPI_HDP():
             M = self.M
             if end:
                 break
-            # else:
-            #     if iteration > 0:
-            #         reparam = True
-            #Local loop for resp computation.
             resp, respPair, q, q_lat, snr, y_trains_w, reallocate = self.variational_local_terms_batch(M + 1, x_trains, y_trains, y_trains_w,
                                                                     self.transTheta, self.startTheta, resp, respPair, q, q_lat, snr, reallocate, reparam)
-            # resp = torch.exp(resplog)
-            # respPair = torch.exp(respPairlog)
             resp, respPair = self.refill_resp(resp, respPair)
             if self.hmm_switch:
                 startStateCount = self.cond_cuda(resp[0])
-                # transStateCount = self.cond_cuda(respPair)
                 transStateCount = self.cond_cuda(torch.sum(respPair, axis=0))
             else:
                 transStateCount = self.cond_cuda(torch.ones((M + 1, M + 1)))  # Cause we are in independent observations
@@ -701,38 +708,19 @@ class GPI_HDP():
                 self.resp_assigned.append(torch.where(resp == 1.0)[1])
                 if ((np.isclose(elbo, elbo_, rtol=1e-6) and resp_group[-1] < 1.0) or
                         torch.where(resp_group==0.0)[0].shape[0] > 1.0):
-                        #(resp_group[-1] < 1.0 and not reallocate) or
                     if warp_computed or not warp:
                         break
                     else:
                         elbo = elbo_
-                        q, q_lat, warp_computed = self.compute_warp_actual_state(x_trains, y_trains, q=q, q_lat=q_lat)
-                        # self.x_w = torch.zeros(y_trains.shape)
-                        # self.liks_w = torch.zeros((y_trains.shape[0], self.n_outputs))
-                        # for ld in range(self.n_outputs):
-                        #     print("--Compute warp--")
-                        #     for j in trange(y_trains.shape[0]):
-                        #         y = y_trains[j, :, [ld]]
-                        #         m_ = torch.where(resp[j] == 1.0)[0].long()
-                        #         y_w, x_w, lik = self.compute_warp_y(x_trains[j], y, force_model=m_,
-                        #                                         gpmodel=self.gpmodels[ld][m_])
-                        #         y_trains_w[j, :, [ld]] = y_w[m_]
-                        #         self.x_w[j,:,[ld]] = x_w[m_]
-                        #         self.liks_w[j,ld] = lik[m_]
-                        #     for m, gp in enumerate(self.gpmodels[ld]):
-                        #         q[:, m, ld] = gp.compute_sq_err_all(x_trains, y_trains_w[:, :, ld])
-                        #         q_lat[m, ld] = gp.compute_q_lat_all(x_trains)
-                        # warp_computed = True
-                        # self.y_trains_w = y_trains_w
-                    # else:
-                    #
-                    #     reparam = True
+                        q, q_lat, warp_computed = self.compute_warp_actual_state(x_trains, y_trains, q=q
                 else:
                     elbo = elbo_
             else:
                 break
 
     def compute_warp_actual_state(self, x_trains, y_trains, q=None, q_lat=None, snr=None):
+        """ Compute warp for every sample with an assignation to a gpmodel in the actual state of the model.
+        """
         y_trains = self.cond_cuda(self.cond_to_torch(y_trains))
         x_trains = self.cond_cuda(self.cond_to_torch(x_trains))
         y_trains_w = torch.clone(y_trains)
@@ -746,7 +734,6 @@ class GPI_HDP():
                 for m, gp in enumerate(self.gpmodels[ld]):
                     if j in gp.indexes:
                         m_ = m
-                #m_ = torch.where(resp[j] == 1.0)[0].long()
                 y_w, x_w, lik = self.compute_warp_y(x_trains[j], y, force_model=m_,
                                                     gpmodel=self.gpmodels[ld][m_])
                 y_trains_w[j, :, [ld]] = y_w[m_]
@@ -762,6 +749,8 @@ class GPI_HDP():
 
 
     def elbo_Linears(self, resp, respPair, prev=False):
+        """ Compute ELBO for linear terms. HDP.
+        """
         startStateCount = resp[0]
         transStateCount = torch.sum(respPair, axis=0)
         if prev:
@@ -795,6 +784,8 @@ class GPI_HDP():
 
 
     def new_model_or_refill(self, resp, respPair, startStateCount, transStateCount, q, q_lat, snr):
+        """ Redistribute the responsibility for not letting empty clusters and generate a new model if needed.
+        """
         resp_per_group = torch.sum(resp, axis=0)
         n_samples = self.T
         print("Group responsability estimated: "+str(resp_per_group.detach().cpu().numpy().astype(np.int64)))
@@ -833,6 +824,8 @@ class GPI_HDP():
         return resp, respPair, q, q_lat, snr, False
 
     def refill_resp(self, resp, respPair=None):
+        """ Refill HDP parameters if a model is reasignated.
+        """
         resp_per_group = torch.sum(resp, axis=0)
         if torch.any(resp_per_group[:-1] < 1.0):
             empty_group_ind = torch.where(resp_per_group < torch.tensor(1.0, device=self.device))[0]
@@ -861,7 +854,7 @@ class GPI_HDP():
 
     def variational_local_terms_batch(self, M, x_trains, y_trains, y_trains_w, transTheta, startTheta, resp, respPair, q, q_lat, snr, reallocate, reparam=False):
         """
-        Compute varional terms of the SLDS for one example.
+        Compute variational terms of the SLDS for a batch of examples. Iterates over q_first and q_all until convergence is reached.
         Parameters
         ----------
         y : vector double
@@ -882,11 +875,6 @@ class GPI_HDP():
         # Calculate LOG of start state prob vector
         startPi = digamma(self.cond_cpu(startTheta[:M])) - torch.log(
             torch.sum(torch.exp(digamma(self.cond_cpu(startTheta[:M + 1])))))
-        # OPTIONS
-        # q = self.compute_q(x_train, y=y_mod, gpmodels=self.gpmodels)
-        #q = self.estimate_new(gpmodels=self.gpmodels, x_train=x_trains, y=y_trains)
-        #q_bas = torch.from_numpy(np.array(np.NINF))
-        #q_bas = torch.sum(self.weight_mean(q)[torch.where(resp.int() == 1)])
         i = 0
         reparam = True
         resp_per_group = torch.sum(resp, axis=0)
@@ -920,6 +908,9 @@ class GPI_HDP():
         return resp, respPair, q, q_lat, snr, y_trains_w, reallocate
 
     def estimate_q_first(self, M, x_trains, y_trains, y_trains_w, resp, respPair, q_, q_lat_, snr_, startPi, transPi, reallocate_=False, reparam=False):
+        """ Smart and complex computation of new group assignation and compare with the last iteration then decides if generate group or not.
+            First, it computes if a reallocation of the samples is better, if not, proposes a new birth group and computes the ELBO to measure the goodness.
+        """
         y_trains_w_ = torch.clone(y_trains_w)
         if torch.mean(q_) == 0.0:
             snr_ = torch.zeros(y_trains.shape[0], M, self.n_outputs)
@@ -929,22 +920,11 @@ class GPI_HDP():
                                                      snr=self.snr_norm[:, ld])
                 snr_[:, 0, ld] = self.compute_snr(y_trains[:, :, ld], gp.f_star[-1].T[0])
                 self.gpmodels[ld][0] = gp
-                # for j in trange(y_trains.shape[0]):
-                #     y = y_trains[j, :, [ld]]
-                #     m_ = torch.where(resp[j] == 1.0)[0].long()
-                #     y_w, _, _ = self.compute_warp_y(x_trains[j], y, force_model=m_,
-                #                                                    gpmodel=self.gpmodels[ld][m_], i=j)
-                #     y_trains_w[j, :, [ld]] = y_w[m_]
         reallocate = False
 
         q_simple = torch.clone(q_)
-        #q_mean = self.weight_mean(q_)
-        #q_bas = torch.zeros(1)
-        #p_loglik_per_group = torch.zeros(M)
 
         indexes_ = []
-        #new_m = m_chosen
-        #gp = self.gpmodels[new_m]
         for m in range(M-1):
             indexes_.append(torch.tensor(self.gpmodels[0][m].indexes).long())
             if indexes_[m].shape[0] == 0:
@@ -962,15 +942,11 @@ class GPI_HDP():
                     gp.reinit_LDS(save_last=False)
                     gp.reinit_GP(save_last=False)
                 if len(indexes_[m]) > 0:
-                    #Try to use better a mean representer
-                    #f_ind_old[m] = indexes_[m][torch.median(self.weight_mean(q_)[indexes_[m], m], 0)[1].long()]
-                    #f_ind_old[m] = indexes_[m][torch.argmax(self.weight_mean(q_)[indexes_[m], m]).long()]
-                    #f_ind_old[m] = indexes_[m][0]
                     gp.include_weighted_sample(0, x_trains[f_ind_old[m]], x_trains[f_ind_old[m]], y_trains_w[f_ind_old[m],:,[ld]], h=1.0)
                 q_simple[:, m, ld] = gp.compute_sq_err_all(x_trains, y_trains_w[:,:, [ld]])
                 snr_temp[:, m, ld] = self.compute_snr(y_trains[:,:,ld], gp.f_star[-1].T[0])
 
-        if M > 2:# and self.gpmodels[0][-1].fitted:
+        if M > 2:
             q_aux = torch.clone(q_simple)
             snr_aux = torch.clone(snr_)
             if torch.sum(resp, dim=0)[-1] == 0:
@@ -985,15 +961,6 @@ class GPI_HDP():
             respPair_temp = torch.exp(respPairlog_temp)
             resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
 
-            # Due to assumption that model 1 is the bigger model, we must check if resp is going to generate a bigger cluster.
-            #resp_per_group_temp = torch.sum(resp_temp, axis=0)
-            # m_chos_ = np.where(resp_per_group_temp > resp_per_group_temp[0])[0]
-            # if len(m_chos_) == 1:
-            #     print("Bigger generated model than chosen to divide!")
-            #     aux_resp = torch.clone(resp_temp[:, m_chos_])
-            #     resp_temp[:, m_chos_] = resp_temp[:, [0]]
-            #     resp_temp[:, [0]] = aux_resp
-            #     resp_per_group_temp = torch.sum(resp_temp, axis=0)
             resp_per_group_temp = torch.sum(resp_temp, axis=0)
             reorder = torch.argsort(resp_per_group_temp, descending=True)
             resp_temp = resp_temp[:, reorder]
@@ -1008,9 +975,7 @@ class GPI_HDP():
                     print("\n   -----------Model " + str(m + 1) + "-----------")
                     if reorder[m] == M - 1:
                         gp = self.create_gp_default(i=m)
-                        #q[:, m] = gp.full_pass_weighted(x_trains, y_trains, resp_temp[:, m], reparam=reparam)
                         q[:, m, ld] = torch.zeros(q[:, -1, ld].shape) + torch.min(q[:,:,ld]) * 2.0
-                        #q_lat[m, ld] = torch.min(q_lat[:,ld]) * 2.0
                         snr_aux[:, m, ld] = torch.zeros(snr_aux[:, -1, ld].shape) + torch.min(snr_aux[:,:,ld]) * 2.0
                     else:
                         gp = self.gpmodel_deepcopy(self.gpmodels[ld][reorder[m]])
@@ -1039,29 +1004,18 @@ class GPI_HDP():
             resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
 
             new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
-            # if reallocate_:
             q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_), self.weight_mean(q_lat_, snr_),
                                                   self.gpmodels, M, snr=snr_, prev=True)
-            # else:
-            #     q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_), self.gpmodels, self.M,
-            #                                           snr=snr_, prev=True)
-            #q_bas = torch.sum(q_[new_indexes, torch.where(resp[new_indexes] == 1.0)[1]])
             q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux), self.weight_mean(q_lat, snr_aux),
                                                         gpmodels_temp, M, snr=snr_aux, prev=True)
-            # q_bas_post_prev_snr, _ = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q), gpmodels_temp,M)
             update_snr = True
-            # if q_bas_post < q_bas_post_prev_snr:
-            #     q_bas_post = q_bas_post_prev_snr
-            #     update_snr = False
-            #     #q_bas_post = torch.sum(q[new_indexes, torch.where(resp_temp[new_indexes] == 1.0)[1]])
             print("Sum resp_temp: " + str(torch.sum(resp_temp, dim=0)))
             print("Q_bas: " + str(q_bas))
             print("Q_bas_post: " + str(q_bas_post))
             if q_bas < q_bas_post:
                 if not q_bas + elbo_bas < q_bas_post + elbo_post:
                     print("Possibly better but no.")
-            if q_bas + elbo_bas < q_bas_post + elbo_post and q_bas != q_bas_post:# + 5000/self.M:#and not torch.isclose(q_bas, q_bas_post, rtol=0.001):
-            #if q_bas < q_bas_post and q_bas != q_bas_post:
+            if q_bas + elbo_bas < q_bas_post + elbo_post and q_bas != q_bas_post:
                 print("Reallocating beats into existing groups.")
                 reallocate = True
                 self.gpmodels = gpmodels_temp
@@ -1073,7 +1027,6 @@ class GPI_HDP():
                 return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w_, reallocate
             else:
                 print("Not reallocating, trying to generate new group.")
-        #f_ind_new_potential = torch.argsort(self.weight_mean(q_)[torch.where(resp == 1.0)])
         f_ind_new_potential = torch.argsort(self.weight_mean(q_simple)[torch.where(resp == 1.0)])
         q_rank = self.weight_mean(q_)[torch.where(resp == 1.0)]
         potential_weight = torch.zeros(f_ind_new_potential.shape[0])
@@ -1084,7 +1037,6 @@ class GPI_HDP():
             potential_weight[ind] = torch.where(torch.isclose(q_rank, q_rank[ind], rtol=0.1))[0].shape[0]
             potential_q[ind] = torch.sum(q_rank[potential_ind[ind.item()]])
         n_steps = 15
-        #f_ind_new_potential_def = torch.zeros(n_steps * 2).long()
         f_ind_new_potential_def = torch.zeros(n_steps).long()
         last_indexes = torch.tensor([-1])
         j_ = 0
@@ -1106,46 +1058,11 @@ class GPI_HDP():
                         f_ind_new_potential_def[j_] = f_ind_new
                         j_ = j_ + 1
                         break
-
-        #f_ind_new_potential = torch.argsort(potential_weight)
+                        
         f_ind_new_potential = torch.argsort(potential_q)
-
-        # n_steps = n_steps * 2
-        # last_indexes = torch.tensor([-1])
-        # for j, f_ind_new in enumerate(f_ind_new_potential):
-        #     if j_ == n_steps:
-        #         break
-        #     m_chosen = -1
-        #     for m in range(M - 1):
-        #         if f_ind_new in indexes_[m]:
-        #             m_chosen = m
-        #             break
-        #     if m_chosen == -1:
-        #         m_chosen = torch.argmax(resp[f_ind_new])
-        #     f_ind_old_chosen = f_ind_old[m_chosen]
-        #     if f_ind_new != f_ind_old_chosen:
-        #         for l_ in last_indexes:
-        #             if not l_ in potential_ind[f_ind_new.item()]:
-        #                 last_indexes = potential_ind[f_ind_new.item()]
-        #                 f_ind_new_potential_def[j_] = f_ind_new
-        #                 j_ = j_ + 1
-        #                 break
         q_aux = torch.clone(q_simple)
-        # ord_ = torch.argsort(potential_q[f_ind_new_potential_def[:(n_steps // 2)]], descending=True)
-        # f_ind_new_potential_def[:(n_steps // 2)] = f_ind_new_potential_def[ord_]
         ord_ = torch.argsort(potential_q[f_ind_new_potential_def[:n_steps]], descending=True)
         f_ind_new_potential_def[:n_steps] = f_ind_new_potential_def[ord_]
-        #Security check to try to divide at least one of each model.
-        # mean_q_ = torch.zeros(M-1)
-        # for m in range(M-1):
-        #     mean_q_[m] = torch.mean(self.weight_mean(q_)[indexes_[m], m])
-        # m_potential = torch.argsort(mean_q_)[:5]
-        # for m in m_potential:
-        #     addition_ind = indexes_[m][torch.argmin(self.weight_mean(q_simple)[:,m][indexes_[m]])]
-        #     if not addition_ind in f_ind_new_potential[:n_steps]:
-        #         f_ind_new_potential = torch.concatenate([torch.tensor([addition_ind]), f_ind_new_potential])
-        #         n_steps = n_steps + 1
-        # m_chosen_potential = torch.argsort(mean_q_)
         step = 0
         last_indexes = torch.tensor([-1])
         for j, f_ind_new in enumerate(f_ind_new_potential_def):
@@ -1162,20 +1079,14 @@ class GPI_HDP():
             q_lat = torch.clone(q_lat_)
             snr_aux = torch.clone(snr_temp)
             f_ind_old_chosen = f_ind_old[m_chosen]
-            #f_ind_new = indexes_[m_chosen][ind_.long()]
-            #if f_ind_new != f_ind_old_chosen:
-            #    break
-            #
             ld_belong = torch.argmax(self.snr_norm[f_ind_new])
             if f_ind_new != f_ind_old_chosen:
-            #if torch.argmax(q[f_ind_new,:-1,ld_belong]) == m_chosen and f_ind_new != f_ind_old_chosen:
                 some_new_index = False
                 for l_ in last_indexes:
                     if not l_ in potential_ind[f_ind_new.item()]:
                         some_new_index = True
                 if some_new_index:
                     last_indexes = potential_ind[f_ind_new.item()]
-                    #if f_ind_new != f_ind_old_chosen:
                     print("Step "+str(step+1)+"/"+str(n_steps)+ "- Trying to divide: " + str(m_chosen) + " with beat " + str(f_ind_new.item()))
                     step = step + 1
                     for ld in range(self.n_outputs):
@@ -1196,28 +1107,7 @@ class GPI_HDP():
                     resp_temp = torch.exp(resplog_temp)
                     respPair_temp = torch.exp(respPairlog_temp)
                     resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
-
-                    #New approach only changing resp of the modified indexes
-                    # new_indexes = torch.where(resp_temp[:, -1].int() == 1)[0]
-                    # resp_temp_ = torch.clone(resp)
-                    # resp_temp_[new_indexes] = resp_temp[new_indexes]
-                    # resp_temp = resp_temp_
-
-                    #Due to assumption that model 1 is the bigger model, we must check if resp is going to generate a bigger cluster.
-                    # resp_per_group_temp = torch.sum(resp_temp, axis=0)
-                    # if resp_per_group_temp[m_chosen] < resp_per_group_temp[-1]:
-                    #     print("Bigger generated model than chosen to divide!")
-                    #     aux_resp = torch.clone(resp_temp[:,m_chosen])
-                    #     resp_temp[:,m_chosen] = resp_temp[:,-1]
-                    #     resp_temp[:,-1] = aux_resp
-                    #     resp_per_group_temp = torch.sum(resp_temp, axis=0)
-
-                    # y_trains_w = torch.clone(y_trains)
-                    # for ld in range(self.n_outputs):
-                    #     for j, y in enumerate(y_trains[:, :, ld]):
-                    #         m_ = torch.where(resp[j] == 1.0)[0].long()
-                    #         y_trains_w[j, :, ld] = self.compute_warp_y(x_trains[j], y, force_model=m_,
-                    #                                                    gpmodel=self.gpmodels[ld][m_], i=j)
+                    
                     while True:
                         #Reallocating resp to preserve order.
                         resp_per_group_temp = torch.sum(resp_temp, axis=0)
@@ -1231,6 +1121,7 @@ class GPI_HDP():
                             for m in range(M):
                                 if reorder[m] == M-1:
                                     gp = self.gpmodel_deepcopy(self.gpmodels[ld][m_chosen])
+                                    # If uncommented then new GP is used for a new model, more expensive but official model.
                                     #gp = self.create_gp_default(i=reorder[m])
                                     if gp.fitted:
                                         gp.reinit_LDS(save_last=False)
@@ -1268,16 +1159,6 @@ class GPI_HDP():
                         respPair_temp_ = torch.exp(respPairlog_temp)
                         resp_temp_, respPair_temp_ = self.refill_resp(resp_temp_, respPair_temp_)
 
-                        # for ld in range(self.n_outputs):
-                        #     for j in trange(y_trains.shape[0]):
-                        #         y = y_trains[j, :, [ld]]
-                        #         m_ = torch.where(resp_temp[j] == 1.0)[0].long()
-                        #         y_w, _, _ = self.compute_warp_y(x_trains[j], y, force_model=m_,
-                        #                                         gpmodel=self.gpmodels[ld][m_], i=j)
-                        #         y_trains_w[j, :, [ld]] = y_w[m_]
-                        #     for m, gp in enumerate(gpmodels_temp[ld]):
-                        #         q[:, m, ld] = gp.compute_sq_err_all(x_trains, y_trains_w[:, :, ld])
-
                         if torch.where(resp_temp == 1.0)[0].shape[0] == torch.where(resp_temp_ == 1.0)[0].shape[0]:
                             if torch.all(torch.where(resp_temp == 1.0)[0] == torch.where(resp_temp_ == 1.0)[0]):
                                 resp_temp = resp_temp_
@@ -1290,61 +1171,27 @@ class GPI_HDP():
                             resp_temp = resp_temp_
                             respPair_temp = respPair_temp_
 
-                    # resp_per_group_temp = torch.sum(resp_temp, axis=0)
-                    # reorder = torch.argsort(resp_per_group_temp, descending=True)
-                    # resp_temp = resp_temp[:, reorder]
-                    # for ld in range(self.n_outputs):
-                    #     for j, i in enumerate(reorder):
-                    #         gpmodels_temp[ld][j] = gpmodels_temp[ld][i]
-                    #     q[:,:,ld] = q[:, reorder, ld]
-                    #     snr_aux[:,:,ld] = snr_aux[:, reorder, ld]
-
-                    #Finally see if it is worthy to birth new cluster
-                    #This was using the full likelihood but sometimes a local improvement could mean a global worse q
-                    # if torch.mean(q_) == 0.0:
-                    #     q_bas = torch.sum(q[torch.where(resp.int() == 1)])
-                    # else:
-                    #     q_bas = torch.sum(q_[torch.where(resp.int() == 1)])
-                    # q_bas_post = torch.sum(q[torch.where(resp_temp.int() == 1)])
-                    #Now trying local computation of q
-                    #new_indexes = torch.where(resp_temp[:, -1].int() == 1)[0]
-                    #Now trying to compute q over all changing indexes
                     new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
                     q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_), self.weight_mean(q_lat_, snr_), self.gpmodels, self.M, snr=snr_, prev=True)
                     q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux), self.weight_mean(q_lat, snr_aux), gpmodels_temp, M, snr=snr_aux)
-                    #q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, q_, self.gpmodels, self.M, snr=snr_)
-                    #q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, q, gpmodels_temp, M, snr=snr_aux)
 
-                    #q_bas_post_prev_snr, _ = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q), gpmodels_temp, M)
                     update_snr = True
-                    # if q_bas_post < q_bas_post_prev_snr:
-                    #     q_bas_post = q_bas_post_prev_snr
-                    #     update_snr = False
-                    #q_bas_post = torch.sum(q[new_indexes, torch.where(resp_temp[new_indexes] == 1.0)[1]])
-                    #print(torch.trace(gpmodels_temp[0][0].Sigma[-1]))
+
                     print("Sum resp_temp: "+str(torch.sum(resp_temp,dim=0)))
                     print("Q_bas: " + str(q_bas))
                     print("Q_bas_post: " + str(q_bas_post))
-                    #print("Where middle resp:" + str(torch.where((resp_temp > 0.8) & (resp_temp < 1.0))))
                     if q_bas < q_bas_post:
                         if not q_bas + elbo_bas < q_bas_post + elbo_post:
                             print("Possibly better but no.")
-                    if q_bas + elbo_bas < q_bas_post + elbo_post:# + 5000/self.M:#and not torch.isclose(q_bas, q_bas_post, rtol=0.001):
+                    if q_bas + elbo_bas < q_bas_post + elbo_post:
                         print("Chosen to divide: "+str(m_chosen)+" with beat "+str(f_ind_new.item()))
                         self.gpmodels = gpmodels_temp
                         pos_new = torch.where(reorder == M - 1)[0].long()
                         indexes = torch.where(resp_temp[:, pos_new] == 1.0)[0]
                         if len(indexes) > 0:
                             f_ind_old[-1] = indexes[torch.argmax(self.weight_mean(q, snr_aux)[indexes, pos_new]).long()]
-                            #f_ind_old[-1] = indexes[0]
                         else:
                             f_ind_old[-1] = f_ind_new
-                        # for m_, m in enumerate(reorder):
-                        #     indexes = torch.where(resp_temp[:, m] == 1.0)[0]
-                        #     if len(indexes) > 0:
-                        #         f_ind_old[m_] = indexes[torch.argmax(self.weight_mean(q, snr_aux)[indexes, m]).long()]
-                        #     else:
-                        #         f_ind_old[m_] = self.f_ind_old[m_]
                         self.f_ind_old = torch.clone(f_ind_old[reorder])
                         if update_snr:
                             self.snr_norm = self.normalize_snr(snr_aux)
@@ -1356,27 +1203,17 @@ class GPI_HDP():
 
 
     def compute_q_elbo(self, resp, respPair, q, q_lat, gpmodels, M, new_indexes=None, snr=None, prev=False):
-        #new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
-        # q_bas = torch.sum(q_[new_indexes, m_chosen])
-        #q_bas = torch.mean(q[torch.where(resp.int() == 1.0)])
-        #indexes_sum = torch.where((self.snr_norm > 0.5) & (resp.int() == 1.0))
-        #q_bas = torch.sum(q[indexes_sum])
+        """ Method to compute ELBO terms.
+        """
         q_bas = torch.sum(q[torch.where(resp.int() > 0.99)])
-        #q_bas = torch.median(q[torch.where(resp.int() == 1.0)]) * q.shape[0]
-        # q_bas = torch.sum(q_[new_indexes, torch.where(resp[new_indexes] == 1.0)[1]])
-        # q_bas_post = torch.sum(q[new_indexes, torch.where(resp_temp[new_indexes] == 1.0)[1]])
-
-        # q_bas_post = torch.sum(q[torch.where(resp_temp.int() == 1.0)])
-        # q_bas_post = torch.sum(q[new_indexes, torch.where(resp_temp[new_indexes] == 1.0)[1]])
         elbo_latent = torch.sum(q_lat)
         if prev:
             if torch.sum(resp, dim=0)[-1] < 1.0 and self.M > 1:
-                elbo_bas = self.elbo_Linears(resp, respPair, prev=prev)#/ self.n_outputs# / q.shape[0]
+                elbo_bas = self.elbo_Linears(resp, respPair, prev=prev)
             else:
                 elbo_bas = self.elbo_Linears(resp, respPair)
         else:
-            elbo_bas = self.elbo_Linears(resp, respPair)# / self.n_outputs #/ self.M# / new_indexes.shape[0]
-        #elbo_bas = 0
+            elbo_bas = self.elbo_Linears(resp, respPair)
         elbo_bas_LDS = 0
         if snr is None:
             frac = torch.ones(self.n_outputs, device=resp.device()) / self.n_outputs#  / self.M
@@ -1394,60 +1231,39 @@ class GPI_HDP():
 
 
     def full_LDS_elbo(self, gpmodels, sum_resp):
+        """ Method to accumulate LDS ELBO terms.
+        """
         elb = torch.zeros(1)
         M_ = 0
         for i in sum_resp:
             if i > 0:
                 M_ = M_ + 1
-        #n_samp = torch.sum(sum_resp)
-        #frac = sum_resp / n_samp
         for i, gp in enumerate(gpmodels):
             if sum_resp[i] > 0:
                 if sum_resp[i] == 1.0:
                     elb = elb + gp.return_LDS_param_likelihood(first=True)# * frac[i]
                 else:
                     elb = elb + gp.return_LDS_param_likelihood()# * frac[i]
-        return elb / M_# * n_samp# / M_
-        # for i in range(self.M):
-        #     if sum_resp[i] > 0:
-        #         elb = elb + gpmodels[i].return_LDS_param_likelihood()
-        # return elb
-        #return elb / self.M
+        return elb / M_
 
     def redefine_default(self, x_trains, y_trains, resp):
+        """ Method to compute Sigma and Gamma from a batch of examples and assign it to initial values.
+        """
         print("Redefining default LDS priors.")
-        # gp = self.gpmodels[0][0]
-        # q__, _ = gp.full_pass_weighted(x_trains, y_trains[:, :, [0]], resp[:, 0], snr=self.snr_norm[:, 0])
-        # f_ind = torch.argmax(q__)
-        # gp = self.create_gp_default()
-        # gp.include_weighted_sample(0, x_trains[f_ind], x_trains[f_ind], y_trains[f_ind, :, [0]], h=1.0)
-        # q__ = gp.compute_sq_err_all(x_trains, y_trains[:, :, [0]])
-        # n_samp = int(y_trains.shape[0]*0.4)
-        # selected_beats = torch.sort(torch.argsort(q__, descending=True)[:n_samp])[0]
-        # #selected_beats_ = torch.sort(torch.argsort(q__, descending=True)[1:n_samp+1])[0]
         if self.estimation_limit_def is None:
             n_f = y_trains.shape[0] - 1
         else:
             n_f = min(self.estimation_limit_def, y_trains.shape[0] - 1) if (
                 self.estimation_limit != np.PINF) else y_trains.shape[0] - 1
-        # samples_sub = y_trains[selected_beats][:, :, 0].T
-        # # samples_ = y_trains[selected_beats_][:, :, 0].T
         samples = y_trains[:n_f][:, :, 0].T
         samples_ = y_trains[1:n_f+1][:, :, 0].T
         var_y_y = torch.sqrt(torch.mean(torch.diag(torch.linalg.multi_dot([(samples - torch.mean(samples, dim=1)[:,np.newaxis]), (samples - torch.mean(samples, dim=1)[:,np.newaxis]).T])) / n_f))# * 0.15
         var_y_y_ = torch.sqrt(torch.mean(torch.diag(torch.linalg.multi_dot([(samples_ - samples), (samples_ - samples).T])) / n_f))# * 0.15
-        #ini_Sigma = torch.mean(torch.diag(torch.linalg.multi_dot([samples_sub, samples_sub.T])) / n_samp) * 0.1
-        #ini_Gamma = torch.mean(torch.diag(torch.linalg.multi_dot([samples, samples_.T])) / n_f) * 0.1
         kernel, ini_sigma, ini_gamma, ini_outputscale, bound_sigma, bound_gamma, bound_noise_warp, annealing, method_compute_warp, \
             model_type, recursive_warp, warp_updating, inducing_points, estimation_limit = self.get_default_options()
-        #ini_Sigma = (ini_Sigma + ini_Sigma ) / 2.0
-        #ini_Gamma = (ini_Gamma + ini_Gamma ) / 2.0
         ini_Sigma = var_y_y * 1.0
-        #ini_Gamma = self.cond_to_torch(np.min([var_y_y_, 1.5 * var_y_y]) * 1.0)
         ini_Gamma = torch.max([var_y_y_,var_y_y]).item() * 1.0
         print("-----------Reestimated -----------", flush=True)
-        # print("Sigma: ", torch.mean(torch.diag(ini_Sigma)))
-        # print("Gamma: ", torch.mean(torch.diag(ini_Gamma)))
         print("Sigma: ", ini_Sigma)
         print("Gamma: ", ini_Gamma)
         print("-----------------------------", flush=True)
@@ -1457,40 +1273,6 @@ class GPI_HDP():
         for ld in range(self.n_outputs):
             for m in range(len(self.gpmodels[ld])):
                 self.gpmodels[ld][m] = self.create_gp_default()
-
-    # def redefine_default(self, x_trains, y_trains, resp):
-    #     print("Redefining default LDS priors.")
-    #     gp = self.gpmodels[0][0]
-    #     q__ = gp.full_pass_weighted(x_trains, y_trains[:, :, [0]], resp[:, 0], snr=self.snr_norm[:, 0])
-    #     f_ind = torch.argmax(q__)
-    #     gp = self.create_gp_default()
-    #     gp.include_weighted_sample(0, x_trains[f_ind], x_trains[f_ind], y_trains[f_ind, :, [0]], h=1.0)
-    #     q__ = gp.compute_sq_err_all(x_trains, y_trains[:, :, [0]])
-    #     n_samp = int(y_trains.shape[0]*0.4)
-    #     selected_beats = torch.argsort(q__, descending=True)[:n_samp]
-    #     resp_red = torch.zeros(resp.shape)
-    #     resp_red[selected_beats,0] = torch.ones(n_samp)
-    #     gp = self.create_gp_default()
-    #     gp.full_pass_weighted(x_trains, y_trains[:, :, [0]], resp_red[:, 0], snr=self.snr_norm[:, 0])
-    #     kernel, ini_sigma, ini_gamma, ini_outputscale, bound_sigma, bound_gamma, bound_noise_warp, annealing, method_compute_warp, \
-    #         model_type, recursive_warp, warp_updating, inducing_points, estimation_limit = self.get_default_options()
-    #     ind_ = -1
-    #     id = torch.eye(gp.A[0].shape[0], device=gp.device)
-    #     #noise = (torch.mean(torch.diag(gp.Sigma[ind_])) + torch.mean(torch.diag(gp.Gamma[ind_]))) / 2.0
-    #     diag_gamma = torch.mul(torch.mean(torch.diag(gp.Gamma[ind_])), id)
-    #     diag_sigma = torch.mul(torch.mean(torch.diag(gp.Sigma[ind_])), id)
-    #     ini_A, ini_Gamma, ini_C, ini_Sigma = (gp.A[0], (gp.Gamma[0] * 0.5 + diag_gamma * 0.5),
-    #                                           gp.C[0], (gp.Sigma[0] * 0.5 + diag_sigma * 0.5))
-    #     # ini_A, ini_Gamma, ini_C, ini_Sigma = (gp.A[0], torch.mul(noise, id),
-    #     #                                       gp.C[0], torch.mul(noise, id))
-    #     print("-----------Reestimated -----------", flush=True)
-    #     print("Sigma: ", torch.mean(torch.diag(ini_Sigma)))
-    #     print("Gamma: ", torch.mean(torch.diag(ini_Gamma)))
-    #     print("-----------------------------", flush=True)
-    #     self.set_default_options(kernel, ini_Sigma, ini_Gamma, ini_outputscale, bound_sigma, bound_gamma,
-    #                         bound_noise_warp, annealing, method_compute_warp,
-    #                         model_type, recursive_warp, warp_updating, inducing_points, estimation_limit)
-
 
     def include_sample(self, x_train, y, with_warp=True, force_model=None, minibatch=0, classify=False):
         """
@@ -1533,35 +1315,27 @@ class GPI_HDP():
                     for m in range(M + 1):
                         #TODO: here incorporate n_outputs dimension to y to allow the iteration over the rest of the model.
                         y_mod[m].append(self.cond_cuda(y_w[m]))
-                        # y_mod[m].append(self.cond_cuda(y))
                     self.y_w.append(y_w)
                     self.x_w.append(x_w)
-                    # self.x_warped.append(x_w.copy())
-                    # for m in range(M + 1):
-                    #     self.x_warped[-1][m] = self.x_warped[-1][m] + self.x_train[-1]
                     self.liks.append(liks)
             else:
                 for m in range(M + 1):
                     y_mod[m].append(self.cond_cuda(y))
                 self.y_w.append([self.cond_cuda(y)] * (M + 1))
                 self.x_w.append([self.cond_cuda(torch.atleast_2d(torch.zeros(y.shape[0])).T)] * (M + 1))
-                # self.x_warped.append([self.x_train[-1]] * (M + 1))
                 self.liks.append(liks)
         else:
             for m in range(M + 1):
                 y_mod[m].append(self.cond_cuda(y))
-        #y_mod = self.cond_to_torch(self.cond_to_numpy(y_mod))
 
         elbo = np.NINF
         while True:
-            # resplog, respPairlog = self.variational_local_terms(self.x_warped, y_mod, self.transTheta, self.startTheta, liks)
             if t > 0 and not classify:
                 resplog, respPairlog = self.variational_local_terms(x_train, y_mod, self.transTheta, self.startTheta, liks)
                 resp = torch.exp(resplog)
                 respPair = torch.exp(respPairlog)
                 if self.hmm_switch:
                     startStateCount = self.cond_cuda(resp[0])
-                    # transStateCount = self.cond_cuda(respPair)
                     transStateCount = self.cond_cuda(torch.sum(respPair, axis=0))
                 else:
                     transStateCount = self.cond_cuda(torch.ones((M + 1, M + 1)))  # Cause we are in independent observations
@@ -1655,18 +1429,14 @@ class GPI_HDP():
             self.M = self.M + 1
             M = M + 1
             y_mod.append(self.y.copy())
-            # for x in self.x_warped:
-            #     x.append(self.x_train[-1])
             for ld in range(self.n_outputs):
                 self.gpmodels[ld].append(self.create_gp_default())
             self.x_basis.append(self.x_basis_ini)
             self.reinit_global_params(self.M, transStateCount, startStateCount)
             self.rho, self.omega = self.find_optimum_rhoOmega()
             self.transTheta, self.startTheta = self._calcThetaFull(transStateCount[:M, :M], startStateCount[:M])
-            # liks.append(0.0)
             liks = np.append(liks, liks[-1] - 100.0)
             resp, respPair = self.variational_local_terms(x_train, y_mod, self.transTheta, self.startTheta, liks)
-            # resp, respPair = self.variational_local_terms(self.x_warped, y_mod, self.transTheta, self.startTheta, liks)
             resp = torch.exp(resp)
             respPair = torch.exp(respPair)
             resp[-1][:] = 0.0
@@ -1676,8 +1446,6 @@ class GPI_HDP():
             if self.hmm_switch:
                 startStateCount = self.cond_cuda(resp[0])
                 transStateCount = self.cond_cuda(torch.sum(respPair, axis=0))
-                # transStateCount[self.actual_state][-1] = 0.0
-                # transStateCount[self.actual_state][-2] = 1.0
                 self.transTheta, self.startTheta = self._calcThetaFull(transStateCount[:M, :M], startStateCount[:M])
                 nIters = 4
                 for giter in range(nIters):
@@ -1688,18 +1456,13 @@ class GPI_HDP():
             resp_mod[:] = 0.0
             resp_mod[-2] = 1.0
 
-
-            # resp_mod = self.normalize_log(resp_mod)
-
         # Assign and update GP model
-
         self.actual_state = model
         print("Main model chosen:", model + 1)
         if minibatch == 0:
             minibatch = None
         for ld in range(self.n_outputs):
             for m in range(M + 1):
-                # new_x_basis = self.gpmodels[m].include_weighted_sample(t, self.x_train[-1], self.x_warped[-1][m], y_mod[m][-1], resp_mod[m])
                 new_x_basis = self.gpmodels[ld][m].include_weighted_sample(t, self.x_train[-1], self.x_train[-1], y_mod[m][-1], resp_mod[m])
                 self.x_basis[m] = self.cond_cuda(self.cond_to_torch(new_x_basis.detach()))
                 if self.bayesian_params:
@@ -1713,14 +1476,13 @@ class GPI_HDP():
         for ld in range(self.n_outputs):
             q_[:,:,ld] = self.compute_q(y=y_mod, gpmodels=self.gpmodels[ld], ld=ld)
         self.q.append(q_)
-        #self.q.append(self.compute_q(y=y_mod))
-        # if not birth and self.T < 30:
-        #     self.update_initial_sigma(model)
         for ld in range(self.n_outputs):
             if len(self.gpmodels[ld][model].indexes) > 1 and self.warp_updating[model] and with_warp:
                 self.wp_sys[ld][model].update_warp(x_train, self.x_w[-1][model])
 
     def update_initial_sigma(self, model):
+        """ Method to iteratively update initial sigma (not works so well)
+        """
         gp = self.gpmodels[model]
         estimator = (torch.mean(torch.diag(gp.Sigma[-1])) + torch.mean(torch.diag(gp.Gamma[-1]))) \
                     * self.ini_sigma_def/torch.mean(torch.diag(gp.Sigma[-1]))
@@ -1730,6 +1492,8 @@ class GPI_HDP():
 
     def calcELBO_LinearTerms(self, rho, omega, alpha, startAlpha, kappa, gamma, transTheta, startTheta, startStateCount,
                              transStateCount):
+        """ Method to compute HPD linear terms.
+        """
         Ltop = self.L_top(rho=rho, omega=omega, alpha=alpha, startAlpha=startAlpha, kappa=kappa, gamma=gamma)
         LdiffcDir = - self.c_Dir(transTheta) - self.c_Dir(startTheta)
         K = rho.size
@@ -1749,6 +1513,8 @@ class GPI_HDP():
         return Ltop + LdiffcDir + LstartSlack + LtransSlack
 
     def calcELBO_NonlinearTerms(self, resp, respPair):
+        """ Method to compute H[q].
+        """
         Htable = self.calc_Htable(respPair)
         Hstart = self.calc_Hstart(resp)
         Lentropy = Htable.sum() + Hstart.sum()
@@ -1847,10 +1613,6 @@ class GPI_HDP():
             initRho = self.cond_to_numpy(self.cond_cpu(rho))
         else:
             if hasattr(self, 'rho'):
-                # if self.rho.size == self.M:
-                #     initRho = self.cond_to_numpy(self.cond_cpu(self.rho))
-                # elif self.rho.size()[0] == self.M:
-                #     initRho = self.cond_to_numpy(self.cond_cpu(self.rho))
                 initRho = self.cond_to_numpy(self.cond_cpu(self.rho))
             else:
                 initRho = None
@@ -1858,10 +1620,6 @@ class GPI_HDP():
             initOmega = self.cond_to_numpy(self.cond_cpu(omega))
         else:
             if hasattr(self, 'omega'):
-                # if self.omega.size == self.M:
-                #     initOmega = self.cond_to_numpy(self.cond_cpu(self.omega))
-                # elif self.omega.size()[0] == self.M:
-                #     initOmega = self.cond_to_numpy(self.cond_cpu(self.omega))
                 initOmega = self.cond_to_numpy(self.cond_cpu(self.omega))
             else:
                 initOmega = None
@@ -1920,33 +1678,22 @@ class GPI_HDP():
                 else:
                     y_ = y
                 mean_, cov_, C_, Sigma_ = gpmodels[ld][m].smoother_weighted(x_train, y_, 1.0)
-                #q_new[:, m, ld] = self.log_sq_error(x_trains[index], y_trains[index], i=ind, first=True)
                 mean.append(mean_)
                 cov.append(cov_)
                 C.append(C_)
                 Sigma.append(Sigma_)
-                # C.append(C_)
-                # Sigma.append(cov_)
-                #cov[m][-1] = torch.linalg.multi_dot([C[m][-1], gpmodels[ld][m].Gamma[-1], C[m][-1].T])
-                #q_lat_new[m, ld] = gpmodels[ld][m].compute_q_lat_all(gpmodels[ld][m].x_train)
             q_new[:,:,ld] = self.compute_q(x_train, y=y, gpmodels=gpmodels[ld], mean=mean,
                                    cov=cov, C=C, Sigma=Sigma, ld=ld)
-
-        # if not liks is None:
-        #     q_new[-1] = q_new[-1] + liks
-        # alpha = self.forward(pi, trans_A, q_new)
-        # beta = self.backward(trans_A, q_new)
-        # h_new = np.ravel(self.compute_h(alpha, beta, -1))
         return q_new
 
     def estimate_q_all(self, M, x_trains, y_trains, y_trains_w, resp, respPair, q_, q_lat_, snr_, startPi, transPi, reparam=False):
+        """ Internal method to converge the ELBO using the actual assignation of the examples.
+        """
         q = torch.zeros((len(x_trains), M, self.n_outputs), device=self.device) + torch.min(q_) * 2.0
         q_lat = torch.zeros((M, self.n_outputs), device=self.device)# + torch.min(q_lat_) * 2.0
-        #snr_aux = torch.zeros((len(x_trains), M, self.n_outputs), device=self.device)
         snr_aux = torch.clone(snr_)
         resp_per_group_temp = torch.sum(resp, axis=0)
         reorder = torch.argsort(resp_per_group_temp, descending=True)
-        #resp = resp[:, reorder]
         resp_temp = torch.clone(resp[:, reorder])
         q__ = None
         indexes_ = [[] for _ in range(self.n_outputs)]
@@ -1959,7 +1706,6 @@ class GPI_HDP():
                 if len(self.gpmodels[ld]) > reorder[m]:
                     gp = self.gpmodel_deepcopy(self.gpmodels[ld][reorder[m]])
                     gp_indexes = torch.tensor(gp.indexes, device=indexes_[ld][m].device).int()
-                    #print("Model "+str(m) +" indexes: "+ str(gp_indexes))
                     if not torch.equal(indexes_[ld][m], gp_indexes):
                         if gp.fitted:
                             if reparam:
@@ -2005,16 +1751,9 @@ class GPI_HDP():
         # Finally see if it is worthy to birth new cluster
         new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
         q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_), self.weight_mean(q_lat_, snr_), self.gpmodels, self.M, snr=snr_)
-        #q_bas = torch.sum(q_[new_indexes, torch.where(resp[new_indexes] == 1.0)[1]])
         q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux), self.weight_mean(q_lat, snr_aux), gpmodels_temp, M, snr=snr_aux)
-        #q_bas_post_prev_snr, _ = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q), gpmodels_temp, M)
         update_snr = False
-        # if q_bas_post < q_bas_post_prev_snr:
-        #     q_bas_post = q_bas_post_prev_snr
-        #     update_snr = False
-        #q_bas_post = torch.sum(q[new_indexes, torch.where(resp_temp[new_indexes] == 1.0)[1]])
-        if q_bas + elbo_bas < q_bas_post + elbo_post:#and not torch.isclose(q_bas, q_bas_post, rtol=0.001):
-        #if q_bas < q_bas_post:
+        if q_bas + elbo_bas < q_bas_post + elbo_post
             self.gpmodels = gpmodels_temp
             if reorder.shape[0] == self.f_ind_old.shape[0]:
                 self.f_ind_old = self.f_ind_old[reorder]
@@ -2029,7 +1768,7 @@ class GPI_HDP():
 
     def compute_warp_y(self, x_train, y, strategie='standard', force_model=None, gpmodel=None, i=None, ld=0):
         """
-        Computation of warps following some strategie and functions proposed on warp_models
+        Computation of warps following some strategies and functions proposed on warp_models
 
         Parameters
         ----------
@@ -2056,18 +1795,12 @@ class GPI_HDP():
         y_w = [self.cond_cuda(self.cond_to_torch(y))] * M
         base = self.wp_sys[ld][-1].warp_gp.log_sq_error(x_train, self.cond_cuda(self.cond_to_torch(x_w[-1]))).item()
         liks = [base] * M
-        # q_C = self.compute_q(self.x_w, self.cond_cuda(y), gpmodels=self.gpmodels)
-        # q_C = self.compute_q(self.x_train[-1], self.cond_cuda(y), gpmodels=self.gpmodels)
         if strategie=='greedy' or strategie=='greedy_bound':
             q_C = self.estimate_new(gpmodels=self.gpmodels, x_train=self.x_train[-1], y=y)[-1,:,ld]
-        # q_wC = self.compute_q(x_train, self.cond_cuda(y), gpmodels=self.gpmodels,
-        #                       C=[[self.cond_cuda(self.cond_to_torch(np.eye(self.x_basis[-1].shape[0])))] * self.T] * M)
         def trans_noise(noise):
             if torch.mean(noise) > 1.0:
-                #noise = torch.sqrt(noise)
                 noise = noise
             else:
-                #noise = noise * 0.1
                 noise = noise
             if self.model_type[m] == 'static':
                 noise = noise * 0.5
@@ -2084,17 +1817,10 @@ class GPI_HDP():
             if len(model.indexes) != 0:
                 if self.verbose and False:
                     print("Warp respect model: ", m + 1)
-                # if q_C[m] >= q_wC[m]:
-                #     # mean = torch.matmul(model.C[-1], model.f_star_sm[-1])
-                #     mean = model.resample_last(x_train)
-                # else:
                 if i is None:
                     mean, cov = model.observe_last(x_train)
                 else:
                     mean, cov = model.observe(x_train, t=i)
-                # GOOD ONE
-                # mean, cov = model.resample_latent_mean(x_train)
-                # noise = torch.sqrt(torch.diag(cov))
                 noise = torch.diag(cov)
                 noise = trans_noise(noise)
                 x_, y_, lik_, loss_ = wp_sys_.compute_warp(self.cond_detach(x_train), self.cond_detach(y),
@@ -2103,15 +1829,11 @@ class GPI_HDP():
                                                            noise=noise,
                                                            visualize=False, verbose=False,
                                                            train_iter=150)
-                # lik_ = lik_.item()
                 y_w[m] = y_
                 x_w[m] = x_
                 liks[m] = lik_ + self.wp_sys[ld][-1].warp_gp.log_sq_error(x_train,
                                                                       self.cond_cuda(self.cond_to_torch(x_))).item()
             else:
-                # liks[m] = self.wp_sys[-1].warp_gp.log_sq_error(x_train,
-                #                                                self.cond_cuda(
-                #                                                    self.cond_to_torch(x_w[m]))).item() + base
                 liks[m] = base
         elif strategie == 'standard':
             for m in range(M):
@@ -2119,13 +1841,7 @@ class GPI_HDP():
                 wp_sys_ = self.wp_sys[ld][m]
                 if len(model.indexes) != 0:
                     print("Warp respect model: ", m + 1)
-                    # if q_C[m] >= q_wC[m]:
-                    #     mean = model.resample_last(x_train)
-                    # else:
                     mean, cov = model.observe_last(x_train)
-                    # GOOD ONE
-                    # mean, cov = model.resample_latent_mean(x_train)
-                    # noise = torch.sqrt(torch.diag(cov))
                     noise = torch.diag(cov)
                     noise = trans_noise(noise)
                     x_, y_, lik_, loss_ = wp_sys_.compute_warp(self.cond_detach(x_train), self.cond_detach(y),
@@ -2133,15 +1849,11 @@ class GPI_HDP():
                                                            model.gp.kernel.get_params()["k1__k2__length_scale"],
                                                            noise=noise, visualize=False, verbose=self.verbose,
                                                            train_iter=150)
-                    # lik_ = lik_.item()
                     y_w[m] = y_
                     x_w[m] = x_
                     liks[m] = lik_ + self.wp_sys[ld][-1].warp_gp.log_sq_error(x_train,
                                                                           self.cond_cuda(self.cond_to_torch(x_))).item()
                 else:
-                    # liks[m] = self.wp_sys[-1].warp_gp.log_sq_error(x_train,
-                    #                                                self.cond_cuda(
-                    #                                                    self.cond_to_torch(x_w[m]))).item() + base
                     liks[m] = base
         elif strategie == 'greedy_bound':
             order_C = np.argsort(-q_C)
@@ -2152,8 +1864,6 @@ class GPI_HDP():
                 if len(model.indexes) != 0:
                     print("Warp respect model: ", m + 1)
                     mean, cov = model.observe_last(x_train)
-                    # GOOD ONE
-                    # mean, cov = model.resample_latent_mean(x_train)
                     noise = torch.diag(cov)
                     noise = trans_noise(noise)
                     x_, y_, lik_, loss_ = wp_sys_.compute_warp(self.cond_detach(x_train), self.cond_detach(y),
@@ -2161,7 +1871,6 @@ class GPI_HDP():
                                                                model.gp.kernel.get_params()["k1__k2__length_scale"],
                                                                noise=noise, visualize=False, verbose=self.verbose,
                                                                train_iter=150)
-                    # lik_ = lik_.item()
                     y_w[m] = y_
                     x_w[m] = x_
                     # Normalize over log_sq from 0 knowledge model
@@ -2181,16 +1890,9 @@ class GPI_HDP():
                 wp_sys_ = self.wp_sys[ld][m]
                 if len(model.indexes) != 0:
                     print("Warp respect model: ", m + 1)
-                    # if q_C[m] >= q_wC[m]:
-                    #     mean = model.resample_last(x_train)
-                    # else:
                     mean, cov = model.observe_last(x_train)
-                    #GOOD ONE
-                    # mean, cov = model.resample_latent_mean(x_train)
-                    # noise = torch.sqrt(torch.diag(cov))
                     noise = torch.diag(cov)
                     noise = trans_noise(noise)
-                    #noise = model.gp.kernel.get_params()["k2__noise_level"]
                     x_, y_, lik_, loss_ = wp_sys_.compute_warp(self.cond_detach(x_train), self.cond_detach(y),
                                                            self.cond_detach(mean),
                                                            model.gp.kernel.get_params()["k1__k2__length_scale"],
@@ -2198,21 +1900,6 @@ class GPI_HDP():
                                                            visualize=False, verbose=self.verbose,
                                                            train_iter=150)
 
-                    # x_, y_, lik_, loss_ = wp_sys_.compute_warp(self.cond_detach(x_train), self.cond_detach(mean),
-                    #                                            self.cond_detach(y),
-                    #                                            model.gp.kernel.get_params()["k1__k2__length_scale"],
-                    #                                            noise=noise,
-                    #                                            visualize=False, verbose=self.verbose,
-                    #                                            train_iter=150)
-                    # y_, y_cov = model.gp.project_y(x_train, y, model.C[-1], model.Sigma[-1])
-                    # noise = np.sqrt(np.diag(y_cov))
-                    # x_, y_, lik_, loss_ = wp_sys_.compute_warp(self.cond_detach(model.x_basis), self.cond_detach(y_),
-                    #                                            self.cond_detach(model.f_star[-1]),
-                    #                                            model.gp.kernel.get_params()["k1__k2__length_scale"],
-                    #                                            noise=noise,
-                    #                                            visualize=False, verbose=self.verbose,
-                    #                                            train_iter=150)
-                    # lik_ = lik_.item()
                     y_w[m] = y_
                     x_w[m] = x_
                     # Normalize over log_sq from 0 knowledge model
@@ -2220,8 +1907,6 @@ class GPI_HDP():
                     liks[m] = lik_ + basis_lik
                     liks_ = np.array(liks[m]) * 0.5
                     if i < len(order_C) - 1 and i < 8:
-                        # print("coef q + warping: ", (q_C[m] + liks[m] - q_C[order_C[i + 1]]) / (q_C[m] - q_C[order_C[i + 1]]), 0.80 / (
-                        #                             np.log(len(model.indexes) + 1)))
                         first = order_C[0]
                         if ((q_C[m] + liks_ - q_C[order_C[i + 1]]) / (q_C[m] - q_C[order_C[i + 1]]) > 0.3 / (
                                 np.log(max(model.N, 1) + 1))) or i == 5:
@@ -2229,9 +1914,6 @@ class GPI_HDP():
                     else:
                         break
                 else:
-                    # liks[m] = self.wp_sys[-1].warp_gp.log_sq_error(x_train,
-                    #                                                self.cond_cuda(
-                    #                                                    self.cond_to_torch(x_w[m]))).item() + base
                     liks[m] = base
                     print("Warp respect zero-knowledge model:", m + 1)
                     print("----Warping computed----")
@@ -2240,6 +1922,7 @@ class GPI_HDP():
             print('Only two strategies implemented: standard and greedy')
         return y_w, x_w, liks
 
+    # Now methods to compute the forward and backward iterations for the state-space model of the switching variable.
     def forward(self, pi=None, trans_A=None, q=None):
         """
         Forward-pass messages to compute alphas.
@@ -2263,70 +1946,31 @@ class GPI_HDP():
             trans_A = self.trans_A
         if q is None:
             q = self.q[-1]
-        # pi = torch.atleast_2d(self.cond_cuda(self.cond_to_torch(pi))).T
         pi = np.atleast_2d(self.cond_to_numpy(pi)).T
-        # trans_A = self.cond_cuda(self.cond_to_torch(trans_A))
         trans_A = self.cond_to_numpy(trans_A)
         q = self.cond_cuda(self.cond_to_torch(q))
         T = len(q)
         M = self.M
-        # alpha = self.cond_cuda(self.cond_to_torch(np.matrix([[1e-100] * M] * T)))
-        # # Initial case
-        # alpha[0] = pi + q[0]
-        # for t in range(1, T):
-        #     for j in range(M):
-        #         aux = self.cond_cuda(self.cond_to_torch(-200.0))
-        #         for i in range(M):
-        #             if i == M - 1:
-        #                 tr = np.log(1.0 / M)
-        #                 aux = torch.logaddexp(aux, alpha[t - 1, i] + tr)
-        #             else:
-        #                 aux = torch.logaddexp(aux, alpha[t - 1, i] + trans_A[i, j])
-        #             # aux = torch.logaddexp(aux, alpha[t - 1, i] + trans_A[i, j])
-        #         alpha[t, j] = aux + q[t][j]
-        # margprob = self.cond_cuda(self.cond_to_torch(np.array([1e-100] * T)))
-        # for t in range(T):
-        #     den = self.cond_cuda(self.cond_to_torch(-200.0))
-        #     for j in range(M):
-        #         den = torch.logaddexp(den, alpha[t, j])
-        #     alpha[t] = alpha[t] - den
-        #     margprob[t] = den
-        # trans_A = trans_A.numpy()
         T = q.shape[0]
         K = M + 1
-        # PiTMat = torch.empty((K, K), device=self.device)
         PiTMat = self.cond_cuda(self.cond_to_torch(np.array([[1/K] * K] * K)))
         fmsg = torch.zeros((T, K), device=self.device)
         margPrObs = torch.zeros(T, device=self.device)
-        # pi, _ = self.LogLik(pi, axis=0)
         pi_ = self.cond_cuda(self.cond_to_torch(pi.T[0]))
         pi_ = torch.exp(pi_)
-        # trans_A, _ = self.LogLik(trans_A, axis=1)
         trans_A = self.cond_cuda(self.cond_to_torch(trans_A))
-        #PiTMat[:, :-1] = torch.exp(trans_A.T)
         PiTMat = torch.exp(trans_A.T)
-        #PiTMat[:, :-1] = trans_A.T
-        # PiTMat[-1, :] = torch.ones(K, device=self.device) * 1/K
-        # fmsg = torch.exp(fmsg)
-        # q_ = torch.exp(q - torch.max(q, dim=1)[0])
         q_ = q
         def safe_exp(x):
             return torch.exp(torch.sub(x, torch.atleast_2d(torch.max(x, axis=1)[0]).T))
-        #q_ = safe_exp(q_)
-        #Ensure stability of the computation (add a deprecable low prob)
-        # pi_[pi_ == 0] = 1e-5
-        # q_[q_ == 0] = 1e-30
         q_ = safe_exp(q_)
         PiTMat[PiTMat < 1e-6] += 1e-4
         pi_[pi_ < 1e-10] += 1e-4
         for t in range(0, T):
             if t == 0:
-                #fmsg[t] = safe_exp(torch.log(pi_) + q_[0])
                 fmsg[t] = pi_ * q_[0]
             else:
                 fmsg[t] = torch.matmul(PiTMat, fmsg[t - 1]) * q_[t]
-                #fmsg[t] = safe_exp(torch.log(torch.matmul(PiTMat, fmsg[t - 1])) + q_[t])
-                # fmsg[t] = torch.log(torch.sum(torch.exp(PiTMat + fmsg[t - 1].repeat(K,1)), dim=0))
             margPrObs[t] = torch.sum(fmsg[t])
             fmsg[t] /= margPrObs[t]
             if margPrObs[t] == 0.0:
@@ -2336,7 +1980,6 @@ class GPI_HDP():
             return None, None
         if torch.argmax(fmsg[-1]) != torch.argmax(q[-1]):
             print("Miss")
-        #return torch.log(fmsg), torch.log(margPrObs)
         return fmsg, margPrObs
 
     def backward(self, trans_A=None, q=None, margprob=None):
@@ -2358,53 +2001,25 @@ class GPI_HDP():
             trans_A = self.trans_A
         if q is None:
             q = self.q[-1]
-        # if margprob is None:
-        #     _, margprob = self.forward(trans_A[0], trans_A, q)
-        # trans_A = self.cond_cuda(self.cond_to_torch(trans_A))
         trans_A = self.cond_to_numpy(trans_A)
         q = self.cond_cuda(self.cond_to_torch(q))
         T = len(q)
         M = self.M + 1
-        # beta = self.cond_cuda(self.cond_to_torch(np.matrix([[1e-100] * M] * T)))
-        # # Initial case revised cause is initiated with log-ones.
-        # for t in range(T - 2, -1, -1):
-        #     for i in range(M):
-        #         aux = self.cond_cuda(self.cond_to_torch(-200.0))
-        #         if i == M - 1:
-        #             tr = np.log(1.0 / M)
-        #             for j in range(M):
-        #                 aux = torch.logaddexp(aux, beta[t + 1, j] + tr + q[t + 1][j])
-        #         else:
-        #             for j in range(M):
-        #                 aux = torch.logaddexp(aux, beta[t + 1, j] + trans_A[i, j] + q[t + 1][j])
-        #         beta[t, i] = aux
-        #     beta[t] = beta[t] - margprob[t + 1]
-        # q_ = torch.exp(q - torch.max(q, dim=1)[0])
         q_ = q
         def safe_exp(x):
             return torch.exp(torch.sub(x, torch.atleast_2d(torch.max(x, axis=1)[0]).T))
-        #q_ = safe_exp(q_)
-        # trans_A, _ = self.LogLik(trans_A, axis=1)
         trans_A = self.cond_to_torch(trans_A)
-        #PiMat = self.cond_to_numpy(torch.exp(trans_A))
         PiMat = self.cond_cuda(torch.exp(trans_A))
-        #PiMat = self.cond_cuda(self.cond_to_torch(np.vstack((PiMat, [np.repeat(1 / M, M)]))))
-        # margPrObs = margprob
         q_ = safe_exp(q_)
         T = q.shape[0]
         K = M
         bmsg = torch.ones((T, K), device=self.device)
-        # jitter = 1e-30
-        # q_[q_ == 0] = jitter
         PiMat[PiMat < 1e-5] += 1e-4
         for t in range(T - 2, -1, -1):
             bmsg[t] = torch.matmul(PiMat, bmsg[t + 1] * q_[t + 1])
-            #bmsg[t] = torch.matmul(PiMat, safe_exp(torch.log(bmsg[t + 1]) + q_[t + 1]))
-            # bmsg[t] /= margPrObs[t + 1]
             bmsg[t] /= torch.sum(bmsg[t][:-1])
         if torch.any(torch.isnan(torch.log(bmsg))):
             print("Error nan")
-        #return torch.log(bmsg)
         return bmsg
 
     def coupled_state_coef(self, alpha=None, beta=None, trans_A=None, q=None, margprobs=None):
@@ -2443,39 +2058,12 @@ class GPI_HDP():
 
         T = alpha.shape[0]
         M = self.M + 1
-        # psi = self.cond_cuda(self.cond_to_torch(np.array([np.matrix([[np.NINF] * M] * M)] * T)))
-        # # psi2 = []
-        # for t in range(T - 1):
-        #     psi_ = self.cond_cuda(self.cond_to_torch(np.matrix([[np.NINF] * M] * M)))
-        #     # den = self.cond_cuda(self.cond_to_torch(np.NINF))
-        #     # for i in range(M - 1):
-        #     #     for j in range(M):
-        #     #         den = torch.logaddexp(den, alpha[t, i] + trans_A[i, j] + q[t + 1][j] + beta[t + 1, j])
-        #     for i in range(M - 1):
-        #         for j in range(M):
-        #             psi_[i, j] = alpha[t, i] + trans_A[i, j] + q[t + 1][j] + beta[t + 1, j]# - den
-        #     den = torch.logsumexp(psi_.view(-1), 0)
-        #         # psi_[i,] = self.normalize_log(np.ravel(psi_[i,]))
-        #     # psi2.append(psi_)
-        #     psi[t] = psi_ - den
 
         bmsgSoftEv = torch.exp(q)  # alias
         bmsgSoftEv *= beta
-        # alpha = torch.exp(alpha)
-        #trans_A = self.cond_to_numpy(self.cond_cpu(torch.exp(trans_A)))
-        #trans_A = np.vstack((trans_A, [np.repeat(1 / M, M)]))
-        #trans_A = self.cond_cuda(self.cond_to_torch(trans_A[np.newaxis, :, :]))
-        #trans_A = torch.exp(trans_A)
-        # margprobs = margprobs.numpy()
         respPair = self.cond_cuda(self.cond_to_torch(np.zeros((T, M, M))))
         respPair[1:] = alpha[:-1][:, :, np.newaxis] * \
                       bmsgSoftEv[1:][:, np.newaxis, :]
-        #respPair = alpha[:, :, np.newaxis] * \
-        #            bmsgSoftEv[:, np.newaxis, :]
-        # respPair *= trans_A
-        # margprobs[margprobs==0.0] = 1e-100
-        # if margprobs[0] != 0.0:
-        #     respPair /= margprobs[:, np.newaxis, np.newaxis]
         den = torch.sum(respPair, dim=(1,2))[:, np.newaxis, np.newaxis]
         den[den == 0] = 1e-10
         respPair /= den
@@ -2520,20 +2108,17 @@ class GPI_HDP():
         T = alpha.shape[0]
         M = self.M + 1
         psi = self.cond_cuda(self.cond_to_torch(np.matrix([[np.NINF] * M] * M)))
-        # psi2 = []
         for i in range(M - 1):
             for j in range(M):
                 psi[i, j] = torch.sum(alpha[:, i]) + trans_A[i, j] + torch.sum(q[:, j]) + torch.sum(beta[:, j])# - den
             den = torch.logsumexp(psi.view(-1), 0)
-                # psi_[i,] = self.normalize_log(np.ravel(psi_[i,]))
-            # psi2.append(psi_)
             psi = psi - den
         return psi
 
     def compute_q(self, x_train=None, y=None, gpmodels=None, mean=None, cov=None, C=None, Sigma=None, liks=None,
                   batch=None, ld=None):
         """
-        Compute variational parameters related with the observations.
+        Compute variational parameters related with the observations. (Only for online scheme)
         Parameters
         ----------
         y : array sample of shape (s_samples)
@@ -2558,28 +2143,22 @@ class GPI_HDP():
             mean = []
             for m in range(M):
                 mean.append(gpmodels[m].f_star)
-            # mean = [[mean] * T] * M
         if cov is None:
             cov = []
             for m in range(M):
                 cov.append(gpmodels[m].cov_f)
-            # cov = [[cov] * T] * M
         if C is None:
             C = []
             for m in range(M):
                 C.append(gpmodels[m].C)
-            # C = [[C] * T] * M
         if Sigma is None:
             Sigma = []
             for m in range(M):
                 Sigma.append(gpmodels[m].Sigma)
-            # Sigma = [[Sigma] * T] * M
         if type(y) is torch.Tensor:
             q = np.repeat(np.NINF, M)
             for m in range(M):
-                # q[m] = gpmodels[m].log_sq_error(x_train[-1][m], y, mean[m][-1], cov[m][-1], C[m][-1], Sigma[m][-1])
                 q[m] = gpmodels[m].log_sq_error(x_train, y, mean[m][-1], cov[m][-1], C[m][-1], Sigma[m][-1], -1)
-                # q[m] = gpmodels[m].log_lik_sample(y)
         else:
             if len(self.q) > 0:
                 if ld is not None:
@@ -2646,15 +2225,6 @@ class GPI_HDP():
             h_ = self.cond_cuda(self.cond_to_torch(np.array([np.NINF] * M)))
             for i in range(M):
                 h_[i] = alpha[t, i] + beta[t, i] - den
-            # Normalization because with logarithms we cannot reach -inf
-            # h.append(self.normalize_log(h_))
-            # if sum(np.isclose(h_,max(h_),rtol=1e-3)) > 1:
-            #     h_argmax = np.nanargmax(h_)
-            #     h_[:] = [np.NINF]*M
-            #     # low_point = np.min(h_new)
-            #     # h_new[:] = low_point
-            #     h_[h_argmax] = 0.0
-            #     h_ = self.normalize_log(h_)
             h[t] = h_
 
         if time is None:
@@ -2736,6 +2306,8 @@ class GPI_HDP():
             if n_sample in g.indexes:
                 return i
 
+    #Methods for the internal management and conversion of the model.
+    
     def gpmodel_deepcopy(self, gpmodel):
         gp_ = gp.GPI_model(gpmodel.gp.kernel.clone_with_theta(gpmodel.gp.kernel.theta), gpmodel.x_basis.clone())
         gp_.y_train = gpmodel.y_train.copy()
