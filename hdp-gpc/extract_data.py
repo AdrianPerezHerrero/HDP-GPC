@@ -24,11 +24,10 @@ for record in list_rec:
     samples = [60, 150]
     M = 2
     #samples = [0, -1]
-    rec = "102"
-    data, labels = get_data(database="filtered", record=rec, deriv=None, test=False,
+    data, labels = get_data(database="filtered", record=record, deriv=None, test=False,
                             scale_data=True, scale_type="mean", d2_data=False, samples=samples, ann='atr')
     dat_ = data
     data, data_2d, labels = take_standard_labels(data, labels, filter=labels)
-    np.save(cwd + "/data/"+record+".npy", data_2d)
-    np.save(cwd + "/data/"+record+"_labels.npy", labels)
+    np.save(cwd + "/data/mitbih/"+record+".npy", data_2d)
+    np.save(cwd + "/data/mitbih/"+record+"_labels.npy", labels)
 print("END")
