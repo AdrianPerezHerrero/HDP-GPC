@@ -4,7 +4,7 @@
 Created on Tue Jul 13 10:55:40 2021
 @author: adrian.perez
 """
-import GPI as GPR
+import hdpgpc.GPI as GPI
 import numpy as np
 import torch
 from tqdm import trange
@@ -28,7 +28,7 @@ class GPI_model():
         """
 
     def __init__(self, kernel, x_basis, annealing=True, bayesian=False, cuda=False, inducing_points=False, estimation_limit=None):
-        self.gp = GPR.IterativeGaussianProcess(kernel, x_basis, cuda=cuda)
+        self.gp = GPI.IterativeGaussianProcess(kernel, x_basis, cuda=cuda)
         self.x_basis = self.cond_to_torch(x_basis)
         self.x_train = []
         self.y_train = []
@@ -248,7 +248,7 @@ class GPI_model():
         #err = err / y.shape[0]
         return err
 
-    def log_lat_error(self, I):
+    def log_lat_error(self, i):
         """Compute the log-squared-error of the latent process.
         """
         err = 0.0

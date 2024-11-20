@@ -5,12 +5,11 @@ Created on Fri Jul 8 10:33:40 2022
 @author: adrian.perez
 """
 
-import GPI_model as gp
+import hdpgpc.GPI_model as gp
+from hdpgpc.warping_system import Warping_system
+from hdpgpc.OptimizerRhoOmega import find_optimum_multiple_tries, kvec
+
 import numpy as np
-
-from warping_system import Warping_system
-from OptimizerRhoOmega import find_optimum_multiple_tries, kvec
-
 from sklearn.gaussian_process.kernels import RBF, WhiteKernel, ConstantKernel
 from scipy.special._ufuncs import psi as digamma
 from scipy.special._ufuncs import gammaln
@@ -509,7 +508,7 @@ class GPI_HDP():
         q[-1] = q[-1] + liks_
         if classify:
             for q_aux in q:
-                q_aux[-1] = np.NINF
+                q_aux[-1] = -np.inf
         m_ = np.argmax(self.weight_mean(q)[-1])
         q_, _ = self.LogLik(self.weight_mean(q))
         alpha, margprob = self.forward(startPi, transPi, q_)
@@ -649,7 +648,7 @@ class GPI_HDP():
         iteration = 0
         reparam = True
         #Start loop of EM
-        elbo = np.NINF
+        elbo = -np.inf
         resp = self.cond_cuda(torch.zeros((n_samples, M + 1)))
         respPair = self.cond_cuda(torch.zeros((n_samples, M + 1, M + 1)))
         respPair[:,0,0] = respPair[:,0,0] + 1.0
@@ -1327,7 +1326,7 @@ class GPI_HDP():
             for m in range(M + 1):
                 y_mod[m].append(self.cond_cuda(y))
 
-        elbo = np.NINF
+        elbo = -np.inf
         while True:
             if t > 0 and not classify:
                 resplog, respPairlog = self.variational_local_terms(x_train, y_mod, self.transTheta, self.startTheta, liks)
@@ -2106,7 +2105,7 @@ class GPI_HDP():
 
         T = alpha.shape[0]
         M = self.M + 1
-        psi = self.cond_cuda(self.cond_to_torch(np.matrix([[np.NINF] * M] * M)))
+        psi = self.cond_cuda(self.cond_to_torch(np.matrix([[-np.inf] * M] * M)))
         for i in range(M - 1):
             for j in range(M):
                 psi[i, j] = torch.sum(alpha[:, i]) + trans_A[i, j] + torch.sum(q[:, j]) + torch.sum(beta[:, j])# - den
@@ -2155,7 +2154,7 @@ class GPI_HDP():
             for m in range(M):
                 Sigma.append(gpmodels[m].Sigma)
         if type(y) is torch.Tensor:
-            q = np.repeat(np.NINF, M)
+            q = np.repeat(-np.inf, M)
             for m in range(M):
                 q[m] = gpmodels[m].log_sq_error(x_train, y, mean[m][-1], cov[m][-1], C[m][-1], Sigma[m][-1], -1)
         else:
@@ -2170,21 +2169,21 @@ class GPI_HDP():
                     q_[:,:-1] = q
                     q = q_
                     for t in range(T - 1):
-                        first = True if gpmodels[-1].N == 0 else False
+                        first = True if gpmodels[-1].N == 1 else False
                         q_ = gpmodels[-1].log_sq_error(x_train, y[-1][t], mean[-1][0], cov[-1][0],
                                                        C[-1][0], Sigma[-1][0], 0, first=first)
                         q[t,-1] = q_[0]
-                q_ = torch.from_numpy(np.repeat(np.NINF, M))
+                q_ = torch.from_numpy(np.repeat(-np.inf, M))
                 for m in range(M):
-                    first = True if gpmodels[m].N == 0 else False
+                    first = True if gpmodels[m].N == 1 else False
                     q_[m] = gpmodels[m].log_sq_error(x_train, y[m][-1], mean[m][-1], cov[m][-1],
                                                      C[m][-1], Sigma[m][-1], T - 1, first=first)
                 q = torch.concatenate([q, q_[np.newaxis,:]])
             else:
                 q = torch.zeros((self.T, M, self.n_outputs))
-                q_ = torch.from_numpy(np.repeat(np.NINF, M))
+                q_ = torch.from_numpy(np.repeat(-np.inf, M))
                 for m in range(M):
-                    first = True if gpmodels[m].N == 0 else False
+                    first = True if gpmodels[m].N == 1 else False
                     q_[m] = gpmodels[m].log_sq_error(x_train, y[m][-1], mean[m][-1], cov[m][-1],
                                                      C[m][-1], Sigma[m][-1], T - 1, first=first)
                 q = q_
@@ -2216,12 +2215,12 @@ class GPI_HDP():
             beta = self.backward()
         alpha = self.cond_cuda(self.cond_to_torch(alpha))
         beta = self.cond_cuda(self.cond_to_torch(beta))
-        h = self.cond_cuda(self.cond_to_torch(np.matrix([[np.NINF] * M] * T)))
+        h = self.cond_cuda(self.cond_to_torch(np.matrix([[-np.inf] * M] * T)))
         for t in range(T):
-            den = self.cond_cuda(self.cond_to_torch(np.NINF))
+            den = self.cond_cuda(self.cond_to_torch(-np.inf))
             for i in range(M):
                 den = torch.logaddexp(den, alpha[t, i] + beta[t, i])
-            h_ = self.cond_cuda(self.cond_to_torch(np.array([np.NINF] * M)))
+            h_ = self.cond_cuda(self.cond_to_torch(np.array([-np.inf] * M)))
             for i in range(M):
                 h_[i] = alpha[t, i] + beta[t, i] - den
             h[t] = h_
@@ -2278,17 +2277,17 @@ class GPI_HDP():
             # Compute numerator and denominator using specific functions as described in Rabiner
             psi = self.cond_to_torch(self.coupled_state_coef(alpha, beta, trans_A, q))
             for i in range(M):
-                den = self.cond_to_torch(np.NINF)
+                den = self.cond_to_torch(-np.inf)
                 for t in range(T - 1):
                     for j in range(M):
                         den = torch.logaddexp(den, psi[t][i, j])
                 for j in range(M):
-                    num = self.cond_to_torch(np.NINF)
+                    num = self.cond_to_torch(-np.inf)
                     for t in range(T - 1):
                         num = torch.logaddexp(num, psi[t][i, j])
                     # Case where zero expected times of transitions are detected
-                    if num == np.NINF:
-                        trans_A_[i, j] = np.NINF
+                    if num == -np.inf:
+                        trans_A_[i, j] = -np.inf
                     else:
                         trans_A_[i, j] = num - den
                 # To maintain properties of the transition matrix (sum of row = 1)
@@ -2306,7 +2305,13 @@ class GPI_HDP():
                 return i
 
     #Methods for the internal management and conversion of the model.
-    
+    def selected_gpmodels(self):
+        selgp = 0
+        for gp in self.gpmodels[0]:
+            if len(gp.indexes) > 0:
+                selgp = selgp + 1
+        return list(range(selgp))
+
     def gpmodel_deepcopy(self, gpmodel):
         gp_ = gp.GPI_model(gpmodel.gp.kernel.clone_with_theta(gpmodel.gp.kernel.theta), gpmodel.x_basis.clone())
         gp_.y_train = gpmodel.y_train.copy()
@@ -2338,7 +2343,7 @@ class GPI_HDP():
         # Special case when maximum bound has been reached
         bound = 1e-50
         log_bound = np.log(bound)
-        if np.max(x) == np.NINF:
+        if np.max(x) == -np.inf:
             x = np.repeat(log_bound, len(x))
         if not np.isclose(np.max(x), 0):
             aux = np.abs(x) / np.max(np.abs(x))

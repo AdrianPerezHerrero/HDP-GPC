@@ -14,8 +14,8 @@ from sklearn.utils import check_random_state
 import warnings
 import torch
 import gpytorch
-from GPI_models_pytorch import ExactGPModel, ProjectedGPModel, VarProjectedGPModel
-from util_plots import print_hyperparams
+from hdpgpc.GPI_models_pytorch import ExactGPModel, ProjectedGPModel, VarProjectedGPModel
+from hdpgpc.util_plots import print_hyperparams
 from tqdm import trange
 torch.set_default_dtype(torch.float64)
 
@@ -1177,7 +1177,7 @@ class IterativeGaussianProcess():
                 # if w is not None:
                 #     print("Stop")
         except ValueError:
-            return torch.from_numpy(np.NINF)
+            return torch.from_numpy(-np.inf)
         return det
 
     # Robust computing of the inverse

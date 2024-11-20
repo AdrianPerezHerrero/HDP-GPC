@@ -6,6 +6,8 @@ Created on Wed Nov 24 13:43:23 2021
 """
 
 import os
+
+import torch
 import wfdb
 import numpy as np
 from sklearn.preprocessing import scale
@@ -245,89 +247,6 @@ def signaltonoise(a, axis=0, ddof=0):
     sd = a.std(axis=axis, ddof=ddof) ** 2
     return np.where(sd == 0, 0, m / sd)
 
-def compute_initial_statistics(data, labels, lim=30):
-    d_np = []
-    dat = []
-    lim = min(lim, len(data))
-    for l in labels:
-        if l != '|' and l != '!' and l != 'V' and l!= 'F':
-            l_chosen = l
-            print("L_chosen: ", l_chosen)
-            break
-    for i in range(lim):
-        dat.append(data[i])
-        if labels[i] == l_chosen:
-            d_np.append(data[i])
-    print("Num of examples used: ", len(d_np))
-    if len(d_np) < lim:
-        lim = len(d_np)
-    else:
-        lim = lim
-    max = np.max(d_np)
-    d_np = np.array(d_np[1:lim], dtype=np.float64)
-    # var_d = np.sqrt(np.var(d_np, axis=0))
-    var_d = np.var(d_np, axis=0)
-    d_ = np.array(dat[1:lim], dtype=np.float64)
-    var_d_ = np.sqrt(np.var(d_, axis=0))
-    # var_d_ = np.var(d_, axis=0)
-    mean_var_d_ = np.mean(var_d_)
-    min_var = np.min(var_d)
-    max_var = np.max(var_d)
-    mode_var = np.median(var_d[20:50])
-    mean_var = np.mean(var_d[20:50])
-    mode_var = np.median(var_d)
-    # Good option of estimators for 102, but tends to not compute a real first posterior.
-    # return (min_var * 0.5, min_var), mean_var, min_var * 0.5
-    # return (min_var, min_var * 1.5), mean_var * 0.5, min_var
-    # return (min_var, min_var*1.5), min_var, min_var
-    # return (mean_var * 0.9, mean_var * 1.0), min_var, min_var
-    # return (mean_var * 0.9, mean_var * 1.0), min_var, max_var * 0.5
-    # return (mode_var * 0.5, mode_var * 0.6), min_var, max_var * 0.5
-    # if l_chosen == '/':
-    #     return (mode_var * 1.0, mode_var * 1.1), mode_var * 0.3, max_var * 0.5
-    # else:
-    #     return (mode_var * 1.0, mode_var * 1.1), mode_var * 0.1, max_var * 0.5
-    ratio = min_var / mode_var
-    print("Generation ratio: ", ratio)
-    if l_chosen == '/' and ratio < 0.15:
-        return (mode_var * 0.5, mode_var * 0.6), min_var * 0.8, max_var * 0.5
-    elif ratio < 0.2:
-        return (mode_var * 0.8, mode_var * 0.9), min_var * 0.3, max_var * 0.5
-    elif len(d_np) == 37 and ratio < 0.35:
-        #Record 105, there is no way to estimate that behaviour.
-        return (mode_var * 1.9, mode_var * 2.0), min_var * 0.05, max_var * 0.5
-    elif mode_var > 10e3:
-        #Records 203 and 107
-        return (mode_var * 0.5, mode_var * 0.6), min_var * 0.4, max_var * 0.5
-    else:
-        return (mode_var * 1.5, mode_var * 1.6), min_var * 0.1, max_var * 0.5
-    #return (mode_var * 1.0, mode_var * 1.1), min_var * 1.0, max_var * 0.5
-
-def compute_generation_ratio(data, labels, lim=30):
-        d_np = []
-        dat = []
-        lim = min(lim, len(data))
-        for l in labels:
-            if l != '|' and l != '!' and l != 'V' and l != 'F':
-                l_chosen = l
-                print("L_chosen: ", l_chosen)
-                break
-        for i in range(lim):
-            dat.append(data[i])
-            if labels[i] == l_chosen:
-                d_np.append(data[i])
-        print("Num of examples used: ", len(d_np))
-        if len(d_np) < lim:
-            lim = len(d_np)
-        else:
-            lim = lim
-        d_np = np.array(d_np[1:lim], dtype=np.float64)
-        var_d = np.var(d_np, axis=0)
-        min_var = np.min(var_d)
-        mode_var = np.median(var_d)
-        ratio = min_var / mode_var
-        print("Generation ratio: ", ratio)
-        return ratio
 
 def take_standard_labels(data, labels, permutation=False, filter=None):
     # MitBih standard + | (not recognised as hearbeat)
@@ -373,3 +292,15 @@ def take_standard_labels(data, labels, permutation=False, filter=None):
     else:
         return data, data_2d, labels
 
+def compute_estimators_LDS(samples, n_f=None):
+    if n_f is None:
+        n_f = samples.shape[0] - 2
+    samples_ = torch.from_numpy(samples[:n_f, :, 0])
+    samples__ = torch.from_numpy(samples[1:n_f + 1, :, 0])
+
+    std = torch.sqrt(torch.mean(torch.diag(torch.linalg.multi_dot(
+        [(samples_ - torch.mean(samples_, dim=1)[:, np.newaxis]),
+         (samples_ - torch.mean(samples_, dim=1)[:, np.newaxis]).T])) / n_f)).item()
+    std_dif = torch.sqrt(torch.mean(torch.diag(torch.linalg.multi_dot(
+        [(samples__ - samples_), (samples__ - samples_).T])) / n_f)).item()
+    return std, std_dif

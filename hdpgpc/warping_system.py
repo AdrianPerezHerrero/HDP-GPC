@@ -11,9 +11,9 @@ import matplotlib.pyplot as plt
 dtype = torch.float64
 torch.set_default_dtype(dtype)
 
-from util_plots import plot_gp_gpytorch, plot_gp_pyro, print_hyperparams
-from GPI_models_pytorch import ExactGPModel, AlignmentGPModel, LinearExactGPModel
-from GPI_model import GPI_model
+from hdpgpc.util_plots import plot_gp_gpytorch, plot_gp_pyro, print_hyperparams
+from hdpgpc.GPI_models_pytorch import ExactGPModel, AlignmentGPModel, LinearExactGPModel
+from hdpgpc.GPI_model import GPI_model
 from sklearn.gaussian_process.kernels import RBF, WhiteKernel, ConstantKernel
 import warnings
 
