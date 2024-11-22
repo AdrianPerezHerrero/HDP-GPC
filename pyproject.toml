@@ -11,8 +11,6 @@ license = { file = "LICENSE" }
 authors = [
     { name = "Adrian Pérez Herrero", email = "adrianperezherrero1997@outlook.es" }
 ]
-homepage = "https://github.com/AdrianPerezHerrero/HDP-GPC"
-repository = "https://github.com/AdrianPerezHerrero/HDP-GPC"
 keywords = ["HDP", "Gaussian Process", "Clustering", "Machine Learning"]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -73,6 +71,10 @@ dependencies = [
     "urllib3==2.2.3",
     "wfdb==4.1.2"
 ]
+
+[project.urls]
+homepage = "https://github.com/AdrianPerezHerrero/HDP-GPC"
+repository = "https://github.com/AdrianPerezHerrero/HDP-GPC"
 
 [project.optional-dependencies]
 dev = []
