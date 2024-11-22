@@ -1,0 +1,91 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hdpgpc"
+version = "0.1.0"
+description = "Hierarchical Dirichlet Process Gaussian Process Clustering (HDP-GPC)"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Adrian Pérez Herrero", email = "adrianperezherrero1997@outlook.es" }
+]
+homepage = "https://github.com/AdrianPerezHerrero/HDP-GPC"
+repository = "https://github.com/AdrianPerezHerrero/HDP-GPC"
+keywords = ["HDP", "Gaussian Process", "Clustering", "Machine Learning"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Mathematics"
+]
+
+[project.dependencies]
+certifi = "==2024.8.30"
+cffi = "==1.17.1"
+charset-normalizer = "==3.4.0"
+colorama = "==0.4.6"
+contourpy = "==1.3.1"
+cycler = "==0.12.1"
+filelock = "==3.16.1"
+fonttools = "==4.55.0"
+fsspec = "==2024.10.0"
+gpytorch = "==1.13"
+idna = "==3.10"
+jaxtyping = "==0.2.19"
+Jinja2 = "==3.1.4"
+joblib = "==1.4.2"
+kiwisolver = "==1.4.7"
+lightning-utilities = "==0.11.8"
+linear-operator = "==0.5.3"
+MarkupSafe = "==3.0.2"
+matplotlib = "==3.9.2"
+mpmath = "==1.3.0"
+networkx = "==3.4.2"
+numpy = "==1.26.4"
+opt_einsum = "==3.4.0"
+packaging = "==24.2"
+pandas = "==2.2.3"
+pillow = "==11.0.0"
+plotly = "==5.24.1"
+psutil = "==6.1.0"
+pycparser = "==2.22"
+pyparsing = "==3.2.0"
+pyro-api = "==0.1.2"
+pyro-ppl = "==1.8.6"
+python-dateutil = "==2.9.0.post0"
+pytz = "==2024.2"
+requests = "==2.32.3"
+scikit-learn = "==1.5.2"
+scipy = "==1.14.1"
+six = "==1.16.0"
+soundfile = "==0.12.1"
+sympy = "==1.13.1"
+tenacity = "==9.0.0"
+threadpoolctl = "==3.5.0"
+torch = "==2.5.1"
+torchmetrics = "==1.6.0"
+tqdm = "==4.67.0"
+typeguard = "==4.4.1"
+typing-extensions = "==4.12.2"
+tzdata = "==2024.2"
+urllib3 = "==2.2.3"
+wfdb = "==4.1.2"
+
+[project.optional-dependencies]
+dev = []
+docs = []
+
+[tool.setuptools]
+package-dir = {"" = "hdpgpc"}
+packages = ["hdpgpc"]
+
+[tool.setuptools.packages.find]
+where = ["hdpgpc"]
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "--strict-markers"
+testpaths = ["tests"]
