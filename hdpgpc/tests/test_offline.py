@@ -4,7 +4,7 @@
 
 import os
 
-cwd = os.getcwd()
+cwd = os.path.join(os.getcwd(), "hdpgpc")
 data_dir = os.path.join(os.path.join(cwd, "data"), "mitbih")
 #Import cell and config cell
 
