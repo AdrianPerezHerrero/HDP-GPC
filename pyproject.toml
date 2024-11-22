@@ -3,7 +3,7 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "HDP-GPC"
+name = "hdpgpc"
 version = "0.1.0"
 description = "Hierarchical Dirichlet Process Gaussian Process Clustering (HDP-GPC)"
 readme = "README.md"
@@ -81,8 +81,8 @@ dev = []
 docs = []
 
 [tool.setuptools]
-package-dir = {"" = "HDP-GPC"}
-packages = ["HDP-GPC"]
+package-dir = {"" = "hdpgpc"}
+packages = ["hdpgpc"]
 
 [tool.pytest.ini_options]
 minversion = "6.0"
