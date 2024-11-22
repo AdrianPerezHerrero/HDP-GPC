@@ -1262,7 +1262,7 @@ class GPI_HDP():
         kernel, ini_sigma, ini_gamma, ini_outputscale, bound_sigma, bound_gamma, bound_noise_warp, annealing, method_compute_warp, \
             model_type, recursive_warp, warp_updating, inducing_points, estimation_limit = self.get_default_options()
         ini_Sigma = var_y_y * 1.0
-        ini_Gamma = torch.max([var_y_y_,var_y_y]).item() * 1.0
+        ini_Gamma = self.cond_to_torch(np.max([var_y_y_,var_y_y])) * 1.0
         print("-----------Reestimated -----------", flush=True)
         print("Sigma: ", ini_Sigma)
         print("Gamma: ", ini_Gamma)
