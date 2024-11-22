@@ -83,5 +83,5 @@ print("Time --- %s mins ---" % str((time.time() - start_ini_time)/60.0))
 out = os.path.join(os.path.join(cwd,"results"), "Rec" + rec + "_")
 main_model = print_results(sw_gp, labels, 0, error=False)
 selected_gpmodels = sw_gp.selected_gpmodels()
-plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, 0, lead=lead, save=out+"Offline_Clusters.html",
+plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, 0, lead=lead, save=out+"Offline_Clusters.png",
             step=0.5, plot_latent=True)
