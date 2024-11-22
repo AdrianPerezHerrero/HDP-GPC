@@ -1,6 +1,8 @@
 '''
 OptimizerRhoOmega.py
 
+Part of the code extracted from https://bnpy.readthedocs.io/ and adapted.
+
 CONSTRAINED Optimization Problem
 ----------
 Variables:

@@ -54,16 +54,18 @@ class GPI_model():
             self.internal_params = None
             self.observation_params = None
         if estimation_limit is None:
-            estimation_limit = np.PINF
+            estimation_limit = np.inf
         self.estimation_limit = estimation_limit
         self.fitted = False
         self.A_def, self.Gamma_def, self.C_def, self.Sigma_def = None, None, None, None
         self.ini_cov_def = None
         self.ini_kernel_theta = self.gp.kernel.theta
+
         if self.cuda:
             self.device = 'cuda'
         else:
             self.device = 'cpu'
+        self.sq_lat_last = torch.zeros(1, device=self.device)
         self.free_deg_MNIV = 5
 
 
@@ -262,7 +264,7 @@ class GPI_model():
             t = Gamma.shape[0]
             exp_t_t_ = cov_f_ + torch.matmul(lat_f_, lat_f_.T)
             exp_t_t = cov_f + torch.matmul(lat_f, lat_f.T)
-            Gamma_inv = torch.linalg.solve(Gamma, self.cond_to_cuda(torch.eye(t)))
+            Gamma_inv = self.gamma_inv
             err = -1 / 2 * torch.linalg.multi_dot([lat_f.T, Gamma_inv, lat_f]) \
                   + torch.linalg.multi_dot([lat_f.T, Gamma_inv, A, lat_f_]) \
                   - 1 / 2 * torch.trace(torch.linalg.multi_dot([A.T, Gamma_inv, A, exp_t_t_]))
@@ -401,17 +403,19 @@ class GPI_model():
         """
         ini_A, ini_Gamma, ini_C, ini_Sigma = self.A_def, self.Gamma_def, self.C_def, self.Sigma_def
         if first:
-            ini_noise = self.cond_to_cuda(self.cond_to_torch(self.gp.kernel.get_params()["k2__noise_level"])) * 2.0
-            A_, Gam_, C_, Sig_ = (self.A[-1], self.Gamma[-1], self.C[-1],
-                                  self.Sigma[-1] + torch.mul(ini_noise, torch.eye(self.Sigma[-1].shape[0],
-                                                                                  device=ini_noise.device)))
+            # ini_noise = self.cond_to_cuda(self.cond_to_torch(self.gp.kernel.get_params()["k2__noise_level"])) * 2.0
+            # A_, Gam_, C_, Sig_ = (self.A[-1], self.Gamma[-1], self.C[-1],
+            #                       self.Sigma[-1] + torch.mul(ini_noise, torch.eye(self.Sigma[-1].shape[0],
+            #                                                                       device=ini_noise.device)))
+            A_, Gam_, C_, Sig_ = (self.A[-1], self.Gamma[-1] + self.cov_f[-1], self.C[-1],
+                                   self.Sigma[-1] + self.cov_f[-1])
         else:
             A_, Gam_, C_, Sig_ = self.A[-1], self.Gamma[-1], self.C[-1], self.Sigma[-1]
         int_params = matrix_normal_inv_wishart(ini_A, torch.eye(ini_A.shape[0], device=self.device), self.free_deg_MNIV, ini_Gamma)
         obs_params = matrix_normal_inv_wishart(ini_C, torch.eye(ini_C.shape[0], device=self.device), self.free_deg_MNIV, ini_Sigma)
         return int_params.log_likelihood_MNIW(A_, Gam_) + obs_params.log_likelihood_MNIW(C_, Sig_)
 
-    def compute_sq_err_all(self, x_trains, y_trains):
+    def compute_sq_err_all(self, x_trains, y_trains, no_first=False):
         """ Method to compute the squared error over all provided examples y_trains.
         """
         n_samps = x_trains.shape[0]
@@ -420,7 +424,7 @@ class GPI_model():
             if len(self.indexes) > 0:
                 if index in self.indexes:
                     ind = self.indexes.index(index) + 1
-                    if ind == 1:
+                    if ind == 1 and not no_first:
                         sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], i=ind, first=True)
                     else:
                         sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], i=ind)
@@ -429,12 +433,24 @@ class GPI_model():
                     sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], i=ind)
         return sq_err
 
-    def compute_q_lat_all(self, x_trains):
+    def compute_q_lat_all(self, x_trains, t=None):
         """Method to compute the latent squared error accumulated.
         """
         sq_err = torch.zeros(1, device=x_trains[0].device)
-        for j, index in enumerate(self.indexes):
-            sq_err = sq_err + self.log_lat_error(j)
+        if self.N == 0:
+            return sq_err
+        if t is None:
+            self.gamma_inv = torch.linalg.solve(self.Gamma[-1], self.cond_to_cuda(torch.eye(self.Gamma[-1].shape[0])))
+            for j, index in enumerate(self.indexes):
+                sq_err = sq_err + self.log_lat_error(j)
+        else:
+            if t - 1 == self.indexes[-1]:
+                self.gamma_inv = torch.linalg.solve(self.Gamma[-1], self.cond_to_cuda(torch.eye(self.Gamma[-1].shape[0])))
+                for j, index in enumerate(self.indexes):
+                    sq_err = sq_err + self.log_lat_error(j)
+            else:
+                sq_err = self.sq_lat_last
+        self.sq_lat_last = sq_err
         return sq_err
 
     def posterior_weighted(self, x_train, y, h, t=None):
