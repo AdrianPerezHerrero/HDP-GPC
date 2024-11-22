@@ -82,9 +82,6 @@ docs = []
 package-dir = {"" = "hdpgpc"}
 packages = ["hdpgpc"]
 
-[tool.setuptools.packages.find]
-where = ["hdpgpc"]
-
 [tool.pytest.ini_options]
 minversion = "6.0"
 addopts = "--strict-markers"
