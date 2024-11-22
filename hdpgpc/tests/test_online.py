@@ -34,7 +34,7 @@ labels = np.load(os.path.join(data_dir, rec+"_labels.npy"))
 
 #Select the lead of the data to work with
 lead = 0
-data = data[:50,:,[lead]]
+data = data[:,:,[lead]]
 num_samples, num_obs_per_sample, num_outputs = data.shape
 #Take a small batch to estimate the priors.
 n_f = 20
