@@ -63,7 +63,7 @@ x_basis = np.atleast_2d(np.arange(l, L, 1, dtype=np.float64)).T
 #x_warp can be defined on smaller set to ensure smoothness of the warp
 x_basis_warp = np.atleast_2d(np.arange(l, L, 2, dtype=np.float64)).T
 x_train = np.atleast_2d(np.arange(l, L, dtype=np.float64)).T
-
+x_trains = np.array([x_train] * num_samples)
 #Define the model
 warp = False
 sw_gp = hdpgp.GPI_HDP(x_basis, x_basis_warp=x_basis_warp, n_outputs=num_outputs, kernels=None, model_type='dynamic',
@@ -76,7 +76,7 @@ sw_gp = hdpgp.GPI_HDP(x_basis, x_basis_warp=x_basis_warp, n_outputs=num_outputs,
 
 
 start_ini_time = time.time()
-sw_gp.include_batch(x_train, data, with_warp=warp)
+sw_gp.include_batch(x_trains, data, with_warp=warp)
 
 #Print results
 print("Time --- %s mins ---" % str((time.time() - start_ini_time)/60.0))
