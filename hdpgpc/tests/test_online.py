@@ -18,7 +18,7 @@ dtype = torch.float64
 torch.set_default_dtype(dtype)
 
 from hdpgpc.get_data import compute_estimators_LDS
-from hdpgpc.util_plots import plot_models, print_results
+from hdpgpc.util_plots import plot_models_plotly, print_results
 
 
 #Get data cell
@@ -89,5 +89,5 @@ print("Time --- %s mins ---" % str((time.time() - start_ini_time)/60.0))
 out = os.path.join(os.path.join(cwd,"results"), "Rec" + rec + "_")
 main_model = print_results(sw_gp, labels, 0, error=False)
 selected_gpmodels = sw_gp.selected_gpmodels()
-plot_models(sw_gp, selected_gpmodels, main_model, labels, 0, save=out+"Online_Clusters.html",
-            lead=0, step=0.5, plot_latent=True)
+plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, 0, save=out+"Online_Clusters.png",
+                lead=0, step=0.5, plot_latent=True)
