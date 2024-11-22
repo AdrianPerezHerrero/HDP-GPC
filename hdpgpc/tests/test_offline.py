@@ -12,6 +12,7 @@ import hdpgpc.GPI_HDP as hdpgp
 import numpy as np
 import torch
 import time
+import sys
 
 dtype = torch.float64
 torch.set_default_dtype(dtype)
@@ -22,8 +23,10 @@ from hdpgpc.util_plots import plot_models, print_results
 
 #Get data cell
 #Select record to work with
-rec = "102"
-
+if len(sys.argv) > 1:
+    rec = sys.argv[1]
+else:
+    rec = "100"
 #Data should have the shape [num_samples, num_obs_per_sample, num_outputs]
 data = np.load(os.path.join(data_dir, rec+".npy"))
 labels = np.load(os.path.join(data_dir, rec+"_labels.npy"))
