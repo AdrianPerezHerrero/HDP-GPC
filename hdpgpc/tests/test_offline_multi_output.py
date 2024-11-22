@@ -27,18 +27,13 @@ if len(sys.argv) > 1:
     rec = sys.argv[1]
 else:
     rec = "100"
-
 #Data should have the shape [num_samples, num_obs_per_sample, num_outputs]
 data = np.load(os.path.join(data_dir, rec+".npy"))
 labels = np.load(os.path.join(data_dir, rec+"_labels.npy"))
 
-#Select the lead of the data to work with
-lead = 0
-data = data[:50,:,[lead]]
 num_samples, num_obs_per_sample, num_outputs = data.shape
-#Take a small batch to estimate the priors.
-n_f = 20
-std, std_dif = compute_estimators_LDS(data, n_f)
+#Take the full batch to estimate the priors.
+std, std_dif = compute_estimators_LDS(data)
 #Define the priors
 #Bound_sigma refers to bound for the observation noise of the initial GP
 #Ini_lengthscale and bound_lengthscale refers to initial lengthscale of the initial GP
@@ -65,29 +60,25 @@ x_basis = np.atleast_2d(np.arange(l, L, 1, dtype=np.float64)).T
 #x_warp can be defined on smaller set to ensure smoothness of the warp
 x_basis_warp = np.atleast_2d(np.arange(l, L, 2, dtype=np.float64)).T
 x_train = np.atleast_2d(np.arange(l, L, dtype=np.float64)).T
-
+x_trains = np.array([x_train] * num_samples)
 #Define the model
 warp = False
 sw_gp = hdpgp.GPI_HDP(x_basis, x_basis_warp=x_basis_warp, n_outputs=num_outputs, kernels=None, model_type='dynamic',
                           ini_lengthscale=ini_lengthscale, bound_lengthscale=bound_lengthscale,
                           ini_gamma=gamma, ini_sigma=sigma, ini_outputscale=outputscale_, noise_warp=noise_warp,
                           bound_sigma=bound_sigma_, bound_gamma=bound_gamma, bound_noise_warp=bound_noise_warp,
-                          warp_updating=warp, method_compute_warp='greedy', verbose=True,
+                          warp_updating=False, method_compute_warp='greedy', verbose=True,
                           hmm_switch=True, max_models=100, mode_warp='rough',
-                          bayesian_params=True, inducing_points=False, estimation_limit=50)
+                          bayesian_params=True, inducing_points=False, reestimate_initial_params=True)
 
 
 start_ini_time = time.time()
-for i in range(data.shape[0]):
-    start_time = time.time()
-    print("Sample:", i, "/", str(data.shape[0]-1), "label:", labels[i])
-    sw_gp.include_sample(x_train, data[i], with_warp=warp)
-    print("Time --- %s seconds ---" % (time.time() - start_time))
+sw_gp.include_batch(x_trains, data, with_warp=warp)
 
 #Print results
 print("Time --- %s mins ---" % str((time.time() - start_ini_time)/60.0))
 out = os.path.join(os.path.join(cwd,"results"), "Rec" + rec + "_")
 main_model = print_results(sw_gp, labels, 0, error=False)
 selected_gpmodels = sw_gp.selected_gpmodels()
-plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, 0, save=out+"Online_Clusters.png",
-                lead=0, step=0.5, plot_latent=True)
+plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, 0, lead=lead, save=out+"Offline_Clusters.html",
+            step=0.5, plot_latent=True)

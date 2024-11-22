@@ -683,7 +683,7 @@ def plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, N_0, save=N
         for j_, d in enumerate(gp.y_train):
             j = gp.indexes[j_]
             x_t = gp.x_train[j_].T[0]
-            d = sw_gp.y_trains_w[j,:,[lead]]
+            d = sw_gp.y_train[j,:,[lead]]
             if isinstance(d, torch.Tensor):
                 d = d.detach().cpu()
                 x_t = x_t.cpu()

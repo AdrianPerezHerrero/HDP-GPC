@@ -205,6 +205,7 @@ class GPI_HDP():
         self.x_basis = x_basis
         self.x_basis_ini = x_basis[0].copy()
         self.x_train = []
+        self.y_train = torch.tensor([])
 
         # Initial vector following a uniform distribution in log form
         # self.pi = [np.log(np.repeat(1 / M, M))]
@@ -709,6 +710,8 @@ class GPI_HDP():
                 if ((np.isclose(elbo, elbo_, rtol=1e-6) and resp_group[-1] < 1.0) or
                         torch.where(resp_group==0.0)[0].shape[0] > 1.0):
                     if warp_computed or not warp:
+                        if not warp:
+                            self.y_train = y_trains
                         break
                     else:
                         elbo = elbo_
@@ -744,7 +747,7 @@ class GPI_HDP():
                     q[:, m, ld] = gp.compute_sq_err_all(x_trains, y_trains_w[:, :, ld])
                     q_lat[m, ld] = gp.compute_q_lat_all(x_trains)
         warp_computed = True
-        self.y_trains_w = y_trains_w
+        self.y_train = y_trains_w
         return q, q_lat, warp_computed
 
 
@@ -1402,7 +1405,7 @@ class GPI_HDP():
             resp_modlog = self.cond_to_numpy(self.cond_cpu(resplog[-1]))
 
         if classify:
-            return q[:-1], resp_mod[:-1], liks[:-1]
+            return q_chos[:-1], resp_mod[:-1], liks[:-1]
 
         # Normalize when responsability is equally shared
         if sum(np.isclose(resp_mod, max(resp_mod), rtol=1e-2)) > 1:
@@ -1470,6 +1473,8 @@ class GPI_HDP():
             for m in range(M + 1):
                 new_x_basis = self.gpmodels[ld][m].include_weighted_sample(t, self.x_train[-1], self.x_train[-1], y_mod[m][-1], resp_mod[m])
                 self.x_basis[m] = self.cond_cuda(self.cond_to_torch(new_x_basis.detach()))
+                if resp_mod[m] > 0.9:
+                    self.y_train = torch.concatenate([self.y_train, torch.atleast_2d(y_mod[m][-1]).T[:, :, np.newaxis]])
                 if self.bayesian_params:
                     self.gpmodels[ld][m].bayesian_new_params(resp_mod[m], model_type=self.model_type[m])
                 else:
