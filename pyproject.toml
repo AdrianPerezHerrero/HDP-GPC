@@ -21,8 +21,6 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Scientific/Engineering :: Mathematics"
 ]
-
-[project]
 dependencies = [
     "certifi==2024.8.30",
     "cffi==1.17.1",
