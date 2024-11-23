@@ -2306,11 +2306,10 @@ class GPI_HDP():
         return list(range(selgp))
 
     def save_swgp(self, st):
-        sw_gp.keep_last_all()
-        gc.collect()
-        sw_gp.full_model_to_cpu()
+        self.keep_last_all()
+        self.full_model_to_cpu()
         with open(st, 'wb') as inp:
-            plk.dump(sw_gp, inp)
+            plk.dump(self, inp)
 
     def gpmodel_deepcopy(self, gpmodel):
         gp_ = gp.GPI_model(gpmodel.gp.kernel.clone_with_theta(gpmodel.gp.kernel.theta), gpmodel.x_basis.clone())
