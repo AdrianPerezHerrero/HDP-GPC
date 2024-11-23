@@ -68,7 +68,7 @@ This data comprises each beat in the record segmented using the database-include
 
 The clusters can be plotted using the util_plots.py class in the results folder. As an example:
 
-![Clusters computed for lead 1 of record 102 of MIT-BIH Arrhythmia Database](results/Rec102_Offline_Clusters_Lead_1.png)
+![Clusters computed for lead 1 of record 102 of MIT-BIH Arrhythmia Database](results/hdpgpc/Rec102_Offline_Clusters_Lead_1.png)
 
 ## License
 This project is licensed under the terms of the **GNU General Public License v3.0** (*GPLv3*) - see the LICENSE file 
