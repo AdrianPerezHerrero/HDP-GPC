@@ -235,14 +235,14 @@ class GPI_HDP():
         # transAlpha represent a factor of prior probability of state-state transition
         # startAlpha represent a factor of prior probability of starting state
         # kappa represent the sticky factor of self transition
-        # self.gamma = 700.0
-        # self.transAlpha = 1400.0
-        # self.startAlpha = 1400.0
-        # self.kappa = 0.0
-        self.gamma = 10.0
-        self.transAlpha = 20.0
-        self.startAlpha = 20.0
+        self.gamma = 700.0
+        self.transAlpha = 1400.0
+        self.startAlpha = 1400.0
         self.kappa = 0.0
+        # self.gamma = 10.0
+        # self.transAlpha = 20.0
+        # self.startAlpha = 20.0
+        # self.kappa = 0.0
 
         # Model associated with each state
         # Default hyperparameters of GP defining the model.
