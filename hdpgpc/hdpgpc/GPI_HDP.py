@@ -15,7 +15,8 @@ from scipy.special._ufuncs import psi as digamma
 from scipy.special._ufuncs import gammaln
 import pandas as pd
 from torchmetrics.audio import SignalNoiseRatio
-from tqdm import trange
+from tqdm.notebook import trange
+#from tqdm import trange
 import pickle as plk
 import torch
 torch.set_default_dtype(torch.float64)
