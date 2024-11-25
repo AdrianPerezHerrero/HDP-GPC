@@ -254,16 +254,16 @@ class GPI_model():
         """Compute the log-squared-error of the latent process.
         """
         err = 0.0
-        if i > 1:
+        if i > 0:
             cov_f_ = self.cov_f_sm[i]
             lat_f_ = self.f_star_sm[i]
-            cov_f = self.cov_f_sm[i + 1]
+            #cov_f = self.cov_f_sm[i + 1]
             lat_f = self.f_star_sm[i + 1]
-            Gamma = self.Gamma[-1]
+            #Gamma = self.Gamma[-1]
             A = self.A[-1]
-            t = Gamma.shape[0]
+            #t = Gamma.shape[0]
             exp_t_t_ = cov_f_ + torch.matmul(lat_f_, lat_f_.T)
-            exp_t_t = cov_f + torch.matmul(lat_f, lat_f.T)
+            #exp_t_t = cov_f + torch.matmul(lat_f, lat_f.T)
             Gamma_inv = self.gamma_inv
             err = -1 / 2 * torch.linalg.multi_dot([lat_f.T, Gamma_inv, lat_f]) \
                   + torch.linalg.multi_dot([lat_f.T, Gamma_inv, A, lat_f_]) \
