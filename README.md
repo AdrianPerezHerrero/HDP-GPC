@@ -61,7 +61,7 @@ This data comprises each beat in the record segmented using the database-include
     ```
 - Revise a step-by-step usage in the Jupiter Notebook in
     ```bash
-    hdpgpc/tests/test_step.jpy
+    hdpgpc/tests/test_step.ipynb
     ```
 
 ## Results
