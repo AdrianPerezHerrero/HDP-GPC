@@ -299,8 +299,8 @@ def compute_estimators_LDS(samples, n_f=None):
     samples__ = torch.from_numpy(samples[1:n_f + 1, :, 0])
 
     std = torch.sqrt(torch.mean(torch.diag(torch.linalg.multi_dot(
-        [(samples_ - torch.mean(samples_, dim=1)[:, np.newaxis]),
-         (samples_ - torch.mean(samples_, dim=1)[:, np.newaxis]).T])) / n_f)).item()
+        [(samples_ - torch.mean(samples_, dim=0)[np.newaxis, :]),
+         (samples_ - torch.mean(samples_, dim=0)[np.newaxis, :]).T])) / n_f)).item()
     std_dif = torch.sqrt(torch.mean(torch.diag(torch.linalg.multi_dot(
         [(samples__ - samples_), (samples__ - samples_).T])) / n_f)).item()
     return std, std_dif
