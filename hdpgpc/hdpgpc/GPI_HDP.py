@@ -239,9 +239,9 @@ class GPI_HDP():
         # self.transAlpha = 1400.0
         # self.startAlpha = 1400.0
         # self.kappa = 0.0
-        self.gamma = 100.0
-        self.transAlpha = 200.0
-        self.startAlpha = 200.0
+        self.gamma = 10.0
+        self.transAlpha = 20.0
+        self.startAlpha = 20.0
         self.kappa = 0.0
 
         # Model associated with each state
