@@ -25,7 +25,7 @@ torch.set_default_dtype(torch.float64)
 class GPI_HDP():
     """
     Model composed by an HMM whose states are iterative Gaussian Processes.
-    The model define an structure that allow to switch between states determined by
+    The model define a structure that allow to switch between states determined by
     an LDS with Gaussian Process Prior.
     Parameters
     ----------
@@ -92,12 +92,12 @@ class GPI_HDP():
     self : returns an instance of self..
     """
 
-    def __init__(self, x_basis, M=None, n_outputs=1, x_basis_warp=None, kernels=None, model_type=None, ini_lengthscale=None,
+    def __init__(self, x_basis, M=None, n_outputs=1, x_basis_warp=None, kernels=None, model_type='dynamic', ini_lengthscale=None,
                  bound_lengthscale=None, ini_gamma=None, ini_sigma=None, ini_outputscale=None, bound_sigma=(1e-10, 1e+10),
                  bound_gamma=(1e-1, 1e+2), bound_noise_warp=(1e-10, 1e+10), reest_conditions=[1, 20, 5],
-                 noise_warp=0.05, recursive_warp=False, warp_updating=True, method_compute_warp='standard', mode_warp='balanced',
+                 noise_warp=0.05, recursive_warp=False, warp_updating=False, method_compute_warp='greedy', mode_warp='rough',
                  verbose=False, annealing=True, hmm_switch=True, max_models=None, batch=None,
-                 check_var=False, bayesian_params=False, cuda=False, inducing_points=False, estimation_limit=None, reestimate_initial_params=False):
+                 check_var=False, bayesian_params=True, cuda=False, inducing_points=False, estimation_limit=None, reestimate_initial_params=False):
         if M is None:
             M = 2
         self.M = M - 1
