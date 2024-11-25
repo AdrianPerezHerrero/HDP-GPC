@@ -37,7 +37,7 @@ lead = 0
 data = data[:,:,[lead]]
 num_samples, num_obs_per_sample, num_outputs = data.shape
 #Take a small batch to estimate the priors.
-n_f = 20
+n_f = 50
 std, std_dif = compute_estimators_LDS(data, n_f)
 #Define the priors
 #Bound_sigma refers to bound for the observation noise of the initial GP
@@ -74,7 +74,7 @@ sw_gp = hdpgp.GPI_HDP(x_basis, x_basis_warp=x_basis_warp, n_outputs=num_outputs,
                           bound_sigma=bound_sigma_, bound_gamma=bound_gamma, bound_noise_warp=bound_noise_warp,
                           warp_updating=warp, method_compute_warp='greedy', verbose=True,
                           hmm_switch=True, max_models=100, mode_warp='rough',
-                          bayesian_params=True, inducing_points=False, estimation_limit=None)
+                          bayesian_params=True, inducing_points=False, estimation_limit=50)
 
 
 start_ini_time = time.time()

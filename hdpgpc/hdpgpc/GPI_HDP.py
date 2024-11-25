@@ -97,7 +97,8 @@ class GPI_HDP():
                  bound_gamma=(1e-1, 1e+2), bound_noise_warp=(1e-10, 1e+10), reest_conditions=[1, 20, 5],
                  noise_warp=0.05, recursive_warp=False, warp_updating=False, method_compute_warp='greedy', mode_warp='rough',
                  verbose=False, annealing=True, hmm_switch=True, max_models=None, batch=None,
-                 check_var=False, bayesian_params=True, cuda=False, inducing_points=False, estimation_limit=None, reestimate_initial_params=False):
+                 check_var=False, bayesian_params=True, cuda=False, inducing_points=False, estimation_limit=None, reestimate_initial_params=False,
+                 n_explore_steps=10):
         if M is None:
             M = 2
         self.M = M - 1
@@ -176,6 +177,7 @@ class GPI_HDP():
         self.inducing_points = inducing_points
         self.estimation_limit = estimation_limit
         self.reestimate_initial_params = reestimate_initial_params
+        self.n_explore_steps = n_explore_steps
         self.train_elbo = []
         self.resp_assigned = []
         self.f_ind_old = torch.zeros(M-1, device= self.device).long()
@@ -1039,7 +1041,7 @@ class GPI_HDP():
             potential_ind[ind.item()] = torch.where(torch.isclose(q_rank, q_rank[ind], rtol=0.1))[0]
             potential_weight[ind] = torch.where(torch.isclose(q_rank, q_rank[ind], rtol=0.1))[0].shape[0]
             potential_q[ind] = torch.sum(q_rank[potential_ind[ind.item()]])
-        n_steps = 15
+        n_steps = self.n_explore_steps
         f_ind_new_potential_def = torch.zeros(n_steps).long()
         last_indexes = torch.tensor([-1])
         j_ = 0
