@@ -828,12 +828,14 @@ class GPI_model():
         """
         if len(self.indexes) == 0:
             y = np.repeat(0, len(self.x_basis))
+            x_train = np.repeat(0, len(self.x_basis))
         else:
             y = self.y_train[-1]
+            x_train = self.x_train[-1]
 
         self.gp.plotGP(len(self.indexes) + num_model, self.x_basis,
                        np.dot(self.C[-1], self.f_star[-1]), np.sqrt(self.var[-1]),
-                       self.x_train[-1], y, np.sqrt(self.y_var[-1]),
+                       x_train, y, np.sqrt(self.y_var[-1]),
                        title=True, label_model=num_model, labels=True)
 
     def sample_last(self, num_samples=1, random_state=0):
