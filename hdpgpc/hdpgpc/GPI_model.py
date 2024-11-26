@@ -7,7 +7,7 @@ Created on Tue Jul 13 10:55:40 2021
 import hdpgpc.GPI as GPI
 import numpy as np
 import torch
-from tqdm.notebook import trange
+from tqdm import trange
 from bisect import bisect_right
 dtype = torch.float64
 torch.set_default_dtype(dtype)

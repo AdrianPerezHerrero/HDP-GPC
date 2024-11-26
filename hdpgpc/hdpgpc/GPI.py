@@ -16,7 +16,7 @@ import torch
 import gpytorch
 from hdpgpc.GPI_models_pytorch import ExactGPModel, ProjectedGPModel, VarProjectedGPModel
 from hdpgpc.util_plots import print_hyperparams
-from tqdm.notebook import trange
+from tqdm import trange
 torch.set_default_dtype(torch.float64)
 
 
