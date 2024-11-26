@@ -42,11 +42,11 @@ std, std_dif = compute_estimators_LDS(data)
 #Outputscale is the max amplitude of the records (if data is standardized it can be set to 1.0)
 M = 2
 sigma = [std * 1.0] * M
-bound_sigma_ = (std * 0.01, std * 0.02)
+bound_sigma_ = (std * 0.01, std * 0.5)
 gamma = [std_dif * 1.0] * M
-bound_gamma = (std_dif * 0.01, std_dif * 0.02)
+bound_gamma = (std_dif * 0.01, std_dif * 0.5)
 outputscale_ = 300.0
-ini_lengthscale = 1.0
+ini_lengthscale = 3.0
 bound_lengthscale = (1.0, 20.0)
 #Warp priors
 noise_warp = std * 0.1
