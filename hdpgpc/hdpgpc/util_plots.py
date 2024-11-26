@@ -417,6 +417,7 @@ def plot_models(sw_gp, selected_gpmodels, main_model, labels, N_0, save=None, le
         fig.show(config=config)
 
 
+
 def plot_partial_models(sw_gp, selected_gpmodels, main_model, labels, N_0, time_instant=[-1], save=None):
     num_models = len(time_instant)
     num_cols = int(np.ceil(np.sqrt(num_models)))
@@ -659,6 +660,70 @@ def plot_MDS(sw_gp, main_model, labels, N_0, lead=0, save=None):
         plot(fig, auto_open=False, filename=save, config=config)
     else:
         fig.show(config=config)
+        fig.show()
+
+
+def plot_MDS_plotly(sw_gp, main_model, labels, N_0, lead=0, save=None):
+    # %% MDS compute and plot
+    print("Compute distance matrix.")
+    t_ini = sw_gp.M
+    x_bas = sw_gp.cond_to_torch(sw_gp.x_basis[0])
+    last_T1 = 0
+    # KL_dist = np.zeros((N-t_ini,N-t_ini))
+    KL_dist = np.zeros((sw_gp.T, sw_gp.T))
+    for m, gp1 in enumerate(sw_gp.gpmodels[lead]):
+        print("Compute model " + str(m + 1))
+        for i, ind1 in enumerate(gp1.indexes):
+            for gp2 in sw_gp.gpmodels[lead]:
+                # Computing map of MDS transformation of obtained models
+                for j, ind2 in enumerate(gp2.indexes):
+                    if ind1 < ind2:
+                        KL_dist[ind1, ind2] = gp1.KL_divergence(i, gp2, j, smoothed=False, x_bas=x_bas)
+    for i in range(sw_gp.T):
+        for j in range(i, sw_gp.T):
+            KL_dist[j, i] = KL_dist[i, j]
+
+    print("Calculando MDS para representación")
+    mds = MDS(dissimilarity='precomputed')
+    models_transformed = mds.fit_transform(KL_dist)
+
+    def col_fun(lab):
+        if type(labels[0]) is np.int32:
+            return to_hex(color.get(lab, 'b'))
+        else:
+            return to_hex(color.get(labels_trans.get(lab, 0), 'b'))
+
+    col = ["black"] * sw_gp.T
+    col2 = ["black"] * sw_gp.T
+    indexes_col = []
+    for m in range(sw_gp.M):
+        # for i in sw_gp.gpmodels[m].indexes[1:]:
+        for i in sw_gp.gpmodels[lead][m].indexes:
+            indexes_col.append(i)
+            col[i] = col_fun(labels[i + N_0])
+            col2[i] = col_fun(main_model[m])
+    n = sw_gp.T
+    t = np.linspace(0, 1, n)
+    c = sample_colorscale('amp', list(t))
+    # c.reverse()
+
+    fig, axs = plt.subplots(1, 2, figsize=(12, 6))
+    axs[0].set_title('MDS with real labels')
+    axs[1].set_title('MDS with our labels')
+
+    for i, _ in enumerate(models_transformed[:, 0]):
+        axs[0].scatter(models_transformed[i, 0], models_transformed[i, 1], c=col[i])
+        axs[1].scatter(models_transformed[i, 0], models_transformed[i, 1], c=col2[i])
+
+    axs[0].plot(models_transformed[:, 0], models_transformed[:, 1], linestyle='-', marker='o', alpha=0.5, c=c)
+    axs[1].plot(models_transformed[:, 0], models_transformed[:, 1], linestyle='-', marker='o', alpha=0.5, c=c)
+
+    fig.tight_layout()
+
+    if save is not None:
+        plt.savefig(save, format='png')
+    else:
+        plt.show()
 
 
 def plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, N_0, save=None, lead=0, step=0.1, plot_latent=False):
