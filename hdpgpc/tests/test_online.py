@@ -37,7 +37,7 @@ lead = 0
 data = data[:,:,[lead]]
 num_samples, num_obs_per_sample, num_outputs = data.shape
 #Take a small batch to estimate the priors.
-n_f = 600
+n_f = 200
 std, std_dif = compute_estimators_LDS(data, n_f)
 #Define the priors
 #Bound_sigma refers to bound for the observation noise of the initial GP
