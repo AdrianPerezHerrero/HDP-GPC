@@ -629,7 +629,7 @@ def plot_MDS(sw_gp, main_model, labels, N_0, lead=0, save=None):
     indexes_col = []
     for m in range(sw_gp.M):
         # for i in sw_gp.gpmodels[m].indexes[1:]:
-        for i in sw_gp.gpmodels[m].indexes:
+        for i in sw_gp.gpmodels[lead][m].indexes:
             indexes_col.append(i)
             col[i] = col_fun(labels[i + N_0])
             col2[i] = col_fun(main_model[m])
