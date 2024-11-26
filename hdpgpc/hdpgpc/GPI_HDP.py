@@ -1067,8 +1067,7 @@ class GPI_HDP():
                         f_ind_new_potential_def[j_] = f_ind_new
                         j_ = j_ + 1
                         break
-                        
-        f_ind_new_potential = torch.argsort(potential_q)
+
         q_aux = torch.clone(q_simple)
         ord_ = torch.argsort(potential_q[f_ind_new_potential_def[:n_steps]], descending=True)
         f_ind_new_potential_def[:n_steps] = f_ind_new_potential_def[ord_]
