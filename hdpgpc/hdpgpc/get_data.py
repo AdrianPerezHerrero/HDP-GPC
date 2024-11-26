@@ -303,7 +303,7 @@ def compute_estimators_LDS(samples, n_f=None):
          (samples_ - torch.mean(samples_, dim=1)[:, np.newaxis]).T])) / n_f)).item()
     std_dif = torch.sqrt(torch.mean(torch.diag(torch.linalg.multi_dot(
         [(samples__ - samples_), (samples__ - samples_).T])) / n_f)).item()
-    std_dif = torch.tensor(np.max([std, std_dif])) * 1.0
+    std_dif = np.max([std, std_dif]) * 1.0
     print("Sigma estimated:", str(std))
     print("Gamma estimated:", str(std_dif))
     return std, std_dif
