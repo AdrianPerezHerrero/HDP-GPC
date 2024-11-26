@@ -1355,8 +1355,8 @@ class GPI_HDP():
             for ld in range(self.n_outputs):
                 #prov_gp = self.gpmodel_deepcopy(self.gpmodels[ld][-1])
                 prov_gp = self.gpmodel_deepcopy(self.gpmodels[ld][q_ord[-1]])
-                prov_gp.reinit_GP(save_last=True)
-                prov_gp.reinit_LDS(save_last=False)
+                prov_gp.reinit_GP(save_last=False)
+                prov_gp.reinit_LDS(save_last=True)
                 #prov_gp.include_sample(t, self.x_train[-1],self.x_train[-1], y_mod[-1][-1], 1.0)
                 #prov_gp.include_weighted_sample(t, self.x_train[-1], self.x_train[-1], y_mod[-1][-1], 1.0)
                 #q_prev[:,-1, ld] = prov_gp.compute_sq_err_all(torch.from_numpy(np.array(self.x_train)), y_mod[-1], no_first=True)
