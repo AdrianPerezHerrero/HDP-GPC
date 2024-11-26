@@ -598,7 +598,7 @@ def plot_MDS(sw_gp, main_model, labels, N_0, lead=0, save=None):
     # %% MDS compute and plot
     print("Compute distance matrix.")
     t_ini = sw_gp.M
-    x_bas = sw_gp.x_basis[0]
+    x_bas = sw_gp.cond_to_torch(sw_gp.x_basis[0])
     last_T1 = 0
     # KL_dist = np.zeros((N-t_ini,N-t_ini))
     KL_dist = np.zeros((sw_gp.T, sw_gp.T))
