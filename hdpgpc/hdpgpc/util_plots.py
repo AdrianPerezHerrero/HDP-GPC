@@ -594,7 +594,7 @@ def plot_warp(sw_gp, selected_gpmodels, main_model, labels, N_0, save=None):
     else:
         fig.show(config=config)
 
-def plot_MDS(sw_gp, main_model, labels, N_0, save=None):
+def plot_MDS(sw_gp, main_model, labels, N_0, lead=0, save=None):
     # %% MDS compute and plot
     print("Compute distance matrix.")
     t_ini = sw_gp.M
@@ -602,10 +602,10 @@ def plot_MDS(sw_gp, main_model, labels, N_0, save=None):
     last_T1 = 0
     # KL_dist = np.zeros((N-t_ini,N-t_ini))
     KL_dist = np.zeros((sw_gp.T, sw_gp.T))
-    for m, gp1 in enumerate(sw_gp.gpmodels):
+    for m, gp1 in enumerate(sw_gp.gpmodels[lead]):
         print("Compute model " + str(m + 1))
         for i, ind1 in enumerate(gp1.indexes):
-            for gp2 in sw_gp.gpmodels:
+            for gp2 in sw_gp.gpmodels[lead]:
                 # Computing map of MDS transformation of obtained models
                 for j, ind2 in enumerate(gp2.indexes):
                     if ind1 < ind2:
