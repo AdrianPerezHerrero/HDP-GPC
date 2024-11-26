@@ -1271,8 +1271,8 @@ class GPI_HDP():
             model_type, recursive_warp, warp_updating, inducing_points, estimation_limit = self.get_default_options()
         ini_Sigma = var_y_y * 1.0
         ini_Gamma = self.cond_to_torch(np.max([var_y_y_,var_y_y])) * 1.0
-        bound_sigma = (ini_Sigma * 0.1, ini_Sigma * 0.2)
-        bound_gamma = (ini_Gamma * 0.1, ini_Gamma * 0.2)
+        bound_sigma = (ini_Sigma * 0.05, ini_Sigma * 0.2)
+        bound_gamma = (ini_Gamma * 0.05, ini_Gamma * 0.2)
         print("-----------Reestimated -----------", flush=True)
         print("Sigma: ", ini_Sigma)
         print("Gamma: ", ini_Gamma)
