@@ -26,7 +26,7 @@ from hdpgpc.util_plots import plot_models_plotly, print_results
 if len(sys.argv) > 1:
     rec = sys.argv[1]
 else:
-    rec = "213"
+    rec = "100"
 
 #Data should have the shape [num_samples, num_obs_per_sample, num_outputs]
 data = np.load(os.path.join(data_dir, rec+".npy"))
@@ -48,7 +48,7 @@ std, std_dif = compute_estimators_LDS(data, n_f)
 M = 2
 sigma = [std * 1.0] * M
 bound_sigma_ = (std * 0.1, std * 0.2)
-gamma = [std_dif * 0.5] * M
+gamma = [std_dif * 1.0] * M
 bound_gamma = (std_dif * 0.1, std_dif * 1.0)
 outputscale_ = 300.0
 ini_lengthscale = 3.0
