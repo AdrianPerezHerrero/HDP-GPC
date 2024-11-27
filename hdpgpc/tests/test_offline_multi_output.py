@@ -33,7 +33,7 @@ labels = np.load(os.path.join(data_dir, rec+"_labels.npy"))
 
 num_samples, num_obs_per_sample, num_outputs = data.shape
 #Take the full batch to estimate the priors.
-std, std_dif = compute_estimators_LDS(data)
+std, std_dif, bound_sigma, bound_gamma = compute_estimators_LDS(data)
 #Define the priors
 #Bound_sigma refers to bound for the observation noise of the initial GP
 #Ini_lengthscale and bound_lengthscale refers to initial lengthscale of the initial GP
@@ -41,10 +41,8 @@ std, std_dif = compute_estimators_LDS(data)
 #Gamma is the diag value of the latent noise of the LDS
 #Outputscale is the max amplitude of the records (if data is standardized it can be set to 1.0)
 M = 2
-sigma = [std * 1.0] * M
-bound_sigma_ = (std * 0.2, std * 0.5)
-gamma = [std_dif * 1.0] * M
-bound_gamma = (std_dif * 0.2, std_dif * 0.5)
+sigma = std * 1.0
+gamma = std_dif * 1.0
 outputscale_ = 300.0
 ini_lengthscale = 3.0
 bound_lengthscale = (1.0, 20.0)
@@ -66,7 +64,7 @@ warp = False
 sw_gp = hdpgp.GPI_HDP(x_basis, x_basis_warp=x_basis_warp, n_outputs=num_outputs, kernels=None, model_type='dynamic',
                           ini_lengthscale=ini_lengthscale, bound_lengthscale=bound_lengthscale,
                           ini_gamma=gamma, ini_sigma=sigma, ini_outputscale=outputscale_, noise_warp=noise_warp,
-                          bound_sigma=bound_sigma_, bound_gamma=bound_gamma, bound_noise_warp=bound_noise_warp,
+                          bound_sigma=bound_sigma, bound_gamma=bound_gamma, bound_noise_warp=bound_noise_warp,
                           warp_updating=False, method_compute_warp='greedy', verbose=True,
                           hmm_switch=True, max_models=100, mode_warp='rough',
                           bayesian_params=True, inducing_points=False, reestimate_initial_params=True, n_explore_steps=5)

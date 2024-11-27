@@ -704,7 +704,6 @@ def plot_MDS_plotly(sw_gp, main_model, labels, N_0, lead=0, save=None):
             col2[i] = col_fun(main_model[m])
     n = sw_gp.T
     t = np.linspace(0, 1, n)
-    c = sample_colorscale('amp', list(t))
     # c.reverse()
 
     fig, axs = plt.subplots(1, 2, figsize=(12, 6))
@@ -712,11 +711,8 @@ def plot_MDS_plotly(sw_gp, main_model, labels, N_0, lead=0, save=None):
     axs[1].set_title('MDS with our labels')
 
     for i, _ in enumerate(models_transformed[:, 0]):
-        axs[0].scatter(models_transformed[i, 0], models_transformed[i, 1], c=col[i])
-        axs[1].scatter(models_transformed[i, 0], models_transformed[i, 1], c=col2[i])
-
-    axs[0].plot(models_transformed[:, 0], models_transformed[:, 1], linestyle='-', marker='o', alpha=0.5, c=c)
-    axs[1].plot(models_transformed[:, 0], models_transformed[:, 1], linestyle='-', marker='o', alpha=0.5, c=c)
+        axs[0].scatter(models_transformed[i, 0], models_transformed[i, 1], c=col[i], alpha=0.3, s=0.1)
+        axs[1].scatter(models_transformed[i, 0], models_transformed[i, 1], c=col2[i], alpha=0.3, s=0.1)
 
     fig.tight_layout()
 
