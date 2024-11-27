@@ -1270,7 +1270,7 @@ class GPI_HDP():
         kernel, ini_sigma, ini_gamma, ini_outputscale, bound_sigma, bound_gamma, bound_noise_warp, annealing, method_compute_warp, \
             model_type, recursive_warp, warp_updating, inducing_points, estimation_limit = self.get_default_options()
         ini_Sigma = var_y_y * 1.0
-        ini_Gamma = self.cond_to_torch(np.max([var_y_y_,var_y_y])) * 1.0
+        ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.1]), var_y_y * 1.3])) * 1.0
         #bound_sigma = (ini_Sigma * 0.05, ini_Sigma * 0.2)
         #bound_gamma = (ini_Gamma * 0.05, ini_Gamma * 0.2)
         bound_sigma = (0.1, 20.0)
