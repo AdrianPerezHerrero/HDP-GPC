@@ -49,7 +49,7 @@ M = 2
 sigma = std * 1.0
 gamma = std_dif * 1.0
 outputscale_ = 300.0
-ini_lengthscale = 3.0
+ini_lengthscale = 1.0
 bound_lengthscale = (1.0, 20.0)
 #Warp priors
 noise_warp = std * 0.1
