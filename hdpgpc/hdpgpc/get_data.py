@@ -307,6 +307,6 @@ def compute_estimators_LDS(samples, n_f=None):
     std_dif = np.max([std * 1.1, std_dif]) * 1.0
     print("Sigma estimated:", str(std))
     print("Gamma estimated:", str(std_dif))
-    bound_std = (std * 0.05, std * 1.0)
-    bound_std_dif = (std_dif * 0.05, std_dif * 1.0)
+    bound_std = (std * 0.001, std * 1.0)
+    bound_std_dif = (std_dif * 0.001, std_dif * 1.0)
     return std, std_dif, bound_std, bound_std_dif
