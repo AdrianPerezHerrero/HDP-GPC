@@ -428,10 +428,13 @@ class GPI_model():
             if len(self.indexes) > 0:
                 if index in self.indexes:
                     ind = self.indexes.index(index) + 1
-                    if ind == 1 and not no_first:
-                        sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], i=ind)#, first=True)
-                    else:
-                        sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], i=ind)
+                    # if ind == 1 and not no_first:
+                    #     sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], i=ind)#, first=True)
+                    # else:
+                    #     sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], i=ind)
+                    mean, cov = self.f_star[ind], self.cov_f[ind]
+                    A, Gamma, C, Sigma = self.get_params(ind - 1)
+                    sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], mean, cov, C, Sigma, i=ind)
                 else:
                     ind = np.max([self.find_closest_lower(index) + 1, 1])
                     mean, cov = self.f_star[ind], self.cov_f[ind]
