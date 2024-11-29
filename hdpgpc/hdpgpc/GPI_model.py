@@ -479,7 +479,7 @@ class GPI_model():
                 C = self.C[-1]
                 Sigma = self.Sigma[-1]
             f_star_, cov_f_ = self.gp.posterior(f_star_sm_, cov_f_sm_, y, A,
-                                                Gamma * h, C, Sigma * h, x_train=x_train)
+                                                Gamma / h, C, Sigma / h, x_train=x_train, h=h)
         else:
             f_star_ = torch.clone(self.f_star[-1])
             cov_f_ = torch.clone(self.cov_f[-1])

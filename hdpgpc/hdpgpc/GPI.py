@@ -67,7 +67,7 @@ class IterativeGaussianProcess():
             self.device = 'cpu'
 
     def posterior(self, mean_prior, cov_prior, y_train, A, Gamma, C, Sigma, warped_mean=None, x_train=None,
-                  x_warped=None, embedding=True):
+                  x_warped=None, embedding=True, h=1.0):
         """Compute posterior distribution using an observation as an input and returns
         the mean and the covariance centered into the set of basis points.
         Assuming we follow the system described by:
@@ -133,7 +133,7 @@ class IterativeGaussianProcess():
         if torch.equal(cov_prior, K_X_X):
             P_t = x_basis_cov
             f_star = torch.zeros(x_warped.shape, device=self.device)
-            cov_f = self.cond_to_torch(self.kernel(x_train)) - self.cond_to_torch(self.kernel(x_train, x_train))
+            cov_f = (self.cond_to_torch(self.kernel(x_train)) - self.cond_to_torch(self.kernel(x_train, x_train))) / h
         else:
             mean = torch.matmul(C, x_basis_mean)
             f_star, cov_f = self.pred_dist(x_warped, self.x_basis, mean, Sigma)
