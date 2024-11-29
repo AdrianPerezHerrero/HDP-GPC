@@ -255,8 +255,12 @@ class GPI_model():
         """Compute the log-squared-error of the latent process.
         """
         err = 0.0
-        cov_f_ = self.cov_f_sm[i]
-        lat_f_ = self.f_star_sm[i]
+        if i == 0:
+            cov_f_ = self.cov_f_sm[i + 1]
+            lat_f_ = self.f_star_sm[i + 1]
+        else:
+            cov_f_ = self.cov_f_sm[i]
+            lat_f_ = self.f_star_sm[i]
         #cov_f = self.cov_f_sm[i + 1]
         lat_f = self.f_star_sm[i + 1]
         #Gamma = self.Gamma[-1]
@@ -429,9 +433,9 @@ class GPI_model():
                     else:
                         sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], i=ind)
                 else:
-                    ind = np.max([self.find_closest_lower(index), 1])
-                    mean, cov = self.f_star[ind + 1], self.cov_f[ind + 1]
-                    A, Gamma, C, Sigma = self.get_params(ind)
+                    ind = np.max([self.find_closest_lower(index) + 1, 1])
+                    mean, cov = self.f_star[ind], self.cov_f[ind]
+                    A, Gamma, C, Sigma = self.get_params(ind - 1)
                     sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], mean, cov, C, Sigma, i=ind)
         return sq_err
 
