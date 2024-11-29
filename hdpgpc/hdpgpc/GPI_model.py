@@ -234,7 +234,7 @@ class GPI_model():
 
         #If first iteration we add the kernel noise.
         if first:
-            ini_noise = self.cond_to_cuda(self.cond_to_torch(self.gp.kernel.get_params()["k2__noise_level"])) * 1e-2
+            ini_noise = self.cond_to_cuda(self.cond_to_torch(self.gp.kernel.get_params()["k2__noise_level"])) * 1e-4
             #ini_noise = torch.mean(torch.diag(self.Sigma[0])) * 1e-4
             cov_f = cov_f + torch.mul(ini_noise, torch.eye(len(x_train), device=ini_noise.device))
         # If we have a projection we have to add an extra noise because of the smooth conditions of the
@@ -429,7 +429,7 @@ class GPI_model():
                 if index in self.indexes:
                     ind = self.indexes.index(index) + 1
                     if ind == 1 and not no_first:
-                        sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], i=ind, first=True)
+                        sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], i=ind)#, first=True)
                     else:
                         sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], i=ind)
                 else:
