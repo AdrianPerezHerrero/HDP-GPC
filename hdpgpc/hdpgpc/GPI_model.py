@@ -235,7 +235,7 @@ class GPI_model():
         #If first iteration we add the kernel noise.
         if first:
             #ini_noise = self.cond_to_cuda(self.cond_to_torch(self.gp.kernel.get_params()["k2__noise_level"])) * 1e-2
-            ini_noise = torch.mean(torch.diag(self.Sigma[0])) * 1e-2
+            ini_noise = torch.mean(torch.diag(self.Sigma[0]))# * 1e-2
             cov_f = cov_f + torch.mul(ini_noise, torch.eye(len(x_train), device=ini_noise.device))
         # If we have a projection we have to add an extra noise because of the smooth conditions of the
         # interpolation. We assume this condition if we have as basis points less than a third of the training.
@@ -255,21 +255,20 @@ class GPI_model():
         """Compute the log-squared-error of the latent process.
         """
         err = 0.0
-        if i > 0:
-            cov_f_ = self.cov_f_sm[i]
-            lat_f_ = self.f_star_sm[i]
-            #cov_f = self.cov_f_sm[i + 1]
-            lat_f = self.f_star_sm[i + 1]
-            #Gamma = self.Gamma[-1]
-            A = self.A[-1]
-            #t = Gamma.shape[0]
-            exp_t_t_ = cov_f_ + torch.matmul(lat_f_, lat_f_.T)
-            #exp_t_t = cov_f + torch.matmul(lat_f, lat_f.T)
-            Gamma_inv = self.gamma_inv
-            err = -1 / 2 * torch.linalg.multi_dot([lat_f.T, Gamma_inv, lat_f]) \
-                  + torch.linalg.multi_dot([lat_f.T, Gamma_inv, A, lat_f_]) \
-                  - 1 / 2 * torch.trace(torch.linalg.multi_dot([A.T, Gamma_inv, A, exp_t_t_]))
-                  # - 1 / 2 * torch.trace(torch.linalg.multi_dot([Gamma_inv, exp_t_t])) \
+        cov_f_ = self.cov_f_sm[i]
+        lat_f_ = self.f_star_sm[i]
+        #cov_f = self.cov_f_sm[i + 1]
+        lat_f = self.f_star_sm[i + 1]
+        #Gamma = self.Gamma[-1]
+        A = self.A[-1]
+        #t = Gamma.shape[0]
+        exp_t_t_ = cov_f_ + torch.matmul(lat_f_, lat_f_.T)
+        #exp_t_t = cov_f + torch.matmul(lat_f, lat_f.T)
+        Gamma_inv = self.gamma_inv
+        err = -1 / 2 * torch.linalg.multi_dot([lat_f.T, Gamma_inv, lat_f]) \
+              + torch.linalg.multi_dot([lat_f.T, Gamma_inv, A, lat_f_]) \
+              - 1 / 2 * torch.trace(torch.linalg.multi_dot([A.T, Gamma_inv, A, exp_t_t_]))
+              # - 1 / 2 * torch.trace(torch.linalg.multi_dot([Gamma_inv, exp_t_t])) \
         return err
 
     def include_sample(self, index, x_train, y, x_warped=None, h=1.0, posterior=True, embedding=True, include_index=False):
@@ -549,7 +548,7 @@ class GPI_model():
                 A, Gamma, C, Sigma = self.get_params(t)
                 if proj:
                     Sigma = Sigma + Gamma
-                mean = torch.matmul(C, self.f_star[t])
+                mean = torch.matmul(C, self.f_star[t + 1])
         else:
             mean = params[0]
             Sigma = params[3]
@@ -572,8 +571,8 @@ class GPI_model():
                 mean = self.f_star[-1]
                 cov = self.cov_f[-1]
             else:
-                mean = self.f_star[t]
-                cov = self.cov_f[t]
+                mean = self.f_star[t+1]
+                cov = self.cov_f[t+1]
         else:
             mean = params[0]
             cov = params[1]
