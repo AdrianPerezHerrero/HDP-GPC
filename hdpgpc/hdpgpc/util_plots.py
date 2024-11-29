@@ -722,7 +722,7 @@ def plot_MDS_plotly(sw_gp, main_model, labels, N_0, lead=0, save=None):
         plt.show()
 
 
-def plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, N_0, save=None, lead=0, step=0.1, plot_latent=False):
+def plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, N_0, save=None, lead=0, step=0.1, plot_latent=False, ticks=False):
     num_models = len(selected_gpmodels)
     num_cols = int(np.ceil(np.sqrt(num_models)))
     num_rows = int(np.ceil(num_models / num_cols))
@@ -774,13 +774,14 @@ def plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, N_0, save=N
         ax.set_title(f"ECG CLUSTER {m + 1} ({main_model[m]})")
         #ax.grid(True)
 
-    for ax in fig.get_axes():
-    #     ax.set_ylim(-390,320)
-    #     ax.label_outer()
-    #     ax.set_yticklabels([])
-        ax.set_xticklabels([])
-        ax.set_xticks([])
-    #     ax.set_yticks([])
+    if not ticks:
+        for ax in fig.get_axes():
+        #     ax.set_ylim(-390,320)
+        #     ax.label_outer()
+        #     ax.set_yticklabels([])
+            ax.set_xticklabels([])
+            ax.set_xticks([])
+        #     ax.set_yticks([])
     # Hide unused subplots
     for j in range(len(axes)):
         if j >= num_models:
