@@ -24,8 +24,7 @@ from hdpgpc.util_plots import plot_models_plotly, print_results
 #Get data cell
 #Select record to work with
 if len(sys.argv) > 1:
-    #rec = sys.argv[1]
-    rec = "100"
+    rec = sys.argv[1]
 else:
     rec = "100"
 #Data should have the shape [num_samples, num_obs_per_sample, num_outputs]
