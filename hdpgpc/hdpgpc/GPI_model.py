@@ -548,7 +548,7 @@ class GPI_model():
                 A, Gamma, C, Sigma = self.get_params(t)
                 if proj:
                     Sigma = Sigma + Gamma
-                mean = torch.matmul(C, self.f_star[t + 1])
+                mean = torch.matmul(C, self.f_star[t])
         else:
             mean = params[0]
             Sigma = params[3]
@@ -571,8 +571,8 @@ class GPI_model():
                 mean = self.f_star[-1]
                 cov = self.cov_f[-1]
             else:
-                mean = self.f_star[t+1]
-                cov = self.cov_f[t+1]
+                mean = self.f_star[t]
+                cov = self.cov_f[t]
         else:
             mean = params[0]
             cov = params[1]
