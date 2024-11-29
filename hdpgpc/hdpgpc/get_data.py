@@ -298,11 +298,22 @@ def compute_estimators_LDS(samples, n_f=None):
     samples_ = torch.from_numpy(samples[:n_f][:,:,0].T)
     samples__ = torch.from_numpy(samples[1:n_f + 1][:,:,0].T)
 
-    std = torch.sqrt(torch.mean(torch.diag(torch.linalg.multi_dot(
+    if n_f is None:
+        n_f = samples.shape[0] - 2
+    samples_ = torch.from_numpy(samples[:n_f][:, :, 0].T)
+    samples__ = torch.from_numpy(samples[1:n_f + 1][:, :, 0].T)
+
+    std = torch.mean(torch.diag(torch.linalg.multi_dot(
         [(samples_ - torch.mean(samples_, dim=1)[:, np.newaxis]),
-         (samples_ - torch.mean(samples_, dim=1)[:, np.newaxis]).T])) / n_f)).item()
-    std_dif = torch.sqrt(torch.mean(torch.diag(torch.linalg.multi_dot(
-        [(samples__ - samples_), (samples__ - samples_).T])) / n_f)).item()
+         (samples_ - torch.mean(samples_, dim=1)[:, np.newaxis]).T])) / n_f)
+    std_dif = torch.mean(torch.diag(torch.linalg.multi_dot(
+        [(samples__ - samples_), (samples__ - samples_).T])) / n_f)
+    if std > 1:
+        std = torch.sqrt(std).item()
+        std_dif = torch.sqrt(std_dif).item()
+    else:
+        std = std.item()
+        std_dif = std_dif.item()
     std_dif = np.max([std, std_dif]) * 1.0
     #std_dif = np.max([std * 1.1, std_dif]) * 1.0
     #std = std * 0.5
