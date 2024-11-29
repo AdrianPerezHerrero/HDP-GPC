@@ -430,7 +430,9 @@ class GPI_model():
                         sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], i=ind)
                 else:
                     ind = np.max([self.find_closest_lower(index), 1])
-                    sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], i=ind)
+                    mean, cov = self.f_star[ind + 1], self.cov_f[ind + 1]
+                    A, Gamma, C, Sigma = self.get_params(ind)
+                    sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], mean, cov, C, Sigma, i=ind)
         return sq_err
 
     def compute_q_lat_all(self, x_trains, t=None):
