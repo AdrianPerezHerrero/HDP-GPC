@@ -1250,10 +1250,10 @@ class GPI_HDP():
                 M_ = M_ + 1
         for i, gp in enumerate(gpmodels):
             if sum_resp[i] > 0:
-                # if sum_resp[i] < 2.0:
-                #     elb = elb + gp.return_LDS_param_likelihood(first=True)# * frac[i]
-                # else:
-                elb = elb + gp.return_LDS_param_likelihood()# * frac[i]
+                if sum_resp[i] < 2.0:
+                    elb = elb + gp.return_LDS_param_likelihood(first=True)# * frac[i]
+                else:
+                    elb = elb + gp.return_LDS_param_likelihood()# * frac[i]
         return elb / M_
 
     def redefine_default(self, x_trains, y_trains, resp):
