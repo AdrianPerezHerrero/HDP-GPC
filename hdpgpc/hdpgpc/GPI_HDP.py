@@ -430,8 +430,10 @@ class GPI_HDP():
                 print("Chosen model should be dynamic or static.")
             gp_.initial_conditions(ini_mean=None, ini_cov=None,
                                    ini_A=cond[0], ini_Gamma=cond[1], ini_C=cond[2], ini_Sigma=cond[3])
-            for ld in range(self.n_outputs):
-                self.wp_sys[ld].append(Warping_system(self.x_basis_warp[0], self.noise_warp, bound_noise_warp,
+            # for ld in range(self.n_outputs):
+            #     self.wp_sys[ld].append(Warping_system(self.x_basis_warp[0], self.noise_warp, bound_noise_warp,
+            #                                       recursive=recursive_warp, cuda=self.cuda, mode=self.mode_warp))
+            self.wp_sys.append(Warping_system(self.x_basis_warp[0], self.noise_warp, bound_noise_warp,
                                                   recursive=recursive_warp, cuda=self.cuda, mode=self.mode_warp))
             if self.cuda and torch.cuda.is_available():
                 gp_.model_to_cuda()
@@ -1361,7 +1363,7 @@ class GPI_HDP():
                 #prov_gp = self.gpmodel_deepcopy(self.gpmodels[ld][-1])
                 prov_gp = self.gpmodel_deepcopy(self.gpmodels[ld][q_ord[-1]])
                 prov_gp.reinit_GP(save_last=False)
-                prov_gp.reinit_LDS(save_last=False)
+                prov_gp.reinit_LDS(save_last=True)
                 #prov_gp.include_sample(t, self.x_train[-1],self.x_train[-1], y_mod[-1][-1], 1.0)
                 #prov_gp.include_weighted_sample(t, self.x_train[-1], self.x_train[-1], y_mod[-1][-1], 1.0)
                 #q_prev[:,-1, ld] = prov_gp.compute_sq_err_all(torch.from_numpy(np.array(self.x_train)), y_mod[-1], no_first=True)
