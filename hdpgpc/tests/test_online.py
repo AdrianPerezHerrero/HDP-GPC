@@ -27,7 +27,7 @@ if len(sys.argv) > 1:
     rec = sys.argv[1]
     #rec = "100"
 else:
-    rec = "100"
+    rec = "102"
 
 #Data should have the shape [num_samples, num_obs_per_sample, num_outputs]
 data = np.load(os.path.join(data_dir, rec+".npy"))
@@ -73,7 +73,7 @@ sw_gp = hdpgp.GPI_HDP(x_basis, x_basis_warp=x_basis_warp, n_outputs=num_outputs,
                           bound_sigma=bound_sigma, bound_gamma=bound_gamma, bound_noise_warp=bound_noise_warp,
                           warp_updating=warp, method_compute_warp='greedy', verbose=True,
                           hmm_switch=True, max_models=100, mode_warp='rough',
-                          bayesian_params=True, inducing_points=False, estimation_limit=50)
+                          bayesian_params=True, inducing_points=False, estimation_limit=None)
 
 
 start_ini_time = time.time()

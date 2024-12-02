@@ -235,7 +235,7 @@ class GPI_model():
         #If first iteration we add the kernel noise.
         if first:
             #ini_noise = self.cond_to_cuda(self.cond_to_torch(self.gp.kernel.get_params()["k2__noise_level"])) * 1e-4
-            ini_noise = torch.mean(torch.diag(self.Sigma[0])) * 1e-4
+            ini_noise = torch.mean(torch.diag(self.Sigma[0])) * 1e-2
             cov_f = cov_f + torch.mul(ini_noise, torch.eye(len(x_train), device=ini_noise.device))
         # If we have a projection we have to add an extra noise because of the smooth conditions of the
         # interpolation. We assume this condition if we have as basis points less than a third of the training.
@@ -407,12 +407,12 @@ class GPI_model():
         """
         ini_A, ini_Gamma, ini_C, ini_Sigma = self.A_def, self.Gamma_def, self.C_def, self.Sigma_def
         if first:
-            # ini_noise = self.cond_to_cuda(self.cond_to_torch(self.gp.kernel.get_params()["k2__noise_level"])) * 2.0
-            # A_, Gam_, C_, Sig_ = (self.A[-1], self.Gamma[-1], self.C[-1],
-            #                       self.Sigma[-1] + torch.mul(ini_noise, torch.eye(self.Sigma[-1].shape[0],
-            #                                                                       device=ini_noise.device)))
-            A_, Gam_, C_, Sig_ = (self.A[-1], self.Gamma[-1] + self.cov_f[-1], self.C[-1],
-                                   self.Sigma[-1] + self.cov_f[-1])
+            ini_noise = self.cond_to_cuda(self.cond_to_torch(self.gp.kernel.get_params()["k2__noise_level"]))
+            A_, Gam_, C_, Sig_ = (self.A[-1], self.Gamma[-1], self.C[-1],
+                                  self.Sigma[-1] + torch.mul(ini_noise, torch.eye(self.Sigma[-1].shape[0],
+                                                                                  device=ini_noise.device)))
+            # A_, Gam_, C_, Sig_ = (self.A[-1], self.Gamma[-1] + self.cov_f[-1], self.C[-1],
+            #                        self.Sigma[-1] + self.cov_f[-1])
         else:
             A_, Gam_, C_, Sig_ = self.A[-1], self.Gamma[-1], self.C[-1], self.Sigma[-1]
         int_params = matrix_normal_inv_wishart(ini_A, torch.eye(ini_A.shape[0], device=self.device), self.free_deg_MNIV, ini_Gamma)
