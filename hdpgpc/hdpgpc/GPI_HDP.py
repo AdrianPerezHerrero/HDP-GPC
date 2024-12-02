@@ -1355,7 +1355,8 @@ class GPI_HDP():
         if t > 0:
             # Define order
             q_ord = torch.argsort(self.weight_mean(q_aux)[-1,:-1], descending=True)
-            m = q_ord[-1].item()
+            #m = q_ord[-1].item()
+            m = q_ord[0].item()
             q_prev = torch.clone(q_aux)
             q_lat_prev = torch.clone(q_lat)
             # Compute first birth cost
