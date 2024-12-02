@@ -96,7 +96,7 @@ class GPI_HDP():
                  bound_lengthscale=None, ini_gamma=None, ini_sigma=None, ini_outputscale=None, bound_sigma=(1e-10, 1e+10),
                  bound_gamma=(1e-1, 1e+2), bound_noise_warp=(1e-10, 1e+10), reest_conditions=[1, 20, 5],
                  noise_warp=0.05, recursive_warp=False, warp_updating=False, method_compute_warp='greedy', mode_warp='rough',
-                 verbose=False, annealing=True, hmm_switch=True, max_models=None, batch=None,
+                 verbose=False, annealing=False, hmm_switch=True, max_models=None, batch=None,
                  check_var=False, bayesian_params=True, cuda=False, inducing_points=False, estimation_limit=None, reestimate_initial_params=False,
                  n_explore_steps=10):
         if M is None:
