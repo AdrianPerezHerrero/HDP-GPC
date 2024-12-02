@@ -962,11 +962,11 @@ class GPI_model():
                     Sigma_ = self.Sigma[-1]
                 if self.annealing:
                     if model_type == 'static':
-                        factor_S = self.Sigma[0] / (self.N ** 2)
+                        factor_S = self.Sigma[0] / (self.N * 2)
                         factor_G = self.Gamma[0]
                     else:
-                        factor_G = self.Gamma[0] / (self.N ** 2)
-                        factor_S = self.Sigma[0] / (self.N ** 2)
+                        factor_G = self.Gamma[0] / (self.N * 2)
+                        factor_S = self.Sigma[0] / (self.N * 2)
                     Gamma_ = Gamma_ + factor_G
                     Sigma_ = Sigma_ + factor_S
                 if self.N < self.estimation_limit or full_data:
