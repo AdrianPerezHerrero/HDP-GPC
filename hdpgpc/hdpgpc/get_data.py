@@ -311,7 +311,7 @@ def compute_estimators_LDS(samples, n_f=None):
     else:
         std = std.item()
         std_dif = std_dif.item()
-    std_dif = np.max([std, std_dif]) * 1.0
+    std_dif = np.min([np.max([std, std_dif]), std * 1.5]) * 1.0
     #std_dif = np.max([std * 1.1, std_dif]) * 1.0
     #std = std * 0.5
     #std_dif = std_dif * 1.5
