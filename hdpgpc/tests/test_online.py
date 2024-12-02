@@ -27,7 +27,7 @@ if len(sys.argv) > 1:
     rec = sys.argv[1]
     #rec = "100"
 else:
-    rec = "102"
+    rec = "100"
 
 #Data should have the shape [num_samples, num_obs_per_sample, num_outputs]
 data = np.load(os.path.join(data_dir, rec+".npy"))
