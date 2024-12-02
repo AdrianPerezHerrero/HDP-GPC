@@ -66,7 +66,7 @@ class GPI_model():
         else:
             self.device = 'cpu'
         self.sq_lat_last = torch.zeros(1, device=self.device)
-        self.free_deg_MNIV = 10
+        self.free_deg_MNIV = 20
 
 
     def initial_conditions(self, ini_mean=None, ini_cov=None,
