@@ -1270,13 +1270,13 @@ class GPI_HDP():
                 self.estimation_limit != np.PINF) else y_trains.shape[0] - 1
         samples = y_trains[:n_f][:, :, 0].T
         samples_ = y_trains[1:n_f+1][:, :, 0].T
-        var_y_y = torch.sqrt(torch.mean(torch.diag(torch.linalg.multi_dot([(samples - torch.mean(samples, dim=1)[:,np.newaxis]), (samples - torch.mean(samples, dim=1)[:,np.newaxis]).T])) / n_f))# * 0.15
-        var_y_y_ = torch.sqrt(torch.mean(torch.diag(torch.linalg.multi_dot([(samples_ - samples), (samples_ - samples).T])) / n_f))# * 0.15
+        var_y_y = torch.mean(torch.diag(torch.linalg.multi_dot([(samples - torch.mean(samples, dim=1)[:,np.newaxis]), (samples - torch.mean(samples, dim=1)[:,np.newaxis]).T])) / n_f)# * 0.15
+        var_y_y_ = torch.mean(torch.diag(torch.linalg.multi_dot([(samples_ - samples), (samples_ - samples).T])) / n_f)# * 0.15
         kernel, ini_sigma, ini_gamma, ini_outputscale, bound_sigma, bound_gamma, bound_noise_warp, annealing, method_compute_warp, \
             model_type, recursive_warp, warp_updating, inducing_points, estimation_limit, free_deg_MNIV = self.get_default_options()
-        ini_Sigma = var_y_y * 1.0
-        #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.5]), var_y_y * 2.0])) * 1.0
-        ini_Gamma = self.cond_to_torch(np.max([var_y_y_, var_y_y * 1.5]))
+        ini_Sigma = var_y_y * 0.2
+        ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y]), var_y_y * 2.0])) * 0.2
+        #ini_Gamma = self.cond_to_torch(np.max([var_y_y_, var_y_y * 1.5]))
         #ini_Gamma = var_y_y_ * 1.5
         bound_sigma = (ini_Sigma * 0.05, ini_Sigma * 1.0)
         bound_gamma = (ini_Gamma * 0.05, ini_Gamma * 1.0)
