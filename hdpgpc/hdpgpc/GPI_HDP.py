@@ -423,7 +423,7 @@ class GPI_HDP():
                 model_type, recursive_warp, warp_updating, inducing_points, estimation_limit = self.get_default_options()
             kernel = kernel.clone_with_theta(kernel.theta)
             gp_ = gp.GPI_model(kernel, self.x_basis_ini, annealing=annealing, bayesian=self.bayesian_params, cuda=self.cuda,
-                               inducing_points=inducing_points, estimation_limit=estimation_limit)
+                               inducing_points=inducing_points, estimation_limit=estimation_limit, free_deg_MNIV=self.free_deg_MNIV)
             if model_type == 'static':
                 cond = gp_.GPR_static(ini_sigma)
             elif model_type == 'dynamic':
@@ -460,8 +460,8 @@ class GPI_HDP():
                 model_type, recursive_warp, warp_updating, inducing_points, estimation_limit = self.get_default_options()
             kernel = kernel.clone_with_theta(kernel.theta)
             gp_ = gp.GPI_model(kernel, self.x_basis_ini, annealing=annealing, bayesian=self.bayesian_params,
-                               cuda=self.cuda,
-                               inducing_points=inducing_points, estimation_limit=estimation_limit)
+                               cuda=self.cuda, inducing_points=inducing_points, estimation_limit=estimation_limit,
+                               free_deg_MNIV=self.free_deg_MNIV)
             if model_type == 'static':
                 cond = gp_.GPR_static(ini_sigma)
             elif model_type == 'dynamic':
@@ -1269,12 +1269,12 @@ class GPI_HDP():
                 self.estimation_limit != np.PINF) else y_trains.shape[0] - 1
         samples = y_trains[:n_f][:, :, 0].T
         samples_ = y_trains[1:n_f+1][:, :, 0].T
-        var_y_y = torch.sqrt(torch.mean(torch.diag(torch.linalg.multi_dot([(samples - torch.mean(samples, dim=1)[:,np.newaxis]), (samples - torch.mean(samples, dim=1)[:,np.newaxis]).T])) / n_f))# * 0.15
-        var_y_y_ = torch.sqrt(torch.mean(torch.diag(torch.linalg.multi_dot([(samples_ - samples), (samples_ - samples).T])) / n_f))# * 0.15
+        var_y_y = torch.mean(torch.diag(torch.linalg.multi_dot([(samples - torch.mean(samples, dim=1)[:,np.newaxis]), (samples - torch.mean(samples, dim=1)[:,np.newaxis]).T])) / n_f)# * 0.15
+        var_y_y_ = torch.mean(torch.diag(torch.linalg.multi_dot([(samples_ - samples), (samples_ - samples).T])) / n_f)# * 0.15
         kernel, ini_sigma, ini_gamma, ini_outputscale, bound_sigma, bound_gamma, bound_noise_warp, annealing, method_compute_warp, \
             model_type, recursive_warp, warp_updating, inducing_points, estimation_limit = self.get_default_options()
-        ini_Sigma = var_y_y * 1.0
-        ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y]), var_y_y * 2.0])) * 1.0
+        ini_Sigma = var_y_y * 0.1
+        ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y]), var_y_y * 2.0])) * 0.1
         #ini_Gamma = var_y_y_ * 1.5
         bound_sigma = (ini_Sigma * 0.05, ini_Sigma * 1.0)
         bound_gamma = (ini_Gamma * 0.05, ini_Gamma * 1.0)
@@ -1395,6 +1395,8 @@ class GPI_HDP():
                         q_post[[-1], m, ld] = self.estimate_new(t, post_gp, self.x_train[-1], y_mod[m][-1], h=1.0)
                         #q_post[[-1], m, ld] = post_gp.log_sq_error(self.x_train[-1], y_mod[m][-1], i=t+1)
                         post_gp.include_weighted_sample(t, self.x_train[-1], self.x_train[-1], y_mod[m][-1], 1.0)
+                        post_gp.backwards_pair(1.0)
+                        post_gp.bayesian_new_params(1.0)
                         q_lat_post[m, ld] = post_gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)))
                     resp_post, resp_post_log, respPair_post, respPair_post_log = self.variational_local_terms(q_post, self.transTheta, self.startTheta, liks)
                     q_bas_post, elbo_bas_post = self.compute_q_elbo(resp_post, respPair_post, self.weight_mean(q_post),
@@ -1695,7 +1697,7 @@ class GPI_HDP():
 
         """
         mean_, cov_, C_, Sigma_ = gpmodel.smoother_weighted(x_train, y, h)
-        q_new = gpmodel.log_sq_error(x_train, y, mean=mean_[-1], cov=cov_[-1], C=C_[-1], Sigma=Sigma_[-1], i=t+1, first=True)
+        q_new = gpmodel.log_sq_error(x_train, y, mean=mean_[-1], cov=cov_[-1], C=C_[-1], Sigma=cov_[-1], i=t+1, first=True)
         return q_new
 
     def estimate_q_all(self, M, x_trains, y_trains, y_trains_w, resp, respPair, q_, q_lat_, snr_, startPi, transPi, reparam=False):
