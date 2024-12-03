@@ -158,7 +158,7 @@ class GPI_HDP():
         # Save default options to generate new model
         self.set_default_options(kernels[0], ini_sigma[0], ini_gamma[0], ini_outputscale[0], bound_sigma[0], bound_gamma[0], bound_noise_warp[0],
                                  annealing[0], method_compute_warp, model_type[0], recursive_warp[0], warp_updating[0], inducing_points[0],
-                                 estimation_limit[0])
+                                 estimation_limit[0], free_deg_MNIV)
         # Define some characteristics of the model with an initial M decided
         self.bound_sigma = bound_sigma
         self.bound_gamma = bound_gamma
@@ -391,7 +391,7 @@ class GPI_HDP():
 
     def set_default_options(self, kernel, ini_sigma, ini_gamma, ini_outputscale, bound_sigma, bound_gamma,
                             bound_noise_warp, annealing, method_compute_warp,
-                            model_type, recursive_warp, warp_updating, inducing_points, estimation_limit):
+                            model_type, recursive_warp, warp_updating, inducing_points, estimation_limit, free_deg_MNIV):
         """ Default options definition.
         """
         self.kernel_def = kernel.clone_with_theta(kernel.theta)
@@ -408,22 +408,23 @@ class GPI_HDP():
         self.warp_updating_def = warp_updating
         self.inducing_points_def = inducing_points
         self.estimation_limit_def = estimation_limit
+        self.free_deg_MNIV = free_deg_MNIV
 
     def get_default_options(self):
         return self.kernel_def, self.ini_sigma_def, self.ini_gamma_def, self.ini_outputscale_def, self.bound_sigma_def,\
             self.bound_gamma_def, self.bound_sigma_warp_def, self.annealing_def, self.method_compute_warp_def,\
             self.model_type_def, self.recursive_warp_def, self.warp_updating_def, self.inducing_points_def,\
-            self.estimation_limit_def
+            self.estimation_limit_def, self.free_deg_MNIV
 
     def create_gp_default(self, i=None):
         """ Create a GP default when a birth happens.
         """
         if i is None or len(self.wp_sys) <= i:
             kernel, ini_sigma, ini_gamma, ini_outputscale, bound_sigma, bound_gamma, bound_noise_warp, annealing, method_compute_warp,\
-                model_type, recursive_warp, warp_updating, inducing_points, estimation_limit = self.get_default_options()
+                model_type, recursive_warp, warp_updating, inducing_points, estimation_limit, free_deg_MNIV = self.get_default_options()
             kernel = kernel.clone_with_theta(kernel.theta)
             gp_ = gp.GPI_model(kernel, self.x_basis_ini, annealing=annealing, bayesian=self.bayesian_params, cuda=self.cuda,
-                               inducing_points=inducing_points, estimation_limit=estimation_limit, free_deg_MNIV=self.free_deg_MNIV)
+                               inducing_points=inducing_points, estimation_limit=estimation_limit, free_deg_MNIV=free_deg_MNIV)
             if model_type == 'static':
                 cond = gp_.GPR_static(ini_sigma)
             elif model_type == 'dynamic':
@@ -457,11 +458,11 @@ class GPI_HDP():
             return gp_
         else:
             kernel, ini_sigma, ini_gamma, ini_outputscale, bound_sigma, bound_gamma, bound_noise_warp, annealing, method_compute_warp, \
-                model_type, recursive_warp, warp_updating, inducing_points, estimation_limit = self.get_default_options()
+                model_type, recursive_warp, warp_updating, inducing_points, estimation_limit, free_deg_MNIV = self.get_default_options()
             kernel = kernel.clone_with_theta(kernel.theta)
             gp_ = gp.GPI_model(kernel, self.x_basis_ini, annealing=annealing, bayesian=self.bayesian_params,
                                cuda=self.cuda, inducing_points=inducing_points, estimation_limit=estimation_limit,
-                               free_deg_MNIV=self.free_deg_MNIV)
+                               free_deg_MNIV=free_deg_MNIV)
             if model_type == 'static':
                 cond = gp_.GPR_static(ini_sigma)
             elif model_type == 'dynamic':
@@ -1269,12 +1270,12 @@ class GPI_HDP():
                 self.estimation_limit != np.PINF) else y_trains.shape[0] - 1
         samples = y_trains[:n_f][:, :, 0].T
         samples_ = y_trains[1:n_f+1][:, :, 0].T
-        var_y_y = torch.mean(torch.diag(torch.linalg.multi_dot([(samples - torch.mean(samples, dim=1)[:,np.newaxis]), (samples - torch.mean(samples, dim=1)[:,np.newaxis]).T])) / n_f)# * 0.15
-        var_y_y_ = torch.mean(torch.diag(torch.linalg.multi_dot([(samples_ - samples), (samples_ - samples).T])) / n_f)# * 0.15
+        var_y_y = torch.sqrt(torch.mean(torch.diag(torch.linalg.multi_dot([(samples - torch.mean(samples, dim=1)[:,np.newaxis]), (samples - torch.mean(samples, dim=1)[:,np.newaxis]).T])) / n_f))# * 0.15
+        var_y_y_ = torch.sqrt(torch.mean(torch.diag(torch.linalg.multi_dot([(samples_ - samples), (samples_ - samples).T])) / n_f))# * 0.15
         kernel, ini_sigma, ini_gamma, ini_outputscale, bound_sigma, bound_gamma, bound_noise_warp, annealing, method_compute_warp, \
-            model_type, recursive_warp, warp_updating, inducing_points, estimation_limit = self.get_default_options()
-        ini_Sigma = var_y_y * 0.1
-        ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y]), var_y_y * 2.0])) * 0.1
+            model_type, recursive_warp, warp_updating, inducing_points, estimation_limit, free_deg_MNIV = self.get_default_options()
+        ini_Sigma = var_y_y * 1.0
+        ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y]), var_y_y * 2.0])) * 1.0
         #ini_Gamma = var_y_y_ * 1.5
         bound_sigma = (ini_Sigma * 0.05, ini_Sigma * 1.0)
         bound_gamma = (ini_Gamma * 0.05, ini_Gamma * 1.0)
@@ -1286,7 +1287,7 @@ class GPI_HDP():
         print("-----------------------------", flush=True)
         self.set_default_options(kernel, ini_Sigma, ini_Gamma, ini_outputscale, bound_sigma, bound_gamma,
                                  bound_noise_warp, annealing, method_compute_warp,
-                                 model_type, recursive_warp, warp_updating, inducing_points, estimation_limit)
+                                 model_type, recursive_warp, warp_updating, inducing_points, estimation_limit, free_deg_MNIV)
         for ld in range(self.n_outputs):
             for m in range(len(self.gpmodels[ld])):
                 self.gpmodels[ld][m] = self.create_gp_default()
@@ -2358,6 +2359,7 @@ class GPI_HDP():
         gp_.internal_params = gpmodel.internal_params
         gp_.observation_params = gpmodel.observation_params
         gp_.ini_kernel_theta = gpmodel.ini_kernel_theta
+        gp_.free_deg_MNIV = gpmodel.free_deg_MNIV
         return gp_
 
     def normalize_log(self, x):
