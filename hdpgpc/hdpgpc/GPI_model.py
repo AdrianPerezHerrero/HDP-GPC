@@ -384,12 +384,15 @@ class GPI_model():
         self.N = 0
 
 
-    def reinit_LDS(self, save_last=False, return_likelihood=False):
+    def reinit_LDS(self, save_last=False, save_last_diag=False, return_likelihood=False):
         """ Method to reinitiate LDS parameters. Can save some of them.
         """
         if save_last:
             ind_ = -1
-            ini_A, ini_Gamma, ini_C, ini_Sigma = self.A[ind_], self.Gamma[ind_], self.C[ind_], self.Sigma[ind_]
+            if save_last_diag:
+                ini_A, ini_Gamma, ini_C, ini_Sigma = self.A_def, torch.diag(torch.diag(self.Gamma[ind_])) * 0.5, self.C_def, torch.diag(torch.diag(self.Sigma[ind_])) * 0.5
+            else:
+                ini_A, ini_Gamma, ini_C, ini_Sigma = self.A[ind_], self.Gamma[ind_], self.C[ind_], self.Sigma[ind_]
         else:
             ini_A, ini_Gamma, ini_C, ini_Sigma = self.A_def, self.Gamma_def, self.C_def, self.Sigma_def
             if return_likelihood:
