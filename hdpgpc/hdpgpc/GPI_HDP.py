@@ -98,7 +98,7 @@ class GPI_HDP():
                  noise_warp=0.05, recursive_warp=False, warp_updating=False, method_compute_warp='greedy', mode_warp='rough',
                  verbose=False, annealing=True, hmm_switch=True, max_models=None, batch=None,
                  check_var=False, bayesian_params=True, cuda=False, inducing_points=False, estimation_limit=None, reestimate_initial_params=False,
-                 n_explore_steps=10):
+                 n_explore_steps=10, free_deg_MNIV=5):
         if M is None:
             M = 2
         self.M = M - 1
@@ -178,6 +178,7 @@ class GPI_HDP():
         self.estimation_limit = estimation_limit
         self.reestimate_initial_params = reestimate_initial_params
         self.n_explore_steps = n_explore_steps
+        self.free_deg_MNIV = free_deg_MNIV
         self.train_elbo = []
         self.resp_assigned = []
         self.f_ind_old = torch.zeros(M-1, device= self.device).long()
@@ -259,10 +260,11 @@ class GPI_HDP():
                 if self.bayesian_params:
                     gp_ = gp.GPI_model(kernels[m], x_basis[m], annealing=self.annealing[m],
                                        bayesian=self.bayesian_params, cuda=self.cuda, inducing_points=inducing_points[m],
-                                       estimation_limit=estimation_limit[m])
+                                       estimation_limit=estimation_limit[m], free_deg_MNIV=self.free_deg_MNIV)
                 else:
                     gp_ = gp.GPI_model(kernels[m], x_basis[m], annealing=self.annealing[m], cuda=self.cuda,
-                                       inducing_points=inducing_points[m], estimation_limit=estimation_limit[m])
+                                       inducing_points=inducing_points[m], estimation_limit=estimation_limit[m],
+                                       free_deg_MNIV=self.free_deg_MNIV)
                 # Initiate GP
                 if model_type[m] == 'static':
                     cond = gp_.GPR_static(ini_sigma[m])

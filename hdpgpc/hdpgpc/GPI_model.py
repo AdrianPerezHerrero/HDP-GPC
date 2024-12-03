@@ -27,7 +27,8 @@ class GPI_model():
         self : returns an instance of self.
         """
 
-    def __init__(self, kernel, x_basis, annealing=True, bayesian=False, cuda=False, inducing_points=False, estimation_limit=None):
+    def __init__(self, kernel, x_basis, annealing=True, bayesian=False, cuda=False, inducing_points=False,
+                 estimation_limit=None, free_deg_MNIV=5):
         self.gp = GPI.IterativeGaussianProcess(kernel, x_basis, cuda=cuda)
         self.x_basis = self.cond_to_torch(x_basis)
         self.x_train = []
@@ -66,7 +67,7 @@ class GPI_model():
         else:
             self.device = 'cpu'
         self.sq_lat_last = torch.zeros(1, device=self.device)
-        self.free_deg_MNIV = 5
+        self.free_deg_MNIV = free_deg_MNIV
 
 
     def initial_conditions(self, ini_mean=None, ini_cov=None,
