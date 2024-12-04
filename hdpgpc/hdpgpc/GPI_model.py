@@ -413,7 +413,11 @@ class GPI_model():
         if first:
             #ini_noise = self.cond_to_cuda(self.cond_to_torch(self.gp.kernel.get_params()["k2__noise_level"]))
             ini_noise = torch.mean(torch.diag(self.Sigma[-1])) * 1e-2
-            A_, Gam_, C_, Sig_ = (self.A[-1], self.Gamma[-1], self.C[-1],
+            ini_noise_ = torch.mean(torch.diag(self.Gamma[-1])) * 1e-2
+            A_, Gam_, C_, Sig_ = (self.A[-1],
+                                  self.Gamma[-1] + torch.mul(ini_noise_, torch.eye(self.Sigma[-1].shape[0],
+                                                                                  device=ini_noise.device)),
+                                  self.C[-1],
                                   self.Sigma[-1] + torch.mul(ini_noise, torch.eye(self.Sigma[-1].shape[0],
                                                                                   device=ini_noise.device)))
             # A_, Gam_, C_, Sig_ = (self.A[-1], self.Gamma[-1] + self.cov_f[-1], self.C[-1],
