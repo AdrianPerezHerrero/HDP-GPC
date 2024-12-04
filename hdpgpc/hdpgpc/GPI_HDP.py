@@ -1279,8 +1279,8 @@ class GPI_HDP():
         ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.0]), var_y_y * 2.0])) * 0.1
         #ini_Gamma = self.cond_to_torch(np.max([var_y_y_, var_y_y * 1.5]))
         #ini_Gamma = var_y_y_ * 1.5
-        bound_sigma = (ini_Sigma * 0.01, ini_Sigma * 1.0)
-        bound_gamma = (ini_Gamma * 0.01, ini_Gamma * 1.0)
+        bound_sigma = (ini_Sigma * 0.1, ini_Sigma * 1.0)
+        bound_gamma = (ini_Gamma * 0.1, ini_Gamma * 1.0)
         # bound_sigma = (0.1, 20.0)
         # bound_gamma = (0.1, 20.0)
         print("-----------Reestimated -----------", flush=True)
@@ -1378,8 +1378,8 @@ class GPI_HDP():
                 #q_prev[[-1], -1, ld] = prov_gp.log_sq_error(self.x_train[-1], y_mod[-1][-1], i=t+1, first=True)
                 #q_prev[[-1], -1, ld] = self.estimate_new(t, prov_gp, self.x_train[-1], y_mod[-1][-1], h=1.0)
                 prov_gp.include_weighted_sample(t, self.x_train[-1], self.x_train[-1], y_mod[-1][-1], 1.0)
-                prov_gp.backwards_pair(1.0)
-                prov_gp.bayesian_new_params(1.0)
+                #prov_gp.backwards_pair(1.0)
+                #rov_gp.bayesian_new_params(1.0)
                 q_prev[[-1], -1, ld] = prov_gp.log_sq_error(self.x_train[-1], y_mod[m][-1], i=-1)
                 self.gpmodels[ld][-1] = prov_gp
                 q_lat_prev[-1, ld] = prov_gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)))
