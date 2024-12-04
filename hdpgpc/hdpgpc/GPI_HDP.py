@@ -1275,8 +1275,8 @@ class GPI_HDP():
         var_y_y_ = torch.mean(torch.diag(torch.linalg.multi_dot([(samples_ - samples), (samples_ - samples).T])) / n_f)# * 0.15
         kernel, ini_sigma, ini_gamma, ini_outputscale, bound_sigma, bound_gamma, bound_noise_warp, annealing, method_compute_warp, \
             model_type, recursive_warp, warp_updating, inducing_points, estimation_limit, free_deg_MNIV = self.get_default_options()
-        ini_Sigma = var_y_y * 0.3
-        ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y]), var_y_y * 2.0])) * 0.3
+        ini_Sigma = var_y_y * 0.1
+        ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.1]), var_y_y * 2.0])) * 0.1
         #ini_Gamma = self.cond_to_torch(np.max([var_y_y_, var_y_y * 1.5]))
         #ini_Gamma = var_y_y_ * 1.5
         bound_sigma = (ini_Sigma * 0.05, ini_Sigma * 1.0)
@@ -1361,7 +1361,7 @@ class GPI_HDP():
         if t > 0:
             # Define order
             q_ord = torch.argsort(self.weight_mean(q_aux)[-1,:-1], descending=True)
-            m = q_ord[-1].item()
+            m = q_ord[0].item()
             #m = q_ord[0].item()
             q_prev = torch.clone(q_aux)
             q_lat_prev = torch.clone(q_lat)
@@ -1370,16 +1370,16 @@ class GPI_HDP():
                 #prov_gp = self.gpmodel_deepcopy(self.gpmodels[ld][-1])
                 prov_gp = self.gpmodel_deepcopy(self.gpmodels[ld][m])
                 prov_gp.reinit_GP(save_last=False)
-                prov_gp.reinit_LDS(save_last=True, save_last_diag=True)
-                #prov_gp.reinit_LDS(save_last=False)
+                #prov_gp.reinit_LDS(save_last=True, save_last_diag=True)
+                prov_gp.reinit_LDS(save_last=True)
                 #prov_gp.include_sample(t, self.x_train[-1],self.x_train[-1], y_mod[-1][-1], 1.0)
                 #prov_gp.include_weighted_sample(t, self.x_train[-1], self.x_train[-1], y_mod[-1][-1], 1.0)
                 #q_prev[:,-1, ld] = prov_gp.compute_sq_err_all(torch.from_numpy(np.array(self.x_train)), y_mod[-1], no_first=True)
                 #q_prev[[-1], -1, ld] = prov_gp.log_sq_error(self.x_train[-1], y_mod[-1][-1], i=t+1, first=True)
                 #q_prev[[-1], -1, ld] = self.estimate_new(t, prov_gp, self.x_train[-1], y_mod[-1][-1], h=1.0)
                 prov_gp.include_weighted_sample(t, self.x_train[-1], self.x_train[-1], y_mod[-1][-1], 1.0)
-                # prov_gp.backwards_pair(1.0)
-                # prov_gp.bayesian_new_params(1.0)
+                prov_gp.backwards_pair(1.0)
+                prov_gp.bayesian_new_params(1.0)
                 q_prev[[-1], -1, ld] = prov_gp.log_sq_error(self.x_train[-1], y_mod[m][-1], i=t + 1)
                 self.gpmodels[ld][-1] = prov_gp
                 q_lat_prev[-1, ld] = prov_gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)))
@@ -1399,12 +1399,12 @@ class GPI_HDP():
                         #post_gp.include_weighted_sample(t, self.x_train[-1], self.x_train[-1], y_mod[m][-1], 1.0)
                         #post_gp.backwards_pair(1.0)
                         #post_gp.bayesian_new_params(1.0)
-                        #self.gpmodels[ld][m] = post_gp
                         #q_post[[-1], m, ld] = self.estimate_new(t, post_gp, self.x_train[-1], y_mod[m][-1], h=1.0)
                         #q_post[[-1], m, ld] = post_gp.log_sq_error(self.x_train[-1], y_mod[m][-1], i=t+1)
                         post_gp.include_weighted_sample(t, self.x_train[-1], self.x_train[-1], y_mod[m][-1], 1.0)
-                        post_gp.backwards_pair(1.0)
-                        post_gp.bayesian_new_params(1.0)
+                        #post_gp.backwards_pair(1.0)
+                        #post_gp.bayesian_new_params(1.0)
+                        self.gpmodels[ld][m] = post_gp
                         q_post[[-1], m, ld] = post_gp.log_sq_error(self.x_train[-1], y_mod[m][-1], i=t + 1)
                         q_lat_post[m, ld] = post_gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)))
                     resp_post, resp_post_log, respPair_post, respPair_post_log = self.variational_local_terms(q_post, self.transTheta, self.startTheta, liks)
