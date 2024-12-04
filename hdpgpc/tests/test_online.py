@@ -27,7 +27,7 @@ if len(sys.argv) > 1:
     rec = sys.argv[1]
     #rec = "100"
 else:
-    rec = "102"
+    rec = "100"
 
 #Data should have the shape [num_samples, num_obs_per_sample, num_outputs]
 data = np.load(os.path.join(data_dir, rec+".npy"))
@@ -73,11 +73,11 @@ sw_gp = hdpgp.GPI_HDP(x_basis, x_basis_warp=x_basis_warp, n_outputs=num_outputs,
                           bound_sigma=bound_sigma, bound_gamma=bound_gamma, bound_noise_warp=bound_noise_warp,
                           warp_updating=warp, method_compute_warp='greedy', verbose=True,
                           hmm_switch=True, max_models=100, mode_warp='rough',
-                          bayesian_params=True, inducing_points=False, estimation_limit=None, free_deg_MNIV=20)
+                          bayesian_params=True, inducing_points=False, estimation_limit=50, free_deg_MNIV=20)
 
 
 start_ini_time = time.time()
-for i in range(data.shape[0]):
+for i in range(1870,data.shape[0]):
     start_time = time.time()
     print("Sample:", i, "/", str(data.shape[0]-1), "label:", labels[i])
     sw_gp.include_sample(x_train, data[i], with_warp=warp)
