@@ -1279,8 +1279,8 @@ class GPI_HDP():
         ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.1]), var_y_y * 2.0])) * 0.1
         #ini_Gamma = self.cond_to_torch(np.max([var_y_y_, var_y_y * 1.5]))
         #ini_Gamma = var_y_y_ * 1.5
-        bound_sigma = (ini_Sigma * 0.05, ini_Sigma * 1.0)
-        bound_gamma = (ini_Gamma * 0.05, ini_Gamma * 1.0)
+        bound_sigma = (ini_Sigma * 0.01, ini_Sigma * 1.0)
+        bound_gamma = (ini_Gamma * 0.01, ini_Gamma * 1.0)
         # bound_sigma = (0.1, 20.0)
         # bound_gamma = (0.1, 20.0)
         print("-----------Reestimated -----------", flush=True)
@@ -1370,8 +1370,8 @@ class GPI_HDP():
                 #prov_gp = self.gpmodel_deepcopy(self.gpmodels[ld][-1])
                 prov_gp = self.gpmodel_deepcopy(self.gpmodels[ld][m])
                 prov_gp.reinit_GP(save_last=False)
-                #prov_gp.reinit_LDS(save_last=True, save_last_diag=True)
-                prov_gp.reinit_LDS(save_last=True)
+                prov_gp.reinit_LDS(save_last=True, save_last_diag=True)
+                #prov_gp.reinit_LDS(save_last=False)
                 #prov_gp.include_sample(t, self.x_train[-1],self.x_train[-1], y_mod[-1][-1], 1.0)
                 #prov_gp.include_weighted_sample(t, self.x_train[-1], self.x_train[-1], y_mod[-1][-1], 1.0)
                 #q_prev[:,-1, ld] = prov_gp.compute_sq_err_all(torch.from_numpy(np.array(self.x_train)), y_mod[-1], no_first=True)
@@ -1380,10 +1380,10 @@ class GPI_HDP():
                 prov_gp.include_weighted_sample(t, self.x_train[-1], self.x_train[-1], y_mod[-1][-1], 1.0)
                 prov_gp.backwards_pair(1.0)
                 prov_gp.bayesian_new_params(1.0)
-                q_prev[[-1], -1, ld] = prov_gp.log_sq_error(self.x_train[-1], y_mod[m][-1], i=t + 1)
+                q_prev[[-1], -1, ld] = prov_gp.log_sq_error(self.x_train[-1], y_mod[m][-1], i=-1)
                 self.gpmodels[ld][-1] = prov_gp
                 q_lat_prev[-1, ld] = prov_gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)))
-                #prov_gp.reinit_LDS(save_last=False)
+                prov_gp.reinit_LDS(save_last=False)
             resp_prev, resp_prev_log, respPair_prev, respPair_prev_log = self.variational_local_terms(q_prev, self.transTheta, self.startTheta, liks)
             q_prev_post, elbo_prev_post = self.compute_q_elbo(resp_prev, respPair_prev, self.weight_mean(q_prev), self.weight_mean(q_lat_prev),
                                                   self.gpmodels, self.M, snr='saved')
@@ -1405,7 +1405,7 @@ class GPI_HDP():
                         #post_gp.backwards_pair(1.0)
                         #post_gp.bayesian_new_params(1.0)
                         self.gpmodels[ld][m] = post_gp
-                        q_post[[-1], m, ld] = post_gp.log_sq_error(self.x_train[-1], y_mod[m][-1], i=t + 1)
+                        q_post[[-1], m, ld] = post_gp.log_sq_error(self.x_train[-1], y_mod[m][-1], i=-1)
                         q_lat_post[m, ld] = post_gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)))
                     resp_post, resp_post_log, respPair_post, respPair_post_log = self.variational_local_terms(q_post, self.transTheta, self.startTheta, liks)
                     q_bas_post, elbo_bas_post = self.compute_q_elbo(resp_post, respPair_post, self.weight_mean(q_post),
