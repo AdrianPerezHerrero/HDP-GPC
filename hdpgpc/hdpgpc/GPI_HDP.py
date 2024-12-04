@@ -1405,9 +1405,9 @@ class GPI_HDP():
                         post_gp.backwards_pair(1.0)
                         post_gp.bayesian_new_params(1.0)
                         self.gpmodels[ld][m] = post_gp
-                        q__ = post_gp.log_sq_error(self.x_train[-1], y_mod[m][-1], i=-1)
-                        if q__ > q_post[[-1], m, ld]:
-                            q_post[[-1], m, ld] = (q_post[[-1], m, ld] + q__) / 2.0
+                        #q__ = post_gp.log_sq_error(self.x_train[-1], y_mod[m][-1], i=-1)
+                        # if q__ > q_post[[-1], m, ld]:
+                        #     q_post[[-1], m, ld] = (q_post[[-1], m, ld] + q__) / 2.0
                         q_lat_post[m, ld] = post_gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)))
                     resp_post, resp_post_log, respPair_post, respPair_post_log = self.variational_local_terms(q_post, self.transTheta, self.startTheta, liks)
                     q_bas_post, elbo_bas_post = self.compute_q_elbo(resp_post, respPair_post, self.weight_mean(q_post),
