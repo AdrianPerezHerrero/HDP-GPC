@@ -1387,6 +1387,7 @@ class GPI_HDP():
             resp_prev, resp_prev_log, respPair_prev, respPair_prev_log = self.variational_local_terms(q_prev, self.transTheta, self.startTheta, liks)
             q_prev_post, elbo_prev_post = self.compute_q_elbo(resp_prev, respPair_prev, self.weight_mean(q_prev), self.weight_mean(q_lat_prev),
                                                   self.gpmodels, self.M, snr='saved')
+            elbo_prev_post = elbo_prev_post / self.T
             for ld in range(self.n_outputs):
                 self.gpmodels[ld][-1] = self.create_gp_default()
             if torch.argmax(q_prev[-1]) == self.M:
@@ -1413,6 +1414,7 @@ class GPI_HDP():
                     q_bas_post, elbo_bas_post = self.compute_q_elbo(resp_post, respPair_post, self.weight_mean(q_post),
                                                           self.weight_mean(q_lat_post),
                                                           self.gpmodels, self.M, snr='saved', prev=True)
+                    elbo_bas_post = elbo_bas_post / self.T
                     if q_bas_post + elbo_bas_post > q_prev_post + elbo_prev_post:
                         resp, resplog, respPair, respPairlog = self.variational_local_terms(q_post, self.transTheta, self.startTheta, liks)
                         q_chos = q_post
