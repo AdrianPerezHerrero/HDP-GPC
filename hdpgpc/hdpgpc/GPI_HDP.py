@@ -1355,8 +1355,8 @@ class GPI_HDP():
             q_aux[:-1, :self.q[-1].shape[1], :] = torch.clone(self.q[-1])
         for ld in range(self.n_outputs):
             for m, gp in enumerate(self.gpmodels[ld][:-1]):
-                #q_aux[-1, m, ld] = gp.log_sq_error(torch.from_numpy(np.array(self.x_train[-1])), y_mod[m][-1], i=-1)
-                q_aux[-1, m, ld] = self.estimate_new(t, gp, self.x_train[-1], y_mod[-1][-1], h=1.0)
+                q_aux[-1, m, ld] = gp.log_sq_error(torch.from_numpy(np.array(self.x_train[-1])), y_mod[m][-1], i=-1)
+                #q_aux[-1, m, ld] = self.estimate_new(t, gp, self.x_train[-1], y_mod[-1][-1], h=1.0)
                 q_lat[m, ld] = gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)), t=t)
         if t > 0:
             # Define order
