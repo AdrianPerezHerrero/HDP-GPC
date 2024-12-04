@@ -390,7 +390,7 @@ class GPI_model():
         if save_last:
             ind_ = -1
             if save_last_diag:
-                ini_A, ini_Gamma, ini_C, ini_Sigma = self.A_def, torch.diag(torch.diag(self.Gamma[ind_])) * 0.5, self.C_def, torch.diag(torch.diag(self.Sigma[ind_])) * 0.5
+                ini_A, ini_Gamma, ini_C, ini_Sigma = self.A_def, torch.diag(torch.diag(self.Gamma[ind_])) * 2.0, self.C_def, torch.diag(torch.diag(self.Sigma[ind_])) * 2.0
             else:
                 ini_A, ini_Gamma, ini_C, ini_Sigma = self.A[ind_], self.Gamma[ind_], self.C[ind_], self.Sigma[ind_]
         else:
