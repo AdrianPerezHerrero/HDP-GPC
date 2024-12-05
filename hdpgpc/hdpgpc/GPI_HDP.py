@@ -1367,23 +1367,13 @@ class GPI_HDP():
             q_lat_prev = torch.clone(q_lat)
             # Compute first birth cost
             for ld in range(self.n_outputs):
-                #prov_gp = self.gpmodel_deepcopy(self.gpmodels[ld][-1])
                 prov_gp = self.gpmodel_deepcopy(self.gpmodels[ld][m])
                 prov_gp.reinit_GP(save_last=False)
-                #prov_gp.reinit_LDS(save_last=True, save_last_diag=True)
                 prov_gp.reinit_LDS(save_last=False)
-                #prov_gp.include_sample(t, self.x_train[-1],self.x_train[-1], y_mod[-1][-1], 1.0)
-                #prov_gp.include_weighted_sample(t, self.x_train[-1], self.x_train[-1], y_mod[-1][-1], 1.0)
-                #q_prev[:,-1, ld] = prov_gp.compute_sq_err_all(torch.from_numpy(np.array(self.x_train)), y_mod[-1], no_first=True)
-                #q_prev[[-1], -1, ld] = prov_gp.log_sq_error(self.x_train[-1], y_mod[-1][-1], i=t+1, first=True)
                 q_prev[[-1], -1, ld] = self.estimate_new(t, prov_gp, self.x_train[-1], y_mod[-1][-1], h=1.0)
                 prov_gp.include_weighted_sample(t, self.x_train[-1], self.x_train[-1], y_mod[-1][-1], 1.0)
-                #prov_gp.backwards_pair(1.0)
-                #rov_gp.bayesian_new_params(1.0)
-                #q_prev[[-1], -1, ld] = prov_gp.log_sq_error(self.x_train[-1], y_mod[m][-1], i=-1)
                 self.gpmodels[ld][-1] = prov_gp
                 q_lat_prev[-1, ld] = prov_gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)))
-                #prov_gp.reinit_LDS(save_last=False)
             resp_prev, resp_prev_log, respPair_prev, respPair_prev_log = self.variational_local_terms(q_prev, self.transTheta, self.startTheta, liks)
             q_prev_post, elbo_prev_post = self.compute_q_elbo(resp_prev, respPair_prev, self.weight_mean(q_prev), self.weight_mean(q_lat_prev),
                                                   self.gpmodels, self.M, snr='saved')
@@ -1397,16 +1387,9 @@ class GPI_HDP():
                     saved_gps = [self.gpmodels[ld][m] for ld in range(self.n_outputs)]
                     for ld in range(self.n_outputs):
                         post_gp = self.gpmodel_deepcopy(self.gpmodels[ld][m])
-                        #post_gp.include_weighted_sample(t, self.x_train[-1], self.x_train[-1], y_mod[m][-1], 1.0)
-                        #post_gp.backwards_pair(1.0)
-                        #post_gp.bayesian_new_params(1.0)
                         q_post[[-1], m, ld] = self.estimate_new(t, post_gp, self.x_train[-1], y_mod[m][-1], h=1.0)
-                        #q_post[[-1], m, ld] = post_gp.log_sq_error(self.x_train[-1], y_mod[m][-1], i=t+1)
                         post_gp.include_weighted_sample(t, self.x_train[-1], self.x_train[-1], y_mod[m][-1], 1.0)
                         self.gpmodels[ld][m] = post_gp
-                        #q__ = post_gp.log_sq_error(self.x_train[-1], y_mod[m][-1], i=-1)
-                        # if q__ > q_post[[-1], m, ld]:
-                        #     q_post[[-1], m, ld] = (q_post[[-1], m, ld] + q__) / 2.0
                         post_gp.backwards_pair(1.0)
                         post_gp.bayesian_new_params(1.0)
                         q_lat_post[m, ld] = post_gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)))
