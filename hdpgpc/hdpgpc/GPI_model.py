@@ -1260,67 +1260,15 @@ class matrix_normal_inv_wishart():
                    # - self.n0 * 0.5 * torch.logdet(self.scale)\
                    # - self.n0 * d * 0.5 * torch.log(torch.tensor(2.0 * torch.pi, device=self.scale.device))
         scale_lik = - (self.n0 + 1) * 0.5 * torch.logdet(Sigma) \
-                    - 0.5 * torch.trace(Sigma)
-                    #- 0.5 * torch.trace(torch.matmul(sig_inv, self.scale))
+                    - 0.5 * torch.trace(torch.matmul(sig_inv, self.scale))
+                    # - 0.5 * torch.trace(Sigma)
                     # - self.n0 * 0.5 * torch.logdet(self.scale)\
                     # - self.n0 * d * 0.5 * torch.log(torch.tensor(2.0, device=self.scale.device))\
                     # - torch.special.multigammaln(torch.tensor((self.n0 + d)*0.5, device=self.scale.device), d)
         #Scale with dimension:
         #scale_lik = scale_lik / self.scale.shape[0]
         #return scale_lik# / d
-        return (mean_lik + scale_lik)# / d**2
-        #
-        # """
-        # Evaluates the variational term given the parameters.
-        #
-        # Args:
-        #     Sigma_w_k (torch.Tensor): Current Sigma_w^{k} matrix (DxD).
-        #     A_k (torch.Tensor): Current A^k matrix (DxD).
-        # Returns:
-        #     float: Computed log p value.
-        # """
-        # # Expectations
-        # D = Sigma.shape[0]
-        # nu_D = self.n0 - 1
-        # nu_0_k = self.n0 + 1
-        # E_Sigma_w = Sigma / nu_D
-        # E_A = M
-        # V_A_k = self.m_r_cov
-        # A_k = M
-        # M_A_k = self.m_mean
-        # S_w_k = self.scale
-        #
-        # # Matrix Normal constants
-        # c_MN = (
-        #         -D ** 2 / 2 * torch.log(torch.tensor(2 * torch.pi))
-        #         + D / 2 * torch.log(torch.linalg.det(V_A_k))
-        # )
-        #
-        # # Inverse-Wishart constants
-        # c_IW = (
-        #         -D * (D - 1) / 4 * torch.log(torch.tensor(torch.pi))
-        #         - D / 2 * torch.log(torch.tensor(2)) * nu_0_k
-        #         - sum(torch.special.gammaln((nu_0_k + 1 - d) / 2) for d in range(1, D + 1))
-        #         + nu_0_k / 2 * torch.log(torch.linalg.det(S_w_k))
-        # )
-        #
-        # # Log determinant of Sigma_w^{k-1}
-        # log_det_Sigma_w = torch.log(torch.linalg.det(Sigma))
-        #
-        # # Compute traces and expectations
-        # term_1 = (nu_0_k - 1) / 2 * log_det_Sigma_w
-        #
-        # term_2 = -0.5 * torch.trace(
-        #     (A_k.T @ Sigma @ A_k) @ V_A_k
-        # )
-        #
-        # term_3 = torch.trace((Sigma @ A_k) @ (V_A_k @ M_A_k))
-        #
-        # term_4 = -0.5 * torch.trace(
-        #     E_Sigma_w @ (S_w_k + V_A_k.T @ M_A_k @ V_A_k)
-        # )
-        #
-        # return c_MN + c_IW + term_1 + term_2 + term_3 + term_4
+        return (mean_lik + scale_lik) / d**2
 
 
     def get_mean(self):
