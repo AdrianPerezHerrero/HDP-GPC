@@ -455,6 +455,7 @@ class GPI_model():
     def compute_q_lat_all(self, x_trains, t=None):
         """Method to compute the latent squared error accumulated.
         """
+        self.backwards()
         sq_err = torch.zeros(1, device=x_trains[0].device)
         if self.N == 0:
             return sq_err
