@@ -439,7 +439,7 @@ class GPI_model():
         for index in trange(n_samps, desc="Compute_sq_error"):
             if len(self.indexes) > 0:
                 if index in self.indexes:
-                    ind = self.indexes.index(index)# + 1
+                    ind = self.indexes.index(index) + 1
                     if ind == 1 and not no_first:
                         sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], i=ind, first=True)
                     else:
