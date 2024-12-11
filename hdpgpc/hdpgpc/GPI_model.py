@@ -248,7 +248,7 @@ class GPI_model():
         err = -1 / 2 * torch.linalg.multi_dot([y.T, Sigma_inv, y])\
               + torch.linalg.multi_dot([y.T, Sigma_inv, f_star]) \
               - 1 / 2 * torch.trace(torch.linalg.multi_dot([C.T, Sigma_inv, C, exp_t_t])) \
-              - 1 / 2 * torch.trace(cov_f)
+              #- 1 / 2 * torch.trace(cov_f)
         #Scale with dimension:
         #err = err / y.shape[0]
         return err
@@ -276,7 +276,7 @@ class GPI_model():
         err = -1 / 2 * torch.linalg.multi_dot([lat_f.T, Gamma_inv, lat_f]) \
               + torch.linalg.multi_dot([lat_f.T, Gamma_inv, A, lat_f_]) \
               - 1 / 2 * torch.trace(torch.linalg.multi_dot([A.T, Gamma_inv, A, exp_t_t_])) \
-              - 1 / 2 * torch.trace(Gamma)
+              #- 1 / 2 * torch.trace(Gamma)
               #- 1 / 2 * torch.trace(torch.linalg.multi_dot([Gamma_inv, exp_t_t]))
         return err
 
@@ -440,7 +440,7 @@ class GPI_model():
         for index in trange(n_samps, desc="Compute_sq_error"):
             if len(self.indexes) > 0:
                 if index in self.indexes:
-                    ind = self.indexes.index(index) + 1
+                    ind = np.max([self.indexes.index(index), 1])
                     if ind == 1 and not no_first:
                         sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], i=ind, first=True)
                     else:
