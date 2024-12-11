@@ -260,8 +260,8 @@ class GPI_model():
         """
         err = 0.0
         if i == 0:
-            cov_f_ = self.cov_f_sm[i + 1]
-            lat_f_ = self.f_star_sm[i + 1]
+            cov_f_ = self.cov_f[i + 1]
+            lat_f_ = self.f_star[i + 1]
         else:
             cov_f_ = self.cov_f_sm[i]
             lat_f_ = self.f_star_sm[i]
