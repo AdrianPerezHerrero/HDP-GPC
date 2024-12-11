@@ -264,8 +264,8 @@ class GPI_model():
             lat_f_ = self.f_star_sm[i]
         cov_f = self.cov_f_sm[i + 1]
         lat_f = self.f_star_sm[i + 1]
-        Gamma = self.Gamma[-1]
-        A = self.A[-1]
+        Gamma = self.Gamma[i + 1]
+        A = self.A[i + 1]
         #t = Gamma.shape[0]
         exp_t_t_ = cov_f_ + torch.matmul(lat_f_, lat_f_.T)
         exp_t_t = cov_f + torch.matmul(lat_f, lat_f.T)
