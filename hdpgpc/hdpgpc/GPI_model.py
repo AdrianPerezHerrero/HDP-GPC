@@ -247,7 +247,8 @@ class GPI_model():
         Sigma_inv = torch.linalg.solve(cov_f, self.cond_to_cuda(torch.eye(t)))
         err = -1 / 2 * torch.linalg.multi_dot([y.T, Sigma_inv, y])\
               + torch.linalg.multi_dot([y.T, Sigma_inv, f_star]) \
-              - 1 / 2 * torch.trace(torch.linalg.multi_dot([C.T, Sigma_inv, C, exp_t_t]))
+              - 1 / 2 * torch.trace(torch.linalg.multi_dot([C.T, Sigma_inv, C, exp_t_t])) \
+              - 1 / 2 * torch.trace(cov_f)
         #Scale with dimension:
         #err = err / y.shape[0]
         return err
@@ -264,7 +265,7 @@ class GPI_model():
             lat_f_ = self.f_star_sm[i]
         #cov_f = self.cov_f_sm[i + 1]
         lat_f = self.f_star_sm[i + 1]
-        #Gamma = self.Gamma[i + 1]
+        Gamma = self.Gamma[-1]
         A = self.A[-1]
         #t = Gamma.shape[0]
         exp_t_t_ = cov_f_ + torch.matmul(lat_f_, lat_f_.T)
@@ -274,8 +275,8 @@ class GPI_model():
         Gamma_inv = self.gamma_inv
         err = -1 / 2 * torch.linalg.multi_dot([lat_f.T, Gamma_inv, lat_f]) \
               + torch.linalg.multi_dot([lat_f.T, Gamma_inv, A, lat_f_]) \
-              - 1 / 2 * torch.trace(torch.linalg.multi_dot([A.T, Gamma_inv, A, exp_t_t_]))# \
-              #- 1 / 2 * torch.trace(Gamma_inv)
+              - 1 / 2 * torch.trace(torch.linalg.multi_dot([A.T, Gamma_inv, A, exp_t_t_])) \
+              - 1 / 2 * torch.trace(Gamma)
               #- 1 / 2 * torch.trace(torch.linalg.multi_dot([Gamma_inv, exp_t_t]))
         return err
 
