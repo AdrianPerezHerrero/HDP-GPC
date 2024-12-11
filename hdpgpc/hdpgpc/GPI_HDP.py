@@ -1025,8 +1025,8 @@ class GPI_HDP():
                                                         gpmodels_temp, M, snr=snr_aux, prev=True)
             update_snr = True
             print("Sum resp_temp: " + str(torch.sum(resp_temp, dim=0)))
-            print("Q_bas: " + str(q_bas))
-            print("Q_bas_post: " + str(q_bas_post))
+            print("Q_bas: " + str(q_bas) + ", Elbo_bas: " + str(elbo_bas))
+            print("Q_bas_post: " + str(q_bas_post) + ", Elbo_post: " + str(elbo_post))
             if q_bas < q_bas_post:
                 if not q_bas + elbo_bas < q_bas_post + elbo_post:
                     print("Possibly better but no.")
@@ -1192,8 +1192,8 @@ class GPI_HDP():
                     update_snr = True
 
                     print("Sum resp_temp: "+str(torch.sum(resp_temp,dim=0)))
-                    print("Q_bas: " + str(q_bas))
-                    print("Q_bas_post: " + str(q_bas_post))
+                    print("Q_bas: " + str(q_bas) + ", Elbo_bas: " + str(elbo_bas))
+                    print("Q_bas_post: " + str(q_bas_post) + ", Elbo_post: " + str(elbo_post))
                     if q_bas < q_bas_post:
                         if not q_bas + elbo_bas < q_bas_post + elbo_post:
                             print("Possibly better but no.")
@@ -1279,8 +1279,8 @@ class GPI_HDP():
         # ini_Sigma = var_y_y * 0.15
         # ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.0]), var_y_y * 2.0])) * 0.15
         ini_Sigma = var_y_y * 1.0
-        #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_, var_y_y * 1.0]), var_y_y * 2.0])) * 1.5
-        ini_Gamma = var_y_y_ * 1.0
+        ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_, var_y_y * 1.2]), var_y_y * 2.0])) * 1.5
+        #ini_Gamma = var_y_y_ * 1.0
         #ini_Sigma = 50.0
         #ini_Gamma = 60.0
         #ini_Sigma = self.cond_to_torch(np.min([ini_Sigma, 45.0]))
