@@ -265,20 +265,20 @@ class GPI_model():
         else:
             cov_f_ = self.cov_f_sm[i]
             lat_f_ = self.f_star_sm[i]
-        cov_f = self.cov_f_sm[i + 1]
+        #cov_f = self.cov_f_sm[i + 1]
         lat_f = self.f_star_sm[i + 1]
-        Gamma = self.Gamma[i + 1]
-        A = self.A[i + 1]
+        #Gamma = self.Gamma[-1]
+        A = self.A[-1]
         #t = Gamma.shape[0]
         exp_t_t_ = cov_f_ + torch.matmul(lat_f_, lat_f_.T)
-        exp_t_t = cov_f + torch.matmul(lat_f, lat_f.T)
+        #xp_t_t = cov_f + torch.matmul(lat_f, lat_f.T)
         #A = self.A[i + 1]
-        Gamma_inv = torch.linalg.solve(Gamma, self.cond_to_cuda(torch.eye(Gamma.shape[0])))
-        #Gamma_inv = self.gamma_inv
+        #Gamma_inv = torch.linalg.solve(Gamma, self.cond_to_cuda(torch.eye(Gamma.shape[0])))
+        Gamma_inv = self.gamma_inv
         err = -1 / 2 * torch.linalg.multi_dot([lat_f.T, Gamma_inv, lat_f]) \
               + torch.linalg.multi_dot([lat_f.T, Gamma_inv, A, lat_f_]) \
               - 1 / 2 * torch.trace(torch.linalg.multi_dot([A.T, Gamma_inv, A, exp_t_t_])) \
-              - 1 / 2 * torch.trace(torch.linalg.multi_dot([Gamma_inv, exp_t_t]))
+              #- 1 / 2 * torch.trace(torch.linalg.multi_dot([Gamma_inv, exp_t_t]))
               # - 1 / 2 * torch.trace(Gamma)
         return err
 
@@ -443,12 +443,14 @@ class GPI_model():
             if len(self.indexes) > 0:
                 if index in self.indexes:
                     ind = self.indexes.index(index) + 1
+                    ind = -1
                     if ind == 1 and not no_first:
                         sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], i=ind, first=True)
                     else:
                         sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], i=ind)
                 else:
                     ind = np.max([self.find_closest_lower(index), 1])
+                    ind = -1
                     sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], i=ind)
         return sq_err
 
