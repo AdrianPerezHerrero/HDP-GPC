@@ -243,12 +243,14 @@ class GPI_model():
         #if len(self.x_basis) / len(x_train) <= 0.5:
             #cov_f = 0.5 * torch.diag(torch.diag(cov_f))
             #cov_f = 0.01 * cov_f + 0.99 * torch.diag(torch.diag(cov_f))
-        exp_t_t = lat_cov + torch.matmul(lat_f, lat_f.T)
+        exp_t_t_ = lat_cov + torch.matmul(lat_f, lat_f.T)
+        exp_t_t = cov_f + torch.matmul(f_star, f_star.T)
         Sigma_inv = torch.linalg.solve(cov_f, self.cond_to_cuda(torch.eye(t)))
         err = -1 / 2 * torch.linalg.multi_dot([y.T, Sigma_inv, y])\
               + torch.linalg.multi_dot([y.T, Sigma_inv, f_star]) \
-              - 1 / 2 * torch.trace(torch.linalg.multi_dot([C.T, Sigma_inv, C, exp_t_t])) \
-              #- 1 / 2 * torch.trace(cov_f)
+              - 1 / 2 * torch.trace(torch.linalg.multi_dot([C.T, Sigma_inv, C, exp_t_t_])) \
+              - 1 / 2 * torch.trace(torch.linalg.multi_dot([Sigma_inv, exp_t_t]))
+              # - 1 / 2 * torch.trace(cov_f)
         #Scale with dimension:
         #err = err / y.shape[0]
         return err
@@ -276,8 +278,8 @@ class GPI_model():
         err = -1 / 2 * torch.linalg.multi_dot([lat_f.T, Gamma_inv, lat_f]) \
               + torch.linalg.multi_dot([lat_f.T, Gamma_inv, A, lat_f_]) \
               - 1 / 2 * torch.trace(torch.linalg.multi_dot([A.T, Gamma_inv, A, exp_t_t_])) \
-              #- 1 / 2 * torch.trace(Gamma)
-              #- 1 / 2 * torch.trace(torch.linalg.multi_dot([Gamma_inv, exp_t_t]))
+              - 1 / 2 * torch.trace(torch.linalg.multi_dot([Gamma_inv, exp_t_t]))
+              # - 1 / 2 * torch.trace(Gamma)
         return err
 
     def include_sample(self, index, x_train, y, x_warped=None, h=1.0, posterior=True, embedding=True, include_index=False):
