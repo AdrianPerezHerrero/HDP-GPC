@@ -1260,7 +1260,7 @@ class GPI_HDP():
                     elb = elb + gp.return_LDS_param_likelihood(first=False)# * frac[i]
                 else:
                     elb = elb + gp.return_LDS_param_likelihood()# * frac[i]
-        return elb / M_
+        return elb# / M_
 
     def redefine_default(self, x_trains, y_trains, resp):
         """ Method to compute Sigma and Gamma from a batch of examples and assign it to initial values.
