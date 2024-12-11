@@ -256,7 +256,7 @@ class GPI_model():
         return err
 
     def log_lat_error(self, i):
-        """Compute the log-squared-error of the latent process.
+        """Compute the log-squared-error of the latent process..
         """
         err = 0.0
         if i == 0:
