@@ -274,8 +274,8 @@ class GPI_model():
         #Gamma_inv = self.gamma_inv
         err = -1 / 2 * torch.linalg.multi_dot([lat_f.T, Gamma_inv, lat_f]) \
               + torch.linalg.multi_dot([lat_f.T, Gamma_inv, A, lat_f_]) \
-              - 1 / 2 * torch.trace(torch.linalg.multi_dot([A.T, Gamma_inv, A, exp_t_t_])) \
-              - 1 / 2 * torch.trace(Gamma_inv)
+              - 1 / 2 * torch.trace(torch.linalg.multi_dot([A.T, Gamma_inv, A, exp_t_t_]))# \
+              #- 1 / 2 * torch.trace(Gamma_inv)
               #- 1 / 2 * torch.trace(torch.linalg.multi_dot([Gamma_inv, exp_t_t]))
         return err
 

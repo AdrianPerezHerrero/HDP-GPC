@@ -1278,8 +1278,8 @@ class GPI_HDP():
             model_type, recursive_warp, warp_updating, inducing_points, estimation_limit, free_deg_MNIV = self.get_default_options()
         # ini_Sigma = var_y_y * 0.15
         # ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.0]), var_y_y * 2.0])) * 0.15
-        ini_Sigma = var_y_y * 1.0
-        ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_, var_y_y * 1.0]), var_y_y * 2.0])) * 0.01
+        ini_Sigma = var_y_y * 0.5
+        ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_, var_y_y * 1.0]), var_y_y * 2.0])) * 1.5
         #ini_Gamma = var_y_y_ * 1.0
         #ini_Sigma = 50.0
         #ini_Gamma = 60.0
