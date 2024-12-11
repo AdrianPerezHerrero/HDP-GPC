@@ -1249,6 +1249,7 @@ class GPI_HDP():
         """
         elb = torch.zeros(1)
         M_ = 0
+        frac = torch.sum(resp,dim=0) / torch.sum(resp)
         for i in sum_resp:
             if i > 0:
                 M_ = M_ + 1
@@ -1256,9 +1257,9 @@ class GPI_HDP():
             if sum_resp[i] > 0:
                 if sum_resp[i] < 2.0:
                     #elb = elb + gp.return_LDS_param_likelihood(first=True)
-                    elb = elb + gp.return_LDS_param_likelihood(first=False)# * frac[i]
+                    elb = elb + gp.return_LDS_param_likelihood(first=False) * frac[i]
                 else:
-                    elb = elb + gp.return_LDS_param_likelihood()# * frac[i]
+                    elb = elb + gp.return_LDS_param_likelihood() * frac[i]
         return elb# / M_
 
     def redefine_default(self, x_trains, y_trains, resp):
