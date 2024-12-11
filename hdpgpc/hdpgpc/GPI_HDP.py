@@ -1220,7 +1220,7 @@ class GPI_HDP():
         """ Method to compute ELBO terms.
         """
         q_bas = torch.sum(q[torch.where(resp.int() > 0.99)])
-        elbo_latent = torch.sum(q_lat) / q.shape[0]
+        elbo_latent = torch.sum(q_lat)# / q.shape[0]
         if prev:
             if torch.sum(resp, dim=0)[-1] < 1.0 and self.M > 1:
                 elbo_bas = self.elbo_Linears(resp, respPair, prev=prev)
@@ -1259,7 +1259,7 @@ class GPI_HDP():
                     elb = elb + gp.return_LDS_param_likelihood(first=True)# * frac[i]
                 else:
                     elb = elb + gp.return_LDS_param_likelihood()# * frac[i]
-        return elb / M_
+        return elb# / M_
 
     def redefine_default(self, x_trains, y_trains, resp):
         """ Method to compute Sigma and Gamma from a batch of examples and assign it to initial values.
