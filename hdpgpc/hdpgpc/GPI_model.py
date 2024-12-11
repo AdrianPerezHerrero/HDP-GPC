@@ -244,12 +244,12 @@ class GPI_model():
             #cov_f = 0.5 * torch.diag(torch.diag(cov_f))
             #cov_f = 0.01 * cov_f + 0.99 * torch.diag(torch.diag(cov_f))
         exp_t_t_ = lat_cov + torch.matmul(lat_f, lat_f.T)
-        exp_t_t = cov_f + torch.matmul(f_star, f_star.T)
+        #exp_t_t = lat_cov + torch.matmul(f_star, f_star.T)
         Sigma_inv = torch.linalg.solve(cov_f, self.cond_to_cuda(torch.eye(t)))
         err = -1 / 2 * torch.linalg.multi_dot([y.T, Sigma_inv, y])\
               + torch.linalg.multi_dot([y.T, Sigma_inv, f_star]) \
               - 1 / 2 * torch.trace(torch.linalg.multi_dot([C.T, Sigma_inv, C, exp_t_t_])) \
-              - 1 / 2 * torch.trace(torch.linalg.multi_dot([Sigma_inv, exp_t_t]))
+              #- 1 / 2 * torch.trace(torch.linalg.multi_dot([Sigma_inv, exp_t_t]))
               # - 1 / 2 * torch.trace(cov_f)
         #Scale with dimension:
         #err = err / y.shape[0]
@@ -265,13 +265,13 @@ class GPI_model():
         else:
             cov_f_ = self.cov_f_sm[i]
             lat_f_ = self.f_star_sm[i]
-        #cov_f = self.cov_f_sm[i + 1]
+        cov_f = self.cov_f_sm[i + 1]
         lat_f = self.f_star_sm[i + 1]
         Gamma = self.Gamma[i + 1]
         A = self.A[i + 1]
         #t = Gamma.shape[0]
         exp_t_t_ = cov_f_ + torch.matmul(lat_f_, lat_f_.T)
-        #exp_t_t = cov_f + torch.matmul(lat_f, lat_f.T)
+        exp_t_t = cov_f + torch.matmul(lat_f, lat_f.T)
         #A = self.A[i + 1]
         Gamma_inv = torch.linalg.solve(Gamma, self.cond_to_cuda(torch.eye(Gamma.shape[0])))
         #Gamma_inv = self.gamma_inv
