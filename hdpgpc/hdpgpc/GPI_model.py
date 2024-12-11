@@ -264,14 +264,14 @@ class GPI_model():
             lat_f_ = self.f_star_sm[i]
         #cov_f = self.cov_f_sm[i + 1]
         lat_f = self.f_star_sm[i + 1]
-        Gamma = self.Gamma[i + 1]
-        A = self.A[i + 1]
+        #Gamma = self.Gamma[i + 1]
+        A = self.A[-1]
         #t = Gamma.shape[0]
         exp_t_t_ = cov_f_ + torch.matmul(lat_f_, lat_f_.T)
         #exp_t_t = cov_f + torch.matmul(lat_f, lat_f.T)
         #A = self.A[i + 1]
-        Gamma_inv = torch.linalg.solve(Gamma, self.cond_to_cuda(torch.eye(Gamma.shape[0])))
-        #Gamma_inv = self.gamma_inv
+        #Gamma_inv = torch.linalg.solve(Gamma, self.cond_to_cuda(torch.eye(Gamma.shape[0])))
+        Gamma_inv = self.gamma_inv
         err = -1 / 2 * torch.linalg.multi_dot([lat_f.T, Gamma_inv, lat_f]) \
               + torch.linalg.multi_dot([lat_f.T, Gamma_inv, A, lat_f_]) \
               - 1 / 2 * torch.trace(torch.linalg.multi_dot([A.T, Gamma_inv, A, exp_t_t_]))# \
