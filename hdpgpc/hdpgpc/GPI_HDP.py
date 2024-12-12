@@ -769,16 +769,22 @@ class GPI_HDP():
         startStateCount = resp[0]
         transStateCount = torch.sum(respPair, axis=0)
         if prev:
-            M = resp.shape[1]-1
-            rho_, omega_, transTheta_, startTheta_ = self.temp_reinit_global_params(M - 1, transStateCount[:M,:M],
-                                                                                   startStateCount[:M])
-            for giter in range(4):
-                transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(transStateCount),
-                                                               self.cond_cuda(startStateCount), M, rho=rho_)
-                rho_, omega_ = self.find_optimum_rhoOmega(startTheta_, transTheta_, rho=rho_, omega=omega_, M=M)
+            if transStateCount[0,0] == torch.sum(transStateCount):
+                M = resp.shape[1] - 1
+                rho_, omega_, transTheta_, startTheta_ = self.temp_reinit_global_params(1,
+                                                                                        transStateCount[:M, :M],
+                                                                                        startStateCount[:M])
+            else:
+                M = resp.shape[1]-1
+                rho_, omega_, transTheta_, startTheta_ = self.temp_reinit_global_params(M - 1, transStateCount[:M,:M],
+                                                                                       startStateCount[:M])
+                for giter in range(4):
+                    transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(transStateCount),
+                                                                   self.cond_cuda(startStateCount), M, rho=rho_)
+                    rho_, omega_ = self.find_optimum_rhoOmega(startTheta_, transTheta_, rho=rho_, omega=omega_, M=M)
 
-            transStateCount = transStateCount[:M ,:M]
-            startStateCount = startStateCount[:M]
+                transStateCount = transStateCount[:M ,:M]
+                startStateCount = startStateCount[:M]
 
         else:
             rho_ = torch.clone(self.rho)
@@ -1222,7 +1228,7 @@ class GPI_HDP():
         q_bas = torch.sum(q[torch.where(resp.int() > 0.99)])
         elbo_latent = torch.sum(q_lat)# / q.shape[0]
         if prev:
-            if torch.sum(resp, dim=0)[-1] < 1.0 and self.M > 1:
+            if torch.sum(resp, dim=0)[-1] < 1.0:
                 elbo_bas = self.elbo_Linears(resp, respPair, prev=prev)
             else:
                 elbo_bas = self.elbo_Linears(resp, respPair)
@@ -1396,12 +1402,13 @@ class GPI_HDP():
                     saved_gps = [self.gpmodels[ld][m] for ld in range(self.n_outputs)]
                     for ld in range(self.n_outputs):
                         post_gp = self.gpmodel_deepcopy(self.gpmodels[ld][m])
-                        q_post[[-1], m, ld] = self.estimate_new(t, post_gp, self.x_train[-1], y_mod[m][-1], h=1.0)
+                        #q_post[[-1], m, ld] = self.estimate_new(t, post_gp, self.x_train[-1], y_mod[m][-1], h=1.0)
                         post_gp.include_weighted_sample(t, self.x_train[-1], self.x_train[-1], y_mod[m][-1], 1.0)
                         self.gpmodels[ld][m] = post_gp
                         post_gp.backwards_pair(1.0)
                         post_gp.bayesian_new_params(1.0)
                         q_lat_post[m, ld] = post_gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)))
+                        q_post[[-1], m, ld] = self.estimate_new(t, post_gp, self.x_train[-1], y_mod[m][-1], h=1.0)
                     resp_post, resp_post_log, respPair_post, respPair_post_log = self.variational_local_terms(q_post, self.transTheta, self.startTheta, liks)
                     q_bas_post, elbo_bas_post = self.compute_q_elbo(resp_post, respPair_post, self.weight_mean(q_post),
                                                           self.weight_mean(q_lat_post),
@@ -2084,8 +2091,10 @@ class GPI_HDP():
         bmsgSoftEv = torch.exp(q)  # alias
         bmsgSoftEv *= beta
         respPair = self.cond_cuda(self.cond_to_torch(np.zeros((T, M, M))))
-        respPair[1:] = alpha[:-1][:, :, np.newaxis] * \
-                      bmsgSoftEv[1:][:, np.newaxis, :]
+        # respPair[1:] = alpha[:-1][:, :, np.newaxis] * \
+        #               bmsgSoftEv[1:][:, np.newaxis, :]
+        respPair = alpha[:, :, np.newaxis] * \
+                      bmsgSoftEv[:, np.newaxis, :]
         den = torch.sum(respPair, dim=(1,2))[:, np.newaxis, np.newaxis]
         den[den == 0] = 1e-10
         respPair /= den
