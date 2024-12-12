@@ -1364,6 +1364,7 @@ class GPI_HDP():
                 y_mod[m].append(self.cond_cuda(y))
 
         elbo = 0.0
+        q_all = 0.0
         q_aux = torch.zeros(self.T, self.M+1, self.n_outputs) - np.inf
         q_lat = torch.zeros(self.M+1, self.n_outputs)
         if t > 0:
