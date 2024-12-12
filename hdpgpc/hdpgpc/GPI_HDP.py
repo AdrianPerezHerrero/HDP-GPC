@@ -1363,7 +1363,7 @@ class GPI_HDP():
             for m in range(M + 1):
                 y_mod[m].append(self.cond_cuda(y))
 
-        elbo = -np.inf
+        elbo = 0.0
         q_aux = torch.zeros(self.T, self.M+1, self.n_outputs) - np.inf
         q_lat = torch.zeros(self.M+1, self.n_outputs)
         if t > 0:
@@ -1371,10 +1371,11 @@ class GPI_HDP():
         for ld in range(self.n_outputs):
             for m, gp in enumerate(self.gpmodels[ld][:-1]):
                 q_lat[m, ld] = gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)), t=t)
-        resp, resp_log, respPair, respPair_log = self.variational_local_terms(q_aux, self.transTheta, self.startTheta)
-        q_all, elbo = self.compute_q_elbo(resp, respPair, self.weight_mean(q_aux),
-                                                          self.weight_mean(q_lat),
-                                                          self.gpmodels, self.M, snr='saved')
+        if t > 0:
+            resp, resp_log, respPair, respPair_log = self.variational_local_terms(q_aux, self.transTheta, self.startTheta)
+            q_all, elbo = self.compute_q_elbo(resp, respPair, self.weight_mean(q_aux),
+                                                              self.weight_mean(q_lat),
+                                                              self.gpmodels, self.M, snr='saved')
         for ld in range(self.n_outputs):
             for m, gp in enumerate(self.gpmodels[ld][:-1]):
                 q_aux[-1, m, ld] = gp.log_sq_error(torch.from_numpy(np.array(self.x_train[-1])), y_mod[m][-1], i=-1)
