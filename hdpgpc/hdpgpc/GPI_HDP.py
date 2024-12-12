@@ -1377,7 +1377,7 @@ class GPI_HDP():
             resp, resp_log, respPair, respPair_log = self.variational_local_terms(q_aux, self.transTheta, self.startTheta)
             q_all, elbo = self.compute_q_elbo(resp[:-1], respPair[:-1], self.weight_mean(q_aux)[:-1],
                                                               self.weight_mean(q_lat),
-                                                              self.gpmodels, self.M, snr='saved')
+                                                              self.gpmodels, self.M, snr='saved', prev=True)
         if t > 0:
             # Define order
             q_ord = torch.argsort(self.weight_mean(q_aux)[-1,:-1], descending=True)
