@@ -304,10 +304,10 @@ def compute_estimators_LDS(samples, n_f=None):
     std_dif = torch.mean(torch.diag(torch.linalg.multi_dot(
         [(samples__ - samples_), (samples__ - samples_).T])) / n_f)
     if std > 1:
-        std = torch.sqrt(std).item()
-        std_dif = torch.sqrt(std_dif).item()
-        #std = std.item() * 0.1
-        #std_dif = std_dif.item() * 0.1
+        # std = torch.sqrt(std).item()
+        # std_dif = torch.sqrt(std_dif).item()
+        std = std.item() * 0.1
+        std_dif = std_dif.item() * 0.1
     else:
         std = std.item()
         std_dif = std_dif.item()
