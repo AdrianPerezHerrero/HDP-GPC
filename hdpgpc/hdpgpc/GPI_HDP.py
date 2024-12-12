@@ -1418,6 +1418,8 @@ class GPI_HDP():
                                                           self.weight_mean(q_lat_post),
                                                           self.gpmodels, self.M, snr='saved', prev=True)
                     elbo_bas_post = elbo_bas_post - elbo#/ np.log(self.T + 1)
+                    print("Q_prev: " + str(q_prev_post) + ", Elbo_prev: " + str(elbo_prev_post))
+                    print("Q_bas_post: " + str(q_bas_post) + ", Elbo_post: " + str(elbo_bas_post))
                     if q_bas_post + elbo_bas_post > q_prev_post + elbo_prev_post:
                         resp, resplog, respPair, respPairlog = self.variational_local_terms(q_post, self.transTheta, self.startTheta, liks)
                         q_chos = q_post
