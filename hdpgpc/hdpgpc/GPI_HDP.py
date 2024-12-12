@@ -1373,7 +1373,7 @@ class GPI_HDP():
                 q_lat[m, ld] = gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)), t=t)
         if t > 0:
             resp, resp_log, respPair, respPair_log = self.variational_local_terms(q_aux[:-1], self.transTheta, self.startTheta)
-            q_all, elbo = self.compute_q_elbo(resp, respPair, self.weight_mean(q_aux),
+            q_all, elbo = self.compute_q_elbo(resp, respPair, self.weight_mean(q_aux[:-1]),
                                                               self.weight_mean(q_lat),
                                                               self.gpmodels, self.M, snr='saved')
         for ld in range(self.n_outputs):
