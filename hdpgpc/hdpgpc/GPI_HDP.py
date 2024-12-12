@@ -1370,9 +1370,15 @@ class GPI_HDP():
             q_aux[:-1, :self.q[-1].shape[1], :] = torch.clone(self.q[-1])
         for ld in range(self.n_outputs):
             for m, gp in enumerate(self.gpmodels[ld][:-1]):
+                q_lat[m, ld] = gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)), t=t)
+        resp, resp_log, respPair, respPair_log = self.variational_local_terms(q_aux, self.transTheta, self.startTheta)
+        q_all, elbo = self.compute_q_elbo(resp, respPair, self.weight_mean(q_aux),
+                                                          self.weight_mean(q_lat),
+                                                          self.gpmodels, self.M, snr='saved')
+        for ld in range(self.n_outputs):
+            for m, gp in enumerate(self.gpmodels[ld][:-1]):
                 q_aux[-1, m, ld] = gp.log_sq_error(torch.from_numpy(np.array(self.x_train[-1])), y_mod[m][-1], i=-1)
                 #q_aux[-1, m, ld] = self.estimate_new(t, gp, self.x_train[-1], y_mod[-1][-1], h=1.0)
-                q_lat[m, ld] = gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)), t=t)
         if t > 0:
             # Define order
             q_ord = torch.argsort(self.weight_mean(q_aux)[-1,:-1], descending=True)
@@ -1392,7 +1398,7 @@ class GPI_HDP():
             resp_prev, resp_prev_log, respPair_prev, respPair_prev_log = self.variational_local_terms(q_prev, self.transTheta, self.startTheta, liks)
             q_prev_post, elbo_prev_post = self.compute_q_elbo(resp_prev, respPair_prev, self.weight_mean(q_prev), self.weight_mean(q_lat_prev),
                                                   self.gpmodels, self.M, snr='saved')
-            elbo_prev_post = elbo_prev_post / np.log(self.T + 1)
+            elbo_prev_post = elbo_prev_post - elbo#/ np.log(self.T + 1)
             for ld in range(self.n_outputs):
                 self.gpmodels[ld][-1] = self.create_gp_default()
             if torch.argmax(q_prev[-1]) == self.M:
@@ -1413,7 +1419,7 @@ class GPI_HDP():
                     q_bas_post, elbo_bas_post = self.compute_q_elbo(resp_post, respPair_post, self.weight_mean(q_post),
                                                           self.weight_mean(q_lat_post),
                                                           self.gpmodels, self.M, snr='saved', prev=True)
-                    elbo_bas_post = elbo_bas_post / np.log(self.T + 1)
+                    elbo_bas_post = elbo_bas_post - elbo#/ np.log(self.T + 1)
                     if q_bas_post + elbo_bas_post > q_prev_post + elbo_prev_post:
                         resp, resplog, respPair, respPairlog = self.variational_local_terms(q_post, self.transTheta, self.startTheta, liks)
                         q_chos = q_post
