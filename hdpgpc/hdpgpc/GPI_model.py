@@ -267,7 +267,7 @@ class GPI_model():
             cov_f_ = self.cov_f_sm[i]
             lat_f_ = self.f_star_sm[i]
             #Gamma_inv = self.gamma_inv
-            torch.linalg.solve(self.Gamma[i], self.cond_to_cuda(torch.eye(self.Gamma[i].shape[0])))
+            Gamma_inv = torch.linalg.solve(self.Gamma[i], self.cond_to_cuda(torch.eye(self.Gamma[i].shape[0])))
         #cov_f = self.cov_f_sm[i + 1]
         lat_f = self.f_star_sm[i + 1]
         #Gamma = self.Gamma[i]
