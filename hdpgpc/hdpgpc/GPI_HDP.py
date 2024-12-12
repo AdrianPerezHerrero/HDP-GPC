@@ -1371,15 +1371,12 @@ class GPI_HDP():
         for ld in range(self.n_outputs):
             for m, gp in enumerate(self.gpmodels[ld][:-1]):
                 q_lat[m, ld] = gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)), t=t)
+                q_aux[-1, m, ld] = gp.log_sq_error(torch.from_numpy(np.array(self.x_train[-1])), y_mod[m][-1], i=-1)
         if t > 0:
-            resp, resp_log, respPair, respPair_log = self.variational_local_terms(q_aux[:-1], self.transTheta, self.startTheta)
+            resp, resp_log, respPair, respPair_log = self.variational_local_terms(q_aux, self.transTheta, self.startTheta)
             q_all, elbo = self.compute_q_elbo(resp[:-1], respPair[:-1], self.weight_mean(q_aux)[:-1],
                                                               self.weight_mean(q_lat),
                                                               self.gpmodels, self.M, snr='saved')
-        for ld in range(self.n_outputs):
-            for m, gp in enumerate(self.gpmodels[ld][:-1]):
-                q_aux[-1, m, ld] = gp.log_sq_error(torch.from_numpy(np.array(self.x_train[-1])), y_mod[m][-1], i=-1)
-                #q_aux[-1, m, ld] = self.estimate_new(t, gp, self.x_train[-1], y_mod[-1][-1], h=1.0)
         if t > 0:
             # Define order
             q_ord = torch.argsort(self.weight_mean(q_aux)[-1,:-1], descending=True)
