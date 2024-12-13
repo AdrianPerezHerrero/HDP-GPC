@@ -1276,8 +1276,8 @@ class matrix_normal_inv_wishart():
         #Scale with dimension:
         #scale_lik = scale_lik / self.scale.shape[0]
         #return scale_lik# / d
-        return (mean_lik + scale_lik) / d
-        #return mean_lik + scale_lik
+        #return (mean_lik + scale_lik) / d
+        return mean_lik + scale_lik
 
     def get_mean(self):
         return self.m_mean
