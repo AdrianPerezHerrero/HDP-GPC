@@ -287,7 +287,7 @@ class GPI_model():
               - 1 / 2 * torch.trace(torch.linalg.multi_dot([A.T, Gamma_inv, A, exp_t_t_])) \
               #- 1 / 2 * torch.trace(torch.linalg.multi_dot([Gamma_inv, exp_t_t]))
               # - 1 / 2 * torch.trace(Gamma)
-        return err
+        return err / 2.0
 
     def include_sample(self, index, x_train, y, x_warped=None, h=1.0, posterior=True, embedding=True, include_index=False):
         """ Method to include sample in the model, compute the posterior and add the data.
@@ -1267,9 +1267,8 @@ class matrix_normal_inv_wishart():
                    # - self.n0 * 0.5 * torch.logdet(self.scale)\
                    # - self.n0 * d * 0.5 * torch.log(torch.tensor(2.0 * torch.pi, device=self.scale.device))
         scale_lik = - (self.n0 + 1) * 0.5 * torch.logdet(Sigma) \
-                    - 0.5 * torch.trace(Sigma)
-                    # - 0.5 * torch.trace(torch.matmul(sig_inv, self.scale))
-
+                    - 0.5 * torch.trace(torch.matmul(sig_inv, self.scale))
+                    #- 0.5 * torch.trace(Sigma)
                     # - self.n0 * 0.5 * torch.logdet(self.scale)\
                     # - self.n0 * d * 0.5 * torch.log(torch.tensor(2.0, device=self.scale.device))\
                     # - torch.special.multigammaln(torch.tensor((self.n0 + d)*0.5, device=self.scale.device), d)
