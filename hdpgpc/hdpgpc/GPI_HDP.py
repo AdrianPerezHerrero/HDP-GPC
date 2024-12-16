@@ -1224,7 +1224,7 @@ class GPI_HDP():
         return resp, respPair, q_, q_lat_, snr_, y_trains_w_, reallocate
 
 
-    def compute_q_elbo(self, resp, respPair, q, q_lat, gpmodels, M, new_indexes=None, snr=None, prev=False):
+    def compute_q_elbo(self, resp, respPair, q, q_lat, gpmodels, M, new_indexes=None, snr=None, prev=False, one_sample=False):
         """ Method to compute ELBO terms.
         """
         q_bas = torch.sum(q[torch.where(resp.int() > 0.99)])
@@ -1246,18 +1246,21 @@ class GPI_HDP():
             frac = torch.sum(torch.softmax(torch.max(snr, dim=1)[0], dim=1), dim=0)
             frac = frac / torch.sum(frac) #* self.n_outputs# * self.M#
         for i in range(self.n_outputs):
-            elbo_bas_LDS = elbo_bas_LDS + self.full_LDS_elbo(gpmodels[i], torch.sum(resp, dim=0)) * frac[i]
+            elbo_bas_LDS = elbo_bas_LDS + self.full_LDS_elbo(gpmodels[i], torch.sum(resp, dim=0), one_sample=one_sample) * frac[i]
         elbo_bas = elbo_bas + elbo_bas_LDS + elbo_latent
         #elbo_bas = 0
         return q_bas, elbo_bas
 
 
-    def full_LDS_elbo(self, gpmodels, sum_resp):
+    def full_LDS_elbo(self, gpmodels, sum_resp, one_sample=False):
         """ Method to accumulate LDS ELBO terms.
         """
         elb = torch.zeros(1)
         M_ = 0
-        #frac = sum_resp / torch.sum(sum_resp)
+        if one_sample:
+            frac = sum_resp / torch.sum(sum_resp)
+        else:
+            frac = sum_resp / sum_resp
         for i in sum_resp:
             if i > 0:
                 M_ = M_ + 1
@@ -1265,9 +1268,9 @@ class GPI_HDP():
             if sum_resp[i] > 0:
                 if sum_resp[i] < 2.0:
                     #elb = elb + gp.return_LDS_param_likelihood(first=True)
-                    elb = elb + gp.return_LDS_param_likelihood(first=False)# * frac[i]
+                    elb = elb + gp.return_LDS_param_likelihood(first=False) * frac[i]
                 else:
-                    elb = elb + gp.return_LDS_param_likelihood()# * frac[i]
+                    elb = elb + gp.return_LDS_param_likelihood() * frac[i]
         return elb# / M_
 
     def redefine_default(self, x_trains, y_trains, resp):
@@ -1325,6 +1328,7 @@ class GPI_HDP():
         """
 
         # Adding one sample
+        one_sample = True
         t = self.T
         if not classify:
             self.T = self.T + 1
@@ -1379,7 +1383,7 @@ class GPI_HDP():
             resp, resp_log, respPair, respPair_log = self.variational_local_terms(q_aux, self.transTheta, self.startTheta)
             q_all, elbo = self.compute_q_elbo(resp[:-1], respPair[:-1], self.weight_mean(q_aux)[:-1],
                                                               self.weight_mean(q_lat),
-                                                              self.gpmodels, self.M, snr='saved', prev=True)
+                                                              self.gpmodels, self.M, snr='saved', prev=True, one_sample=True)
         if t > 0:
             # Define order
             q_ord = torch.argsort(self.weight_mean(q_aux)[-1,:-1], descending=True)
@@ -1398,7 +1402,7 @@ class GPI_HDP():
                 q_lat_prev[-1, ld] = prov_gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)))
             resp_prev, resp_prev_log, respPair_prev, respPair_prev_log = self.variational_local_terms(q_prev, self.transTheta, self.startTheta, liks)
             q_prev_post, elbo_prev_post = self.compute_q_elbo(resp_prev, respPair_prev, self.weight_mean(q_prev), self.weight_mean(q_lat_prev),
-                                                  self.gpmodels, self.M, snr='saved')
+                                                  self.gpmodels, self.M, snr='saved', one_sample=True)
             elbo_prev_post = elbo_prev_post - elbo#/ np.log(self.T + 1)
             q_prev_post = q_prev_post - q_all
             for ld in range(self.n_outputs):
@@ -1420,7 +1424,7 @@ class GPI_HDP():
                     resp_post, resp_post_log, respPair_post, respPair_post_log = self.variational_local_terms(q_post, self.transTheta, self.startTheta, liks)
                     q_bas_post, elbo_bas_post = self.compute_q_elbo(resp_post, respPair_post, self.weight_mean(q_post),
                                                           self.weight_mean(q_lat_post),
-                                                          self.gpmodels, self.M, snr='saved', prev=True)
+                                                          self.gpmodels, self.M, snr='saved', prev=True, one_sample=True)
                     elbo_bas_post = elbo_bas_post - elbo#/ np.log(self.T + 1)
                     q_bas_post = q_bas_post - q_all
                     print("Q_prev: " + str(q_prev_post) + ", Elbo_prev: " + str(elbo_prev_post))
