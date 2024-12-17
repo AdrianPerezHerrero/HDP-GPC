@@ -268,8 +268,8 @@ class GPI_model():
             cov_f_ = self.cov_f_sm[i]
             lat_f_ = self.f_star_sm[i]
             if i+1 < len(self.Gamma):
-                Gamma_inv = torch.linalg.solve(self.Gamma[-1], self.cond_to_cuda(torch.eye(self.Gamma[i].shape[0])))
-                A = self.A[-1]
+                Gamma_inv = torch.linalg.solve(self.Gamma[i+1], self.cond_to_cuda(torch.eye(self.Gamma[i].shape[0])))
+                A = self.A[i+1]
             else:
                 Gamma_inv = self.gamma_inv
                 A = self.A[-1]
@@ -364,7 +364,7 @@ class GPI_model():
                                              y_trains[index], resp[index])#, snr=snr_)
                 self.backwards_pair(resp[index])  # , snr=snr_)
                 self.bayesian_new_params(resp[index])
-        self.backwards()
+        #self.backwards()
         q_ = self.compute_sq_err_all(x_trains, y_trains)
         q_lat_ = self.compute_q_lat_all(x_trains)
         return q_, q_lat_
@@ -563,7 +563,7 @@ class GPI_model():
                     Sigma = Sigma + self.Gamma[-1]
                 mean = torch.matmul(C, self.f_star_sm[t])
             else:
-                A, Gamma, C, Sigma = self.get_params(-1)
+                A, Gamma, C, Sigma = self.get_params(t)
                 if proj:
                     Sigma = Sigma + Gamma
                 mean = torch.matmul(C, self.f_star_sm[t])
