@@ -287,7 +287,7 @@ class GPI_model():
               - 1 / 2 * torch.trace(torch.linalg.multi_dot([A.T, Gamma_inv, A, exp_t_t_])) \
               #- 1 / 2 * torch.trace(torch.linalg.multi_dot([Gamma_inv, exp_t_t]))
               # - 1 / 2 * torch.trace(Gamma)
-        return err / 2.0
+        return err# / 2.0
 
     def include_sample(self, index, x_train, y, x_warped=None, h=1.0, posterior=True, embedding=True, include_index=False):
         """ Method to include sample in the model, compute the posterior and add the data.
@@ -459,24 +459,15 @@ class GPI_model():
                     sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], i=ind)
         return sq_err
 
-    def compute_q_lat_all(self, x_trains, t=None):
+    def compute_q_lat_all(self, x_trains):
         """Method to compute the latent squared error accumulated.
         """
-        sq_err = torch.zeros(1, device=x_trains[0].device)
+        sq_err = torch.zeros(x_trains.shape[0], device=x_trains[0].device)
         if self.N == 0:
             return sq_err
-        if t is None:
-            self.gamma_inv = torch.linalg.solve(self.Gamma[-1], self.cond_to_cuda(torch.eye(self.Gamma[-1].shape[0])))
-            for j, index in enumerate(self.indexes):
-                sq_err = sq_err + self.log_lat_error(j)
-        else:
-            if t - 1 == self.indexes[-1]:
-                self.gamma_inv = torch.linalg.solve(self.Gamma[-1], self.cond_to_cuda(torch.eye(self.Gamma[-1].shape[0])))
-                for j, index in enumerate(self.indexes):
-                    sq_err = sq_err + self.log_lat_error(j)
-            else:
-                sq_err = self.sq_lat_last
-        self.sq_lat_last = sq_err
+        self.gamma_inv = torch.linalg.solve(self.Gamma[-1], self.cond_to_cuda(torch.eye(self.Gamma[-1].shape[0])))
+        for j, index in enumerate(self.indexes):
+            sq_err[index] = self.log_lat_error(j)
         return sq_err
 
     def posterior_weighted(self, x_train, y, h, t=None):
