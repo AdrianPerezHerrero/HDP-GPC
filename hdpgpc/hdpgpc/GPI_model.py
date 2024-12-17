@@ -267,9 +267,9 @@ class GPI_model():
         else:
             cov_f_ = self.cov_f_sm[i]
             lat_f_ = self.f_star_sm[i]
-            if i < len(self.Gamma):
-                Gamma_inv = torch.linalg.solve(self.Gamma[i], self.cond_to_cuda(torch.eye(self.Gamma[i].shape[0])))
-                A = self.A[i]
+            if i+1 < len(self.Gamma):
+                Gamma_inv = torch.linalg.solve(self.Gamma[i+1], self.cond_to_cuda(torch.eye(self.Gamma[i].shape[0])))
+                A = self.A[i+1]
             else:
                 Gamma_inv = self.gamma_inv
                 A = self.A[-1]
@@ -881,8 +881,10 @@ class GPI_model():
                         if model_type == 'dynamic':
                             if not full_data:
                                 A, Gamma = self.A[-1], self.Gamma[-1]
-                                samples_A = self.f_star_sm[-1]
-                                samples_A_ = self.f_star_sm[-2]
+                                #samples_A = self.f_star_sm[-1]
+                                #samples_A_ = self.f_star_sm[-2]
+                                samples_A = self.f_star[-1]
+                                samples_A_ = self.f_star[-2]
                                 #samples_A_ = torch.matmul(A, self.f_star_sm[-2])
                                 cov = self.cov_f_sm[-1]
                                 cov_ = self.cov_f_sm[-2]
