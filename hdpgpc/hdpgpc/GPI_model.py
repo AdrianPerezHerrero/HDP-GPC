@@ -255,14 +255,14 @@ class GPI_model():
         #err = err / y.shape[0]
         return err
 
-    def log_lat_error(self, i):
+    def log_lat_error(self, i, h_ini):
         """Compute the log-squared-error of the latent process.
         """
         err = 0.0
         if i == 0:
             cov_f_ = self.cov_f_sm[i + 1]
             lat_f_ = self.f_star_sm[i + 1]
-            Gamma_inv = torch.linalg.solve(self.Gamma[-1] * 0.5, self.cond_to_cuda(torch.eye(self.Gamma[-1].shape[0])))
+            Gamma_inv = torch.linalg.solve(self.Gamma[-1] * h_ini, self.cond_to_cuda(torch.eye(self.Gamma[-1].shape[0])))
             A = self.A[-1]
         else:
             cov_f_ = self.cov_f_sm[i]
@@ -459,7 +459,7 @@ class GPI_model():
                     sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], i=ind)
         return sq_err
 
-    def compute_q_lat_all(self, x_trains):
+    def compute_q_lat_all(self, x_trains, h_ini=1.0):
         """Method to compute the latent squared error accumulated.
         """
         sq_err = torch.zeros(x_trains.shape[0], device=x_trains[0].device)
@@ -467,7 +467,7 @@ class GPI_model():
             return sq_err
         self.gamma_inv = torch.linalg.solve(self.Gamma[-1], self.cond_to_cuda(torch.eye(self.Gamma[-1].shape[0])))
         for j, index in enumerate(self.indexes):
-            sq_err[index] = self.log_lat_error(j)
+            sq_err[index] = self.log_lat_error(j, h_ini)
         return sq_err
 
     def posterior_weighted(self, x_train, y, h, t=None):
