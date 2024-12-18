@@ -365,7 +365,7 @@ class GPI_model():
                 self.backwards_pair(resp[index])  # , snr=snr_)
                 #self.backwards()
                 self.bayesian_new_params(resp[index])
-        self.backwards()
+        #self.backwards()
         q_ = self.compute_sq_err_all(x_trains, y_trains)
         q_lat_ = self.compute_q_lat_all(x_trains, h_ini=0.1)
         return q_, q_lat_
@@ -615,8 +615,8 @@ class GPI_model():
         if len(self.indexes) > 1:
             if h > 0.9:
                 if snr is None:
-                    mean = self.f_star_sm[-2:]
-                    covs = self.cov_f_sm[-2:]
+                    mean = list(self.f_star[-2:])
+                    covs = list(self.cov_f[-2:])
                     aux_f_star, aux_cov_f = self.gp.backward_notrange(self.A[-1], self.Gamma[-1], mean, covs)
                     for i in range(len(mean)):
                         self.f_star_sm[-(i + 1)] = aux_f_star[-(i + 1)]
