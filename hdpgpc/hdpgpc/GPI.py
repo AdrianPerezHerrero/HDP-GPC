@@ -258,9 +258,9 @@ class IterativeGaussianProcess():
         """
         T = len(means)
         for t in trange(T - 2, -1, -1, desc="Backward_pass"):
-            P_t = torch.linalg.multi_dot([A_prior, covars[t], A_prior.T]) + Gamma_prior
-            J_t = torch.matmul(torch.matmul(covars[t],A_prior.T),torch.linalg.inv(P_t))
-            means[t] = means[t] + torch.matmul(J_t, (means[t + 1] - torch.matmul(A_prior, means[t])))
+            P_t = torch.linalg.multi_dot([A_prior[t], covars[t], A_prior.T]) + Gamma_prior[t]
+            J_t = torch.matmul(torch.matmul(covars[t],A_prior[t].T),torch.linalg.inv(P_t))
+            means[t] = means[t] + torch.matmul(J_t, (means[t + 1] - torch.matmul(A_prior[t], means[t])))
             covars[t] = covars[t] + torch.linalg.multi_dot([J_t, (covars[t + 1] - P_t), J_t.T])
         return means, covars
 

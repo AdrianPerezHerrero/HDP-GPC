@@ -605,7 +605,7 @@ class GPI_model():
         if h > 0.99:
             mean = self.f_star_sm[1:]
             covs = self.cov_f_sm[1:]
-            aux_f_star, aux_cov_f = self.gp.backward(self.A[-1], self.Gamma[-1], mean, covs)
+            aux_f_star, aux_cov_f = self.gp.backward(self.A, self.Gamma, mean, covs)
             for i in range(len(mean)):
                 self.f_star_sm[i + 1] = aux_f_star[i]
                 self.cov_f_sm[i + 1] = aux_cov_f[i]
