@@ -365,7 +365,7 @@ class GPI_model():
                 self.backwards_pair(resp[index])  # , snr=snr_)
                 #self.backwards()
                 self.bayesian_new_params(resp[index])
-        #self.backwards()
+        self.backwards()
         q_ = self.compute_sq_err_all(x_trains, y_trains)
         q_lat_ = self.compute_q_lat_all(x_trains)
         return q_, q_lat_
