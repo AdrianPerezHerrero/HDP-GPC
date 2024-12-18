@@ -602,8 +602,8 @@ class GPI_model():
         """Method to compute backward recursion weighted by the responsibility.
         """
         if h > 0.99:
-            mean = self.f_star[1:]
-            covs = self.cov_f[1:]
+            mean = list(self.f_star[1:])
+            covs = list(self.cov_f[1:])
             aux_f_star, aux_cov_f = self.gp.backward(self.A[-1], self.Gamma[-1], mean, covs)
             for i in range(len(mean)):
                 self.f_star_sm[i + 1] = aux_f_star[i]
