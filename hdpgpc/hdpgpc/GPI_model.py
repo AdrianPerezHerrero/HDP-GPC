@@ -274,7 +274,7 @@ class GPI_model():
                 Gamma_inv = self.gamma_inv
                 A = self.A[-1]
         #cov_f = self.cov_f_sm[i + 1]
-        lat_f = self.f_star[i + 1]
+        lat_f = self.f_star_sm[i + 1]
         #Gamma = self.Gamma[i]
 
         #t = Gamma.shape[0]
