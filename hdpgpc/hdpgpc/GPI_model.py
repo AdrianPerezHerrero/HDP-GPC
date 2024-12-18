@@ -363,7 +363,7 @@ class GPI_model():
                 self.include_weighted_sample(index, x_trains[index], x_trains[index],
                                              y_trains[index], resp[index])#, snr=snr_)
                 #self.backwards_pair(resp[index])  # , snr=snr_)
-                #self.bayesian_new_params(resp[index])
+                self.bayesian_new_params(resp[index])
         self.backwards()
         self.bayesian_new_params(1.0, full_data=True)
         #self.backwards()
