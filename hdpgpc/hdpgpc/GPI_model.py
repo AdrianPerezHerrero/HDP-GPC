@@ -260,13 +260,13 @@ class GPI_model():
         """
         err = 0.0
         if i == 0:
-            cov_f_ = self.cov_f_sm[i + 1]
-            lat_f_ = self.f_star_sm[i + 1]
+            cov_f_ = self.cov_f[i + 1]
+            lat_f_ = self.f_star[i + 1]
             Gamma_inv = torch.linalg.solve(self.Gamma[-1] * h_ini, self.cond_to_cuda(torch.eye(self.Gamma[-1].shape[0])))
             A = self.A[-1]
         else:
-            cov_f_ = self.cov_f_sm[i]
-            lat_f_ = self.f_star_sm[i]
+            cov_f_ = self.cov_f[i]
+            lat_f_ = self.f_star[i]
             if i+1 < len(self.Gamma):
                 Gamma_inv = torch.linalg.solve(self.Gamma[i+1], self.cond_to_cuda(torch.eye(self.Gamma[i].shape[0])))
                 A = self.A[i+1]
@@ -274,7 +274,7 @@ class GPI_model():
                 Gamma_inv = self.gamma_inv
                 A = self.A[-1]
         #cov_f = self.cov_f_sm[i + 1]
-        lat_f = self.f_star_sm[i + 1]
+        lat_f = self.f_star[i + 1]
         #Gamma = self.Gamma[i]
 
         #t = Gamma.shape[0]
@@ -364,9 +364,6 @@ class GPI_model():
                                              y_trains[index], resp[index])#, snr=snr_)
                 self.backwards_pair(resp[index])  # , snr=snr_)
                 self.bayesian_new_params(resp[index])
-        #self.backwards()
-        #self.bayesian_new_params(1.0, full_data=True)
-        #self.backwards()
         q_ = self.compute_sq_err_all(x_trains, y_trains)
         q_lat_ = self.compute_q_lat_all(x_trains)
         return q_, q_lat_
@@ -563,12 +560,12 @@ class GPI_model():
                 Sigma = self.Sigma[-1]
                 if proj:
                     Sigma = Sigma + self.Gamma[-1]
-                mean = torch.matmul(C, self.f_star_sm[t])
+                mean = torch.matmul(C, self.f_star[t])
             else:
                 A, Gamma, C, Sigma = self.get_params(t)
                 if proj:
                     Sigma = Sigma + Gamma
-                mean = torch.matmul(C, self.f_star_sm[t])
+                mean = torch.matmul(C, self.f_star[t])
         else:
             mean = params[0]
             Sigma = params[3]
