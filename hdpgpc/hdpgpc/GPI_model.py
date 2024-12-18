@@ -881,10 +881,10 @@ class GPI_model():
                         if model_type == 'dynamic':
                             if not full_data:
                                 A, Gamma = self.A[-1], self.Gamma[-1]
-                                samples_A = self.f_star_sm[-1]
-                                samples_A_ = self.f_star_sm[-2]
-                                # samples_A = self.f_star[-1]
+                                # samples_A = self.f_star_sm[-1]
                                 # samples_A_ = self.f_star_sm[-2]
+                                samples_A = self.f_star[-1]
+                                samples_A_ = self.f_star[-2]
                                 #samples_A_ = torch.matmul(A, self.f_star_sm[-2])
                                 cov = self.cov_f_sm[-1]
                                 cov_ = self.cov_f_sm[-2]
