@@ -362,7 +362,8 @@ class GPI_model():
             for index in trange(n_samp, desc="Forward_pass"):
                 self.include_weighted_sample(index, x_trains[index], x_trains[index],
                                              y_trains[index], resp[index])#, snr=snr_)
-                self.backwards_pair(resp[index])  # , snr=snr_)
+                #self.backwards_pair(resp[index])  # , snr=snr_)
+                self.backwards()
                 self.bayesian_new_params(resp[index])
         q_ = self.compute_sq_err_all(x_trains, y_trains)
         q_lat_ = self.compute_q_lat_all(x_trains, h_ini=0.1)
@@ -547,22 +548,22 @@ class GPI_model():
             if len(self.indexes) == 0:
                 C = self.C[0]
                 Sigma = self.Sigma[0]
-                mean = torch.matmul(C, self.f_star_sm[0])
+                mean = torch.matmul(C, self.f_star[0])
             #Case when computing error with last (predict)
             elif len(self.indexes) <= t:
                 C = self.C[-1]
                 Sigma = self.Sigma[-1]
                 A = self.A[-1]
                 Gamma = self.Gamma[-1]
-                mean = torch.linalg.multi_dot([C, self.f_star_sm[-1]])
+                mean = torch.linalg.multi_dot([C, self.f_star[-1]])
             elif self.estimation_limit <= t:
                 C = self.C[-1]
                 Sigma = self.Sigma[-1]
                 if proj:
                     Sigma = Sigma + self.Gamma[-1]
-                mean = torch.matmul(C, self.f_star_sm[t])
+                mean = torch.matmul(C, self.f_star[t])
             else:
-                A, Gamma, C, Sigma = self.get_params(t)
+                A, Gamma, C, Sigma = self.get_params_sm(t)
                 if proj:
                     Sigma = Sigma + Gamma
                 mean = torch.matmul(C, self.f_star_sm[t])
