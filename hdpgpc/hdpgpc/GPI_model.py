@@ -363,7 +363,7 @@ class GPI_model():
                 self.include_weighted_sample(index, x_trains[index], x_trains[index],
                                              y_trains[index], resp[index])#, snr=snr_)
                 #self.backwards_pair(resp[index])  # , snr=snr_)
-                self.backwards()
+                #self.backwards()
                 self.bayesian_new_params(resp[index])
         q_ = self.compute_sq_err_all(x_trains, y_trains)
         q_lat_ = self.compute_q_lat_all(x_trains, h_ini=0.1)
