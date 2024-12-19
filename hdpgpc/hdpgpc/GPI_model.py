@@ -365,14 +365,6 @@ class GPI_model():
                 self.backwards_pair(resp[index])  # , snr=snr_)
                 self.bayesian_new_params(resp[index])
             self.backwards()
-            self.reinit_LDS(save_last=True)
-            self.reinit_GP(save_last=False)
-            for index in trange(n_samp, desc="LDS estimation"):
-                self.include_weighted_sample(index, x_trains[index], x_trains[index],
-                                             y_trains[index], resp[index])  # , snr=snr_)
-                self.backwards_pair(resp[index])  # , snr=snr_)
-                self.bayesian_new_params(resp[index])
-            self.backwards()
         q_ = self.compute_sq_err_all(x_trains, y_trains)
         q_lat_ = self.compute_q_lat_all(x_trains)
         return q_, q_lat_
@@ -1272,8 +1264,8 @@ class matrix_normal_inv_wishart():
                    # - self.n0 * 0.5 * torch.logdet(self.scale)\
                    # - self.n0 * d * 0.5 * torch.log(torch.tensor(2.0 * torch.pi, device=self.scale.device))
         scale_lik = - (self.n0 + 1) * 0.5 * torch.logdet(Sigma) \
-                    - 0.5 * torch.trace(torch.matmul(sig_inv, self.scale))
-                    #- 0.5 * torch.trace(Sigma)
+                    - 0.5 * torch.trace(Sigma)
+                    #- 0.5 * torch.trace(torch.matmul(sig_inv, self.scale))
                     # - self.n0 * 0.5 * torch.logdet(self.scale)\
                     # - self.n0 * d * 0.5 * torch.log(torch.tensor(2.0, device=self.scale.device))\
                     # - torch.special.multigammaln(torch.tensor((self.n0 + d)*0.5, device=self.scale.device), d)
