@@ -365,9 +365,14 @@ class GPI_model():
                 self.backwards_pair(resp[index])  # , snr=snr_)
                 self.bayesian_new_params(resp[index])
             self.backwards()
-            # self.reinit_LDS(save_last=False)
-            # for index in trange(n_samp, desc="LDS estimation"):
-            self.bayesian_new_params(resp[index], full_data=True)
+            self.reinit_LDS(save_last=True)
+            self.reinit_GP(save_last=False)
+            for index in trange(n_samp, desc="LDS estimation"):
+                self.include_weighted_sample(index, x_trains[index], x_trains[index],
+                                             y_trains[index], resp[index])  # , snr=snr_)
+                self.backwards_pair(resp[index])  # , snr=snr_)
+                self.bayesian_new_params(resp[index])
+            self.backwards()
         q_ = self.compute_sq_err_all(x_trains, y_trains)
         q_lat_ = self.compute_q_lat_all(x_trains)
         return q_, q_lat_
@@ -457,14 +462,12 @@ class GPI_model():
             if len(self.indexes) > 0:
                 if index in self.indexes:
                     ind = self.indexes.index(index) + 1
-                    ind = -1
                     if ind == 1 and not no_first:
                         sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], i=ind, first=True)
                     else:
                         sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], i=ind)
                 else:
                     ind = np.max([self.find_closest_lower(index), 1])
-                    ind = -1
                     sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], i=ind)
         return sq_err
 
