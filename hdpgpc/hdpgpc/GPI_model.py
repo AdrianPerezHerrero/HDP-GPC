@@ -427,7 +427,7 @@ class GPI_model():
         """ Method to compute the likelihood of LDS parameters over the prior.
         """
         elb_LDS = 0
-        for i in trange(len(self.A), desc="LDS_elbo"):
+        for i in range(len(self.A)):
             ini_A, ini_Gamma, ini_C, ini_Sigma = self.A_def, self.Gamma_def, self.C_def, self.Sigma_def
             if first:
                 #ini_noise = self.cond_to_cuda(self.cond_to_torch(self.gp.kernel.get_params()["k2__noise_level"]))
