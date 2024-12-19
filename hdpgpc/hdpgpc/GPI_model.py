@@ -426,24 +426,27 @@ class GPI_model():
     def return_LDS_param_likelihood(self, first=False):
         """ Method to compute the likelihood of LDS parameters over the prior.
         """
-        ini_A, ini_Gamma, ini_C, ini_Sigma = self.A_def, self.Gamma_def, self.C_def, self.Sigma_def
-        if first:
-            #ini_noise = self.cond_to_cuda(self.cond_to_torch(self.gp.kernel.get_params()["k2__noise_level"]))
-            ini_noise = torch.mean(torch.diag(self.Sigma[-1])) * 1e-1
-            ini_noise_ = torch.mean(torch.diag(self.Gamma[-1])) * 1e-1
-            A_, Gam_, C_, Sig_ = (self.A[-1],
-                                  self.Gamma[-1] + torch.mul(ini_noise_, torch.eye(self.Sigma[-1].shape[0],
-                                                                                  device=ini_noise.device)),
-                                  self.C[-1],
-                                  self.Sigma[-1] + torch.mul(ini_noise, torch.eye(self.Sigma[-1].shape[0],
-                                                                                  device=ini_noise.device)))
-            # A_, Gam_, C_, Sig_ = (self.A[-1], self.Gamma[-1] + self.cov_f[-1], self.C[-1],
-            #                        self.Sigma[-1] + self.cov_f[-1])
-        else:
-            A_, Gam_, C_, Sig_ = self.A[-1], self.Gamma[-1], self.C[-1], self.Sigma[-1]
-        int_params = matrix_normal_inv_wishart(ini_A, torch.eye(ini_A.shape[0], device=self.device), self.free_deg_MNIV, ini_Gamma)
-        obs_params = matrix_normal_inv_wishart(ini_C, torch.eye(ini_C.shape[0], device=self.device), self.free_deg_MNIV, ini_Sigma)
-        return int_params.log_likelihood_MNIW(A_, Gam_) + obs_params.log_likelihood_MNIW(C_, Sig_)
+        elb_LDS = 0
+        for i in trange(len(self.A), desc="LDS_elbo"):
+            ini_A, ini_Gamma, ini_C, ini_Sigma = self.A_def, self.Gamma_def, self.C_def, self.Sigma_def
+            if first:
+                #ini_noise = self.cond_to_cuda(self.cond_to_torch(self.gp.kernel.get_params()["k2__noise_level"]))
+                ini_noise = torch.mean(torch.diag(self.Sigma[-1])) * 1e-1
+                ini_noise_ = torch.mean(torch.diag(self.Gamma[-1])) * 1e-1
+                A_, Gam_, C_, Sig_ = (self.A[-1],
+                                      self.Gamma[-1] + torch.mul(ini_noise_, torch.eye(self.Sigma[-1].shape[0],
+                                                                                      device=ini_noise.device)),
+                                      self.C[-1],
+                                      self.Sigma[-1] + torch.mul(ini_noise, torch.eye(self.Sigma[-1].shape[0],
+                                                                                      device=ini_noise.device)))
+                # A_, Gam_, C_, Sig_ = (self.A[-1], self.Gamma[-1] + self.cov_f[-1], self.C[-1],
+                #                        self.Sigma[-1] + self.cov_f[-1])
+            else:
+                A_, Gam_, C_, Sig_ = self.A[i], self.Gamma[i], self.C[i], self.Sigma[i]
+            int_params = matrix_normal_inv_wishart(ini_A, torch.eye(ini_A.shape[0], device=self.device), self.free_deg_MNIV, ini_Gamma)
+            obs_params = matrix_normal_inv_wishart(ini_C, torch.eye(ini_C.shape[0], device=self.device), self.free_deg_MNIV, ini_Sigma)
+            elb_LDS = elb_LDS + int_params.log_likelihood_MNIW(A_, Gam_) + obs_params.log_likelihood_MNIW(C_, Sig_)
+        return elb_LDS / len(self.A)
 
     def compute_sq_err_all(self, x_trains, y_trains, no_first=False):
         """ Method to compute the squared error over all provided examples y_trains.
