@@ -238,18 +238,18 @@ class GPI_HDP():
         # transAlpha represent a factor of prior probability of state-state transition
         # startAlpha represent a factor of prior probability of starting state
         # kappa represent the sticky factor of self transition
-        # self.gamma = 700.0
-        # self.transAlpha = 1400.0
-        # self.startAlpha = 1400.0
-        # self.kappa = 0.0
+        self.gamma = 700.0
+        self.transAlpha = 1400.0
+        self.startAlpha = 1400.0
+        self.kappa = 0.0
         # self.gamma = 100.0
         # self.transAlpha = 200.0
         # self.startAlpha = 200.0
         # self.kappa = 0.0
-        self.gamma = 1.0
-        self.transAlpha = 2.0
-        self.startAlpha = 2.0
-        self.kappa = 0.0
+        # self.gamma = 1.0
+        # self.transAlpha = 2.0
+        # self.startAlpha = 2.0
+        # self.kappa = 0.0
 
         # Model associated with each state
         # Default hyperparameters of GP defining the model.
@@ -1260,7 +1260,7 @@ class GPI_HDP():
         if one_sample:
             frac = sum_resp / torch.sum(sum_resp)
         else:
-            frac = sum_resp / torch.sum(sum_resp)
+            frac = sum_resp / sum_resp
         for i in sum_resp:
             if i > 0:
                 M_ = M_ + 1
@@ -1268,7 +1268,7 @@ class GPI_HDP():
             if sum_resp[i] > 0:
                 if sum_resp[i] < 2.0:
                     #elb = elb + gp.return_LDS_param_likelihood(first=True)
-                    elb = elb + gp.return_LDS_param_likelihood(first=False) * frac[i]
+                    elb = elb + gp.return_LDS_param_likelihood(first=False) * frac[i] * 0.5
                 else:
                     elb = elb + gp.return_LDS_param_likelihood() * frac[i]
         if one_sample:
