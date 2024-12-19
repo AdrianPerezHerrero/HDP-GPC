@@ -1265,15 +1265,15 @@ class matrix_normal_inv_wishart():
                    # - self.n0 * d * 0.5 * torch.log(torch.tensor(2.0 * torch.pi, device=self.scale.device))
         scale_lik = - (self.n0 + 1) * 0.5 * torch.logdet(Sigma) \
                     - 0.5 * torch.trace(torch.matmul(sig_inv, self.scale)) \
-                    - n0 * 0.5 * torch.logdet(self.scale)\
-                    - n0 * d * 0.5 * torch.log(torch.tensor(2.0, device=self.scale.device))\
-                    - torch.special.multigammaln(torch.tensor((n0 + d)*0.5, device=self.scale.device), d)
+                    - n0 * 0.5 * torch.logdet(self.scale)
+                    #- n0 * d * 0.5 * torch.log(torch.tensor(2.0, device=self.scale.device))\
+                    #- torch.special.multigammaln(torch.tensor((n0 + d)*0.5, device=self.scale.device), d)
                     # - 0.5 * torch.trace(Sigma)
         #Scale with dimension:
         #scale_lik = scale_lik / self.scale.shape[0]
         #return scale_lik# / d
-        #return (mean_lik + scale_lik) / d
-        return mean_lik + scale_lik
+        return (mean_lik + scale_lik) / d
+        #return mean_lik + scale_lik
 
     def get_mean(self):
         return self.m_mean
