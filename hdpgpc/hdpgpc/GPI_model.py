@@ -365,9 +365,9 @@ class GPI_model():
                 self.backwards_pair(resp[index])  # , snr=snr_)
                 self.bayesian_new_params(resp[index])
             self.backwards()
-            self.reinit_LDS(save_last=False)
-            for index in trange(n_samp, desc="LDS estimation"):
-                self.bayesian_new_params(resp[index])
+            # self.reinit_LDS(save_last=False)
+            # for index in trange(n_samp, desc="LDS estimation"):
+            #     self.bayesian_new_params(resp[index])
         q_ = self.compute_sq_err_all(x_trains, y_trains)
         q_lat_ = self.compute_q_lat_all(x_trains)
         return q_, q_lat_
