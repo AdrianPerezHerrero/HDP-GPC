@@ -1260,7 +1260,7 @@ class GPI_HDP():
         if one_sample:
             frac = sum_resp / torch.sum(sum_resp)
         else:
-            frac = sum_resp / sum_resp
+            frac = sum_resp / torch.sum(sum_resp)
         for i in sum_resp:
             if i > 0:
                 M_ = M_ + 1
@@ -1274,7 +1274,7 @@ class GPI_HDP():
         if one_sample:
             return elb# / M_
         else:
-            return elb / M_
+            return elb# / M_
 
     def redefine_default(self, x_trains, y_trains, resp):
         """ Method to compute Sigma and Gamma from a batch of examples and assign it to initial values.
@@ -1293,8 +1293,8 @@ class GPI_HDP():
             model_type, recursive_warp, warp_updating, inducing_points, estimation_limit, free_deg_MNIV = self.get_default_options()
         # ini_Sigma = var_y_y * 0.10
         # ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.0]), var_y_y * 2.0])) * 0.10
-        ini_Sigma = var_y_y * 1.0
-        ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.0]), var_y_y * 2.5])) * 1.0
+        ini_Sigma = var_y_y * 2.0
+        ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.0]), var_y_y * 2.5])) * 2.0
         #ini_Gamma = var_y_y_ * 1.0
         #ini_Sigma = 50.0
         #ini_Gamma = 60.0
