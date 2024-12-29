@@ -1264,7 +1264,7 @@ class GPI_HDP():
         for i in sum_resp:
             if i > 0:
                 M_ = M_ + 1
-        for i, gp in enumerate(gpmodels[:-1]):
+        for i, gp in enumerate(gpmodels):
             if sum_resp[i] > 0:
                 if sum_resp[i] < 2.0:
                     #elb = elb + gp.return_LDS_param_likelihood(first=True)
@@ -1274,7 +1274,7 @@ class GPI_HDP():
         if one_sample:
             return elb# / M_
         else:
-            return elb# / M_
+            return elb / M_
 
     def redefine_default(self, x_trains, y_trains, resp):
         """ Method to compute Sigma and Gamma from a batch of examples and assign it to initial values.
