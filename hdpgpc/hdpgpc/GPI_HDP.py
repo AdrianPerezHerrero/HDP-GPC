@@ -1260,11 +1260,11 @@ class GPI_HDP():
         if one_sample:
             frac = sum_resp / torch.sum(sum_resp)
         else:
-            frac = sum_resp / sum_resp
+            frac = sum_resp / torch.sum(sum_resp)
         for i in sum_resp:
             if i > 0:
                 M_ = M_ + 1
-        for i, gp in enumerate(gpmodels[:-1]):
+        for i, gp in enumerate(gpmodels):
             if sum_resp[i] > 0:
                 if sum_resp[i] < 2.0:
                     #elb = elb + gp.return_LDS_param_likelihood(first=True)
