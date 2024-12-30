@@ -1248,8 +1248,8 @@ class GPI_HDP():
             frac = frac / torch.sum(frac) #* self.n_outputs# * self.M#
         for i in range(self.n_outputs):
             elbo_bas_LDS = elbo_bas_LDS + self.full_LDS_elbo(gpmodels[i], torch.sum(resp, dim=0), one_sample=one_sample) * frac[i]
-        #elbo_bas = elbo_bas + elbo_bas_LDS + elbo_latent
-        elbo_bas = elbo_bas + elbo_latent
+        elbo_bas = elbo_bas + elbo_bas_LDS + elbo_latent
+        #elbo_bas = elbo_bas + elbo_latent
         #elbo_bas = 0
         return q_bas, elbo_bas
 
@@ -1262,7 +1262,7 @@ class GPI_HDP():
         if one_sample:
             frac = sum_resp / torch.sum(sum_resp)
         else:
-            frac = sum_resp / sum_resp
+            frac = sum_resp / torch.sum(sum_resp)
         for i in sum_resp:
             if i > 0:
                 M_ = M_ + 1
@@ -1270,7 +1270,7 @@ class GPI_HDP():
             if sum_resp[i] > 0:
                 if sum_resp[i] < 2.0:
                     #elb = elb + gp.return_LDS_param_likelihood(first=True)
-                    elb = elb + gp.return_LDS_param_likelihood(first=False) * frac[i] * 1.0
+                    elb = elb + gp.return_LDS_param_likelihood(first=True) * frac[i] * 1.0
                 else:
                     elb = elb + gp.return_LDS_param_likelihood() * frac[i]
         if one_sample:
