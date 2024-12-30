@@ -69,7 +69,7 @@ sw_gp = hdpgp.GPI_HDP(x_basis, x_basis_warp=x_basis_warp, n_outputs=num_outputs,
                           warp_updating=False, method_compute_warp='greedy', verbose=True,
                           hmm_switch=True, max_models=100, mode_warp='rough',
                           bayesian_params=True, inducing_points=False, reestimate_initial_params=True,
-                          n_explore_steps=15, free_deg_MNIV=5)
+                          n_explore_steps=15, free_deg_MNIV=3)
 
 
 start_ini_time = time.time()
