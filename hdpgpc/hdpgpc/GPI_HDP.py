@@ -1295,9 +1295,9 @@ class GPI_HDP():
         kernel, ini_sigma, ini_gamma, ini_outputscale, bound_sigma, bound_gamma, bound_noise_warp, annealing, method_compute_warp, \
             model_type, recursive_warp, warp_updating, inducing_points, estimation_limit, free_deg_MNIV = self.get_default_options()
         #Good results using 0.012
-        ini_Sigma = var_y_y * 0.0125
+        ini_Sigma = var_y_y * 0.011
         #ini_Gamma = var_y_y_ * 0.2
-        ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 3.0])) * 0.0125
+        ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 3.0])) * 0.011
         #ini_Sigma = var_y_y * 2.0
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.5])) * 2.0
         #ini_Gamma = var_y_y_ * 1.0
@@ -1393,7 +1393,7 @@ class GPI_HDP():
         if t > 0:
             resp, resp_log, respPair, respPair_log = self.variational_local_terms(q_aux, self.transTheta, self.startTheta)
             q_all, elbo = self.compute_q_elbo(resp[:-1], respPair[:-1], self.weight_mean(q_aux)[:-1],
-                                                              self.weight_mean(q_lat),
+                                                              self.weight_mean(q_lat)[:-1],
                                                               self.gpmodels, self.M, snr='saved', prev=True, one_sample=True)
         if t > 0:
             # Define order
