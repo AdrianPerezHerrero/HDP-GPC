@@ -1260,7 +1260,7 @@ class GPI_HDP():
         elb = torch.zeros(1)
         M_ = 0
         if one_sample:
-            frac = sum_resp / sum_resp
+            frac = sum_resp / torch.sum(sum_resp)
         else:
             frac = sum_resp / sum_resp
         for i in sum_resp[:-1]:
