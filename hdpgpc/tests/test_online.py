@@ -73,7 +73,7 @@ sw_gp = hdpgp.GPI_HDP(x_basis, x_basis_warp=x_basis_warp, n_outputs=num_outputs,
                           bound_sigma=bound_sigma, bound_gamma=bound_gamma, bound_noise_warp=bound_noise_warp,
                           warp_updating=warp, method_compute_warp='greedy', verbose=True,
                           hmm_switch=True, max_models=100, mode_warp='rough',
-                          bayesian_params=True, inducing_points=False, estimation_limit=None, free_deg_MNIV=20)
+                          bayesian_params=True, inducing_points=False, estimation_limit=None, free_deg_MNIV=10)
 
 
 start_ini_time = time.time()
