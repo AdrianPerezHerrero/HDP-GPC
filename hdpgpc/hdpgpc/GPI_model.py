@@ -564,12 +564,12 @@ class GPI_model():
                 Sigma = self.Sigma[-1]
                 if proj:
                     Sigma = Sigma + self.Gamma[-1]
-                mean = torch.matmul(C, self.f_star[t])
+                mean = torch.matmul(C, self.f_star_sm[t])
             else:
                 A, Gamma, C, Sigma = self.get_params(t)
                 if proj:
                     Sigma = Sigma + Gamma
-                mean = torch.matmul(C, self.f_star[t])
+                mean = torch.matmul(C, self.f_star_sm[t])
         else:
             mean = params[0]
             Sigma = params[3]
