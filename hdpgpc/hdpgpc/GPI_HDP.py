@@ -772,14 +772,14 @@ class GPI_HDP():
             if transStateCount[0,0] == torch.sum(transStateCount):
                 M = resp.shape[1] - 1
                 rho_, omega_, transTheta_, startTheta_ = self.temp_reinit_global_params(1,
-                                                                                        transStateCount[:M, :M],
+                                                                                        torch.clone(transStateCount[:M, :M]),
                                                                                         startStateCount[:M])
             else:
                 M = resp.shape[1]-1
-                rho_, omega_, transTheta_, startTheta_ = self.temp_reinit_global_params(M - 1, transStateCount[:M,:M],
+                rho_, omega_, transTheta_, startTheta_ = self.temp_reinit_global_params(M - 1, torch.clone(transStateCount[:M,:M]),
                                                                                        startStateCount[:M])
                 for giter in range(4):
-                    transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(transStateCount),
+                    transTheta_, startTheta_ = self._calcThetaFull(torch.clone(self.cond_cuda(transStateCount)),
                                                                    self.cond_cuda(startStateCount), M, rho=rho_)
                     rho_, omega_ = self.find_optimum_rhoOmega(startTheta_, transTheta_, rho=rho_, omega=omega_, M=M)
 
@@ -790,7 +790,7 @@ class GPI_HDP():
             rho_ = torch.clone(self.rho)
             omega_ = torch.clone(self.omega)
             for giter in range(2):
-                transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(transStateCount),
+                transTheta_, startTheta_ = self._calcThetaFull(torch.clone(self.cond_cuda(transStateCount)),
                                                                self.cond_cuda(startStateCount), rho=rho_)
                 rho_, omega_ = self.find_optimum_rhoOmega(startTheta_, transTheta_, rho=rho_, omega=omega_)
         return self.calcELBO_LinearTerms(rho=self.cond_to_numpy(self.cond_cpu(rho_)),
@@ -801,7 +801,7 @@ class GPI_HDP():
                                   transTheta=self.cond_to_numpy(self.cond_cpu(transTheta_)),
                                   startTheta=self.cond_to_numpy(self.cond_cpu(startTheta_)),
                                   startStateCount=self.cond_to_numpy(self.cond_cpu(startStateCount)),
-                                  transStateCount=self.cond_to_numpy(self.cond_cpu(transStateCount)))
+                                  transStateCount=self.cond_to_numpy(torch.clone(self.cond_cpu(transStateCount))))
 
 
     def new_model_or_refill(self, resp, respPair, startStateCount, transStateCount, q, q_lat, snr):
