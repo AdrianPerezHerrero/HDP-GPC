@@ -1057,7 +1057,7 @@ class GPI_HDP():
         potential_ind = {}
         potential_q = torch.zeros(f_ind_new_potential.shape[0])
         for j, ind in enumerate(f_ind_new_potential):
-            potential_ind[ind.item()] = torch.where(torch.isclose(q_rank, q_rank[ind], rtol=0.1))[0]
+            potential_ind[ind.item()] = torch.where(torch.isclose(q_rank, q_rank[ind], rtol=0.01))[0]
             potential_weight[ind] = torch.where(torch.isclose(q_rank, q_rank[ind], rtol=0.1))[0].shape[0]
             potential_q[ind] = torch.sum(q_rank[potential_ind[ind.item()]])
         n_steps = self.n_explore_steps
@@ -1084,8 +1084,8 @@ class GPI_HDP():
                         break
 
         q_aux = torch.clone(q_simple)
-        #ord_ = torch.argsort(potential_q[f_ind_new_potential_def[:n_steps]], descending=True)
-        #f_ind_new_potential_def[:n_steps] = f_ind_new_potential_def[ord_]
+        ord_ = torch.argsort(potential_q[f_ind_new_potential_def[:n_steps]], descending=True)
+        f_ind_new_potential_def[:n_steps] = f_ind_new_potential_def[ord_]
         step = 0
         last_indexes = torch.tensor([-1])
         for j, f_ind_new in enumerate(f_ind_new_potential_def):
