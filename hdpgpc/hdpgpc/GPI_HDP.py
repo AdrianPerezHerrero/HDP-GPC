@@ -1076,8 +1076,8 @@ class GPI_HDP():
                 m_chosen = torch.argmax(resp[f_ind_new])
             f_ind_old_chosen = f_ind_old[m_chosen]
             if f_ind_new != f_ind_old_chosen:
-                for l_ in potential_ind[f_ind_new.item()]:
-                    if not l_ in last_indexes:
+                for l_ in last_indexes:
+                    if not l_ in potential_ind[f_ind_new.item()]:
                         last_indexes = potential_ind[f_ind_new.item()]
                         f_ind_new_potential_def[j_] = f_ind_new
                         j_ = j_ + 1
@@ -1105,8 +1105,8 @@ class GPI_HDP():
             ld_belong = torch.argmax(self.snr_norm[f_ind_new])
             if f_ind_new != f_ind_old_chosen:
                 some_new_index = False
-                for l_ in potential_ind[f_ind_new.item()]:
-                    if not l_ in last_indexes:
+                for l_ in last_indexes:
+                    if not l_ in potential_ind[f_ind_new.item()]:
                         some_new_index = True
                 if some_new_index:
                     last_indexes = potential_ind[f_ind_new.item()]
@@ -1298,9 +1298,9 @@ class GPI_HDP():
         kernel, ini_sigma, ini_gamma, ini_outputscale, bound_sigma, bound_gamma, bound_noise_warp, annealing, method_compute_warp, \
             model_type, recursive_warp, warp_updating, inducing_points, estimation_limit, free_deg_MNIV = self.get_default_options()
         #Good results using 0.012
-        ini_Sigma = var_y_y * 0.02
+        ini_Sigma = var_y_y * 0.015
         #ini_Gamma = var_y_y_ * 0.2
-        ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 3.0])) * 0.02
+        ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 3.0])) * 0.015
         #ini_Sigma = var_y_y * 2.0
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.5])) * 2.0
         #ini_Gamma = var_y_y_ * 1.0
