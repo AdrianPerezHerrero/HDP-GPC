@@ -1309,8 +1309,8 @@ class GPI_HDP():
         # if ini_Sigma < ini_Gamma / 2.0:
         #     ini_Sigma = ini_Sigma * 2.0
         #     ini_Gamma = ini_Gamma * 2.0
-        ini_Sigma = self.cond_to_torch(np.max([ini_Sigma, 10.0]))
-        ini_Gamma = self.cond_to_torch(np.max(([ini_Gamma, 15.0])))
+        #ini_Sigma = self.cond_to_torch(np.max([ini_Sigma, 10.0]))
+        #ini_Gamma = self.cond_to_torch(np.max(([ini_Gamma, 15.0])))
         #ini_Gamma = self.cond_to_torch(np.max([var_y_y_, var_y_y * 1.5]))
         #ini_Gamma = var_y_y_ * 1.5
         bound_sigma = (ini_Sigma * 1e-3, ini_Sigma * 1.0)
