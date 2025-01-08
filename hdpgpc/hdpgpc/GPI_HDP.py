@@ -1271,7 +1271,10 @@ class GPI_HDP():
             if sum_resp[i] > 0:
                 if sum_resp[i] < 2.0:
                     #elb = elb + gp.return_LDS_param_likelihood(first=True)
-                    elb = elb + gp.return_LDS_param_likelihood(first=True) * frac[i] * 1.0
+                    if one_sample:
+                        elb = elb + gp.return_LDS_param_likelihood(first=True) * frac[i] * 1.0
+                    else:
+                        elb = elb + gp.return_LDS_param_likelihood(first=False) * frac[i] * 1.0
                 else:
                     elb = elb + gp.return_LDS_param_likelihood() * frac[i]
         if one_sample:
@@ -1295,9 +1298,9 @@ class GPI_HDP():
         kernel, ini_sigma, ini_gamma, ini_outputscale, bound_sigma, bound_gamma, bound_noise_warp, annealing, method_compute_warp, \
             model_type, recursive_warp, warp_updating, inducing_points, estimation_limit, free_deg_MNIV = self.get_default_options()
         #Good results using 0.012
-        ini_Sigma = var_y_y * 0.010
+        ini_Sigma = var_y_y * 0.011
         #ini_Gamma = var_y_y_ * 0.2
-        ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.3]), var_y_y * 3.0])) * 0.010
+        ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.3]), var_y_y * 3.0])) * 0.011
         #ini_Sigma = var_y_y * 2.0
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.5])) * 2.0
         #ini_Gamma = var_y_y_ * 1.0
