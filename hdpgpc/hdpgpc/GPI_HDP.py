@@ -1255,7 +1255,7 @@ class GPI_HDP():
 
 
     def full_LDS_elbo(self, gpmodels, sum_resp, one_sample=False):
-        """ Method to accumulate LDS ELBO terms.
+        """ Method to accumulate LDS ELBO terms..
         """
         elb = torch.zeros(1)
         M_ = 0
