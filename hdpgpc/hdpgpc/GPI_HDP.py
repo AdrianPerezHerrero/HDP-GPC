@@ -1076,8 +1076,8 @@ class GPI_HDP():
                 m_chosen = torch.argmax(resp[f_ind_new])
             f_ind_old_chosen = f_ind_old[m_chosen]
             if f_ind_new != f_ind_old_chosen:
-                for l_ in last_indexes:
-                    if not l_ in potential_ind[f_ind_new.item()]:
+                for l_ in potential_ind[f_ind_new.item()]:
+                    if not l_ in last_indexes:
                         last_indexes = potential_ind[f_ind_new.item()]
                         f_ind_new_potential_def[j_] = f_ind_new
                         j_ = j_ + 1
@@ -1105,8 +1105,8 @@ class GPI_HDP():
             ld_belong = torch.argmax(self.snr_norm[f_ind_new])
             if f_ind_new != f_ind_old_chosen:
                 some_new_index = False
-                for l_ in last_indexes:
-                    if not l_ in potential_ind[f_ind_new.item()]:
+                for l_ in potential_ind[f_ind_new.item()]:
+                    if not l_ in last_indexes:
                         some_new_index = True
                 if some_new_index:
                     last_indexes = potential_ind[f_ind_new.item()]
