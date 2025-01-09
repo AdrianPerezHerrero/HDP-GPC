@@ -1059,7 +1059,7 @@ class GPI_HDP():
         for j, ind in enumerate(f_ind_new_potential):
             potential_ind[ind.item()] = torch.where(torch.isclose(q_rank, q_rank[ind], rtol=0.01))[0]
             potential_weight[ind] = torch.where(torch.isclose(q_rank, q_rank[ind], rtol=0.01))[0].shape[0]
-            potential_q[ind] = torch.sum(q_rank[potential_ind[ind.item()]])
+            potential_q[ind] = torch.mean(q_rank[potential_ind[ind.item()]])
         n_steps = self.n_explore_steps
         f_ind_new_potential_def = torch.zeros(n_steps).long()
         last_indexes = torch.tensor([-1])
