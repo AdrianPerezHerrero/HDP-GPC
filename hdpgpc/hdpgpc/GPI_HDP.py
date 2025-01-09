@@ -1065,37 +1065,6 @@ class GPI_HDP():
         last_indexes = torch.tensor([-1])
         j_ = 0
         for j, f_ind_new in enumerate(f_ind_new_potential):
-            if j_ == n_steps // 2:
-                break
-            m_chosen = -1
-            for m in range(M - 1):
-                if f_ind_new in indexes_[m]:
-                    m_chosen = m
-                    break
-            if m_chosen == -1:
-                m_chosen = torch.argmax(resp[f_ind_new])
-            f_ind_old_chosen = f_ind_old[m_chosen]
-            if f_ind_new != f_ind_old_chosen:
-                for l_ in last_indexes:
-                    if not l_ in potential_ind[f_ind_new.item()]:
-                        last_indexes = potential_ind[f_ind_new.item()]
-                        f_ind_new_potential_def[j_] = f_ind_new
-                        j_ = j_ + 1
-                        break
-
-        f_ind_new_potential = torch.argsort(self.weight_mean(q_simple)[torch.where(resp == 1.0)])
-        q_rank = self.weight_mean(q_simple)[torch.where(resp == 1.0)]
-        potential_weight = torch.zeros(f_ind_new_potential.shape[0])
-        potential_ind = {}
-        potential_q = torch.zeros(f_ind_new_potential.shape[0])
-        for j, ind in enumerate(f_ind_new_potential):
-            potential_ind[ind.item()] = torch.where(torch.isclose(q_rank, q_rank[ind], rtol=0.1))[0]
-            potential_weight[ind] = torch.where(torch.isclose(q_rank, q_rank[ind], rtol=0.1))[0].shape[0]
-            potential_q[ind] = torch.sum(q_rank[potential_ind[ind.item()]])
-        n_steps = self.n_explore_steps
-        last_indexes = torch.tensor([-1])
-        j_ = n_steps // 2
-        for j, f_ind_new in enumerate(f_ind_new_potential):
             if j_ == n_steps:
                 break
             m_chosen = -1
@@ -1115,8 +1084,8 @@ class GPI_HDP():
                         break
 
         q_aux = torch.clone(q_simple)
-        #ord_ = torch.argsort(potential_q[f_ind_new_potential_def[:n_steps]], descending=True)
-        #f_ind_new_potential_def[:n_steps] = f_ind_new_potential_def[ord_]
+        ord_ = torch.argsort(potential_q[f_ind_new_potential_def[:n_steps]], descending=True)
+        f_ind_new_potential_def[:n_steps] = f_ind_new_potential_def[ord_]
         step = 0
         last_indexes = torch.tensor([-1])
         for j, f_ind_new in enumerate(f_ind_new_potential_def):
