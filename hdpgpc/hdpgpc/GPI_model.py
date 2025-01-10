@@ -28,8 +28,8 @@ class GPI_model():
         """
 
     def __init__(self, kernel, x_basis, annealing=True, bayesian=False, cuda=False, inducing_points=False,
-                 estimation_limit=None, free_deg_MNIV=5):
-        self.gp = GPI.IterativeGaussianProcess(kernel, x_basis, cuda=cuda)
+                 estimation_limit=None, free_deg_MNIV=5, verbose=True):
+        self.gp = GPI.IterativeGaussianProcess(kernel, x_basis, cuda=cuda, verbose=verbose)
         self.x_basis = self.cond_to_torch(x_basis)
         self.x_train = []
         self.y_train = []
@@ -68,6 +68,8 @@ class GPI_model():
             self.device = 'cpu'
         self.sq_lat_last = torch.zeros(1, device=self.device)
         self.free_deg_MNIV = free_deg_MNIV
+        self.verbose = verbose
+        self.disable = not verbose
 
 
     def initial_conditions(self, ini_mean=None, ini_cov=None,
@@ -359,7 +361,7 @@ class GPI_model():
         n_samp = x_trains.shape[0]
         step_lik = 0
         if len(ind) > 0:
-            for index in trange(n_samp, desc="Forward_pass"):
+            for index in trange(n_samp, desc="Forward_pass", disable=self.disable):
                 self.include_weighted_sample(index, x_trains[index], x_trains[index],
                                              y_trains[index], resp[index])#, snr=snr_)
                 self.backwards_pair(resp[index])  # , snr=snr_)
@@ -450,7 +452,7 @@ class GPI_model():
         """
         n_samps = x_trains.shape[0]
         sq_err = torch.zeros(n_samps, device=x_trains[0].device)
-        for index in trange(n_samps, desc="Compute_sq_error"):
+        for index in trange(n_samps, desc="Compute_sq_error", disable=self.disable):
             if len(self.indexes) > 0:
                 if index in self.indexes:
                     ind = self.indexes.index(index) + 1

@@ -42,7 +42,7 @@ class IterativeGaussianProcess():
         self : returns an instance of self.
         """
 
-    def __init__(self, kernel, x_basis, cuda=False):
+    def __init__(self, kernel, x_basis, cuda=False, verbose=True):
         self.kernel = kernel
         self.x_basis = torch.tensor(x_basis) if not type(x_basis) is torch.Tensor else x_basis
         self.alpha_ini = 0.0
@@ -60,6 +60,8 @@ class IterativeGaussianProcess():
         self.fitted = False
         self.log_marginal_fitted_value = 0.0
         self.cuda = cuda
+        self.verbose = verbose
+        self.disable = not verbose
         if self.cuda:
             self.zero = self.zero.cuda()
             self.device = 'cuda'
@@ -257,7 +259,7 @@ class IterativeGaussianProcess():
 
         """
         T = len(means)
-        for t in trange(T - 2, -1, -1, desc="Backward_pass"):
+        for t in trange(T - 2, -1, -1, desc="Backward_pass", disable=self.disable):
             P_t = torch.linalg.multi_dot([A_prior[t], covars[t], A_prior[t].T]) + Gamma_prior[t]
             J_t = torch.matmul(torch.matmul(covars[t],A_prior[t].T),torch.linalg.inv(P_t))
             means[t] = means[t] + torch.matmul(J_t, (means[t + 1] - torch.matmul(A_prior[t], means[t])))

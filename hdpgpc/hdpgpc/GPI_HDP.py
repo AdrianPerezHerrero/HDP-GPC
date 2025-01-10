@@ -260,11 +260,11 @@ class GPI_HDP():
                 if self.bayesian_params:
                     gp_ = gp.GPI_model(kernels[m], x_basis[m], annealing=self.annealing[m],
                                        bayesian=self.bayesian_params, cuda=self.cuda, inducing_points=inducing_points[m],
-                                       estimation_limit=estimation_limit[m], free_deg_MNIV=self.free_deg_MNIV)
+                                       estimation_limit=estimation_limit[m], free_deg_MNIV=self.free_deg_MNIV, verbose=self.verbose)
                 else:
                     gp_ = gp.GPI_model(kernels[m], x_basis[m], annealing=self.annealing[m], cuda=self.cuda,
                                        inducing_points=inducing_points[m], estimation_limit=estimation_limit[m],
-                                       free_deg_MNIV=self.free_deg_MNIV)
+                                       free_deg_MNIV=self.free_deg_MNIV, verbose=self.verbose)
                 # Initiate GP
                 if model_type[m] == 'static':
                     cond = gp_.GPR_static(ini_sigma[m])
@@ -424,7 +424,7 @@ class GPI_HDP():
                 model_type, recursive_warp, warp_updating, inducing_points, estimation_limit, free_deg_MNIV = self.get_default_options()
             kernel = kernel.clone_with_theta(kernel.theta)
             gp_ = gp.GPI_model(kernel, self.x_basis_ini, annealing=annealing, bayesian=self.bayesian_params, cuda=self.cuda,
-                               inducing_points=inducing_points, estimation_limit=estimation_limit, free_deg_MNIV=free_deg_MNIV)
+                               inducing_points=inducing_points, estimation_limit=estimation_limit, free_deg_MNIV=free_deg_MNIV, verbose=self.verbose)
             if model_type == 'static':
                 cond = gp_.GPR_static(ini_sigma)
             elif model_type == 'dynamic':
@@ -462,7 +462,7 @@ class GPI_HDP():
             kernel = kernel.clone_with_theta(kernel.theta)
             gp_ = gp.GPI_model(kernel, self.x_basis_ini, annealing=annealing, bayesian=self.bayesian_params,
                                cuda=self.cuda, inducing_points=inducing_points, estimation_limit=estimation_limit,
-                               free_deg_MNIV=free_deg_MNIV)
+                               free_deg_MNIV=free_deg_MNIV, verbose=self.verbose)
             if model_type == 'static':
                 cond = gp_.GPR_static(ini_sigma)
             elif model_type == 'dynamic':
@@ -1037,7 +1037,7 @@ class GPI_HDP():
                 torch.sum(self.weight_mean(q_lat, snr_aux))) + ", Elbo_post: " + str(elbo_post))
             if q_bas < q_bas_post:
                 if not q_bas + elbo_bas < q_bas_post + elbo_post:
-                    print("Possibly better but no.")
+                    print("Possibly better q_obs but worse elbo.")
             if q_bas + elbo_bas < q_bas_post + elbo_post and q_bas != q_bas_post:
                 print("Reallocating beats into existing groups.")
                 reallocate = True
@@ -1205,7 +1205,7 @@ class GPI_HDP():
                     print("Q_bas_post: " + str(q_bas_post) + ", Q_lat: " + str(torch.sum(self.weight_mean(q_lat, snr_aux)))+ ", Elbo_post: " + str(elbo_post))
                     if q_bas < q_bas_post:
                         if not q_bas + elbo_bas < q_bas_post + elbo_post:
-                            print("Possibly better but no.")
+                            print("Possibly better q_obs but worse elbo.")
                     if q_bas + elbo_bas < q_bas_post + elbo_post:
                         print("Chosen to divide: "+str(m_chosen)+" with beat "+str(f_ind_new.item()))
                         self.gpmodels = gpmodels_temp
@@ -2383,7 +2383,7 @@ class GPI_HDP():
             plk.dump(self, inp)
 
     def gpmodel_deepcopy(self, gpmodel):
-        gp_ = gp.GPI_model(gpmodel.gp.kernel.clone_with_theta(gpmodel.gp.kernel.theta), gpmodel.x_basis.clone())
+        gp_ = gp.GPI_model(gpmodel.gp.kernel.clone_with_theta(gpmodel.gp.kernel.theta), gpmodel.x_basis.clone(), verbose=self.verbose)
         gp_.y_train = gpmodel.y_train.copy()
         gp_.x_train = gpmodel.x_train.copy()
         gp_.f_star = gpmodel.f_star.copy()
