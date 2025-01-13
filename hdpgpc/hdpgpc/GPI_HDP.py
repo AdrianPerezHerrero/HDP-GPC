@@ -1320,7 +1320,7 @@ class GPI_HDP():
         #bound_gamma = (ini_Gamma * 1e-3, ini_Gamma * 1.0)
         bound_sigma = (0.1, 20.0)
         bound_gamma = (0.1, 20.0)
-        print("-----------Reestimated -----------", flush=True)
+        print("-----------Reestimated ------------", flush=True)
         print("Sigma: ", ini_Sigma)
         print("Gamma: ", ini_Gamma)
         print("-----------------------------", flush=True)
