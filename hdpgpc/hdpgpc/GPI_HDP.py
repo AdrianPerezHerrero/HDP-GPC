@@ -1229,7 +1229,7 @@ class GPI_HDP():
         """ Method to compute ELBO terms.
         """
         q_bas = torch.sum(q[torch.where(resp.int() > 0.99)])
-        elbo_latent = torch.sum(q_lat[torch.where(resp.int() > 0.99)]) * 0.5# / q.shape[0]
+        elbo_latent = torch.sum(q_lat[torch.where(resp.int() > 0.99)])# / q.shape[0]
         if prev:
             if torch.sum(resp, dim=0)[-1] < 1.0:
                 elbo_bas = self.elbo_Linears(resp, respPair, prev=prev)
