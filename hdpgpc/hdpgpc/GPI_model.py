@@ -193,6 +193,8 @@ class GPI_model():
             self.internal_params.set_scale(self.Gamma[-1])
             self.internal_params.m_mean = self.A[-1]
         self.fitted = True
+        print("---Kernel estimated---")
+        print(self.gp.kernel)
         return self.x_basis, ini_cov
 
     def log_lik_sample(self, y):
