@@ -631,7 +631,7 @@ class GPI_HDP():
         snr = torch.zeros(y_trains.shape[0])
         snr_comp = SignalNoiseRatio()
         for t in range(y_trains.shape[0]):
-            j = np.max([gp.find_closest_lower(t), 1])
+            j = np.min([np.max([gp.find_closest_lower(t), 1]), len(gp.f_star_sm) - 1])
             snr[t] = snr_comp(y_trains[t], gp.f_star_sm[j].T[0])
         #snr = torch.tensor([0.5] * y_trains.shape[0])
         return snr
@@ -1306,7 +1306,8 @@ class GPI_HDP():
         # Good results using 0.01.
         # Good results using 0.018
         ini_Sigma = var_y_y * 0.03
-        ini_Gamma = self.cond_to_torch(np.max([var_y_y * 1.2, var_y_y_])) * 0.03
+        ini_Gamma = var_y_y * 0.032
+        ini_Gamma = self.cond_to_torch(np.max([var_y_y * 1.05, var_y_y_])) * 0.03
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 0.9]), var_y_y * 1.8])) * 0.012
         #ini_Sigma = var_y_y * 2.0
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.5])) * 2.0
