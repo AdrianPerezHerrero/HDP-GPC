@@ -625,11 +625,14 @@ class GPI_HDP():
                 y_trains[:, :, ld]])
         self.snr_norm = torch.softmax(snr, dim=1)
 
-    def compute_snr(self, y_trains, mean):
+    def compute_snr(self, y_trains, gp):
         """ Iterative computation of snr
         """
+        snr = torch.zeros(y_trains.shape[0])
         snr_comp = SignalNoiseRatio()
-        snr = torch.tensor([snr_comp(y_trains[t], mean[t+1].T[0]) for t in range(y_trains.shape[0])])
+        for t in range(y_trains.shape[0]):
+            j = np.max([gp.find_closest_lower(t), 1])
+            snr[t] = snr_comp(y_trains[t], gp.f_star_sm[j].T[0])
         #snr = torch.tensor([0.5] * y_trains.shape[0])
         return snr
 
@@ -940,7 +943,7 @@ class GPI_HDP():
                 gp = self.create_gp_default()
                 q_[:, 0, ld], q_lat_[:, 0, ld]= gp.full_pass_weighted(x_trains, y_trains[:, :, [ld]], resp[:, 0],
                                                      snr=self.snr_norm[:, ld])
-                snr_[:, 0, ld] = self.compute_snr(y_trains[:, :, ld], gp.f_star_sm)
+                snr_[:, 0, ld] = self.compute_snr(y_trains[:, :, ld], gp)
                 self.gpmodels[ld][0] = gp
         reallocate = False
 
@@ -966,7 +969,7 @@ class GPI_HDP():
                 if len(indexes_[m]) > 0:
                     gp.include_weighted_sample(0, x_trains[f_ind_old[m]], x_trains[f_ind_old[m]], y_trains_w[f_ind_old[m],:,[ld]], h=1.0)
                 q_simple[:, m, ld] = gp.compute_sq_err_all(x_trains, y_trains_w[:,:, [ld]])
-                snr_temp[:, m, ld] = self.compute_snr(y_trains[:,:,ld], gp.f_star_sm)
+                snr_temp[:, m, ld] = self.compute_snr(y_trains[:,:,ld], gp)
 
         if M > 2:
             q_aux = torch.clone(q_simple)
@@ -1009,7 +1012,7 @@ class GPI_HDP():
                                                                 resp_temp[:, m], q=q[:,reorder[m], ld],
                                                                 q_lat=q_lat[:, reorder[m], ld],
                                                                 snr=self.snr_norm[:,ld])
-                            snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp.f_star_sm)
+                            snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp)
                         else:
                             q[:, m, ld] = torch.clone(q_[:, reorder[m], ld])
                             snr_aux[:, m, ld] = torch.clone(snr_[:, reorder[m], ld])
@@ -1120,7 +1123,7 @@ class GPI_HDP():
                             gp.reinit_GP(save_last=False)
                         gp.include_weighted_sample(0, x_trains[f_ind_new], x_trains[f_ind_new], y_trains_w[f_ind_new,:,[ld]], h=1.0)
                         q[:, -1, ld] = gp.compute_sq_err_all(x_trains, y_trains_w[:,:,[ld]])
-                        snr_aux[:, -1, ld] = self.compute_snr(y_trains_w[:, :, ld], gp.f_star_sm)
+                        snr_aux[:, -1, ld] = self.compute_snr(y_trains_w[:, :, ld], gp)
                     #Compute resp
                     q_mean = self.weight_mean(q, snr_aux)
                     q_norm, _ = self.LogLik(q_mean)
@@ -1154,7 +1157,7 @@ class GPI_HDP():
                                                                         resp_temp[:, m], q=q_[:,reorder[m], ld],
                                                                         q_lat=q_lat[:, reorder[m], ld],
                                                                         snr=self.snr_norm[:,ld])
-                                    snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp.f_star_sm)
+                                    snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp)
                                 else:
                                     gp = self.gpmodel_deepcopy(self.gpmodels[ld][reorder[m]])
                                     if not torch.equal(resp[:, reorder[m]].long(), resp_temp[:, m].long()):
@@ -1165,7 +1168,7 @@ class GPI_HDP():
                                                                             resp_temp[:, m], q=q_[:,reorder[m], ld],
                                                                             q_lat=q_lat[:, reorder[m], ld],
                                                                             snr=self.snr_norm[:,ld])
-                                        snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp.f_star_sm)
+                                        snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp)
                                     else:
                                         q[:, m, ld] = torch.clone(q_[:, reorder[m], ld])
                                         q_lat[:, m, ld] = torch.clone(q_lat_[:, reorder[m], ld])
