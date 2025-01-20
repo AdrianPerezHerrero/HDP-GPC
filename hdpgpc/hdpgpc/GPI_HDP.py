@@ -1186,8 +1186,8 @@ class GPI_HDP():
                         respPair_temp_ = torch.exp(respPairlog_temp)
                         resp_temp_, respPair_temp_ = self.refill_resp(resp_temp_, respPair_temp_)
 
-                        if torch.where(resp_temp == 1.0)[0].shape[0] == torch.where(resp_temp_ == 1.0)[0].shape[0]:
-                            if torch.all(torch.where(resp_temp == 1.0)[0] == torch.where(resp_temp_ == 1.0)[0]):
+                        if torch.where(resp_temp == 1.0)[1].shape[0] == torch.where(resp_temp_ == 1.0)[1].shape[0]:
+                            if torch.all(torch.where(resp_temp == 1.0)[1] == torch.where(resp_temp_ == 1.0)[1]):
                                 resp_temp = resp_temp_
                                 respPair_temp = respPair_temp_
                                 break
