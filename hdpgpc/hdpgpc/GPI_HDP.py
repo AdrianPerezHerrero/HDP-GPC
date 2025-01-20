@@ -1199,6 +1199,8 @@ class GPI_HDP():
                                 resp_temp = resp_temp_
                                 respPair_temp = respPair_temp_
                                 q_bas_post, elbo_post = q_bas_post_, elbo_post_
+                            else:
+                                break
 
 
                     new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
