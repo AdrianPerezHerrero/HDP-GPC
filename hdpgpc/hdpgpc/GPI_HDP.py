@@ -913,22 +913,22 @@ class GPI_HDP():
         else:
             q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat), self.gpmodels, self.M, snr='saved')
             print("Not first estimated q.")
-        if not reallocate:
-            while True:
-                resp, respPair, q, q_lat, snr, y_trains_w = self.estimate_q_all( M, x_trains=x_trains, y_trains=y_trains, y_trains_w=y_trains_w,
-                                               resp=resp, respPair=respPair, q_=q, q_lat_=q_lat, snr_=snr, startPi=startPi, transPi=transPi,
-                                               reparam=reparam)
-                print("Current resp: "+str(torch.sum(resp, axis=0)))
-                q_post, elbo_post = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat), self.gpmodels, self.M, snr='saved')
-                print("ELBO_reduction: "+str(((q_post + elbo_post) - (q_bas + elbo_bas)).item()))
-                if (torch.isclose(q_bas + elbo_bas, q_post + elbo_post, rtol=1e-5) and i > 0) or i==10:# or reparam:
-                    if not reparam:
-                        reparam = True
-                    else:
-                        break
-                q_bas = q_post
-                elbo_bas = elbo_post
-                i = i + 1
+        # if not reallocate:
+        #     while True:
+        #         resp, respPair, q, q_lat, snr, y_trains_w = self.estimate_q_all( M, x_trains=x_trains, y_trains=y_trains, y_trains_w=y_trains_w,
+        #                                        resp=resp, respPair=respPair, q_=q, q_lat_=q_lat, snr_=snr, startPi=startPi, transPi=transPi,
+        #                                        reparam=reparam)
+        #         print("Current resp: "+str(torch.sum(resp, axis=0)))
+        #         q_post, elbo_post = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat), self.gpmodels, self.M, snr='saved')
+        #         print("ELBO_reduction: "+str(((q_post + elbo_post) - (q_bas + elbo_bas)).item()))
+        #         if (torch.isclose(q_bas + elbo_bas, q_post + elbo_post, rtol=1e-5) and i > 0) or i==10:# or reparam:
+        #             if not reparam:
+        #                 reparam = True
+        #             else:
+        #                 break
+        #         q_bas = q_post
+        #         elbo_bas = elbo_post
+        #         i = i + 1
         #q_obs = torch.sum(torch.sum(q_)).item()/len(y_trains)
         return resp, respPair, q, q_lat, snr, y_trains_w, reallocate
 
