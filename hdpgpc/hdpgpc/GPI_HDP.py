@@ -1134,13 +1134,13 @@ class GPI_HDP():
                     resp_temp = torch.exp(resplog_temp)
                     respPair_temp = torch.exp(respPairlog_temp)
                     resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
-                    
+                    q_bas_post, elbo_post = torch.from_numpy(np.array([np.NINF])), torch.from_numpy(np.array([np.NINF]))
+
                     while True:
                         #Reallocating resp to preserve order.
                         resp_per_group_temp = torch.sum(resp_temp, axis=0)
                         reorder = torch.argsort(resp_per_group_temp, descending=True)
                         resp_temp = resp_temp[:,reorder]
-                        q_bas_post, elbo_post = torch.from_numpy(np.array([np.NINF])), torch.from_numpy(np.array([np.NINF]))
 
                         #Compute chosen model conditioned on new resp
                         #Update all models conditioned on new resp if it has changed
