@@ -1135,7 +1135,6 @@ class GPI_HDP():
                     respPair_temp = torch.exp(respPairlog_temp)
                     resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
                     q_bas_post, elbo_post = torch.from_numpy(np.array([np.NINF])), torch.from_numpy(np.array([np.NINF]))
-                    snr_aux = torch.clone(self.snr_norm)
 
                     while True:
                         #Reallocating resp to preserve order.
@@ -1158,7 +1157,7 @@ class GPI_HDP():
                                     q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains_w[:,:,[ld]],
                                                                         resp_temp[:, m], q=q_[:,reorder[m], ld],
                                                                         q_lat=q_lat[:, reorder[m], ld],
-                                                                        snr=snr_aux[:,ld])
+                                                                        snr=self.snr_norm[:,ld])
                                     snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp)
                                 else:
                                     gp = self.gpmodel_deepcopy(self.gpmodels[ld][reorder[m]])
@@ -1169,7 +1168,7 @@ class GPI_HDP():
                                         q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains_w[:,:,[ld]],
                                                                             resp_temp[:, m], q=q_[:,reorder[m], ld],
                                                                             q_lat=q_lat[:, reorder[m], ld],
-                                                                            snr=snr_aux[:,ld])
+                                                                            snr=self.snr_norm[:,ld])
                                         snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp)
                                     else:
                                         q[:, m, ld] = torch.clone(q_[:, reorder[m], ld])
