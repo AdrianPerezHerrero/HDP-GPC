@@ -1189,11 +1189,19 @@ class GPI_HDP():
                         q_bas_post_, elbo_post_ = self.compute_q_elbo(resp_temp_, respPair_temp_, self.weight_mean(q, snr_aux),
                                                 self.weight_mean(q_lat, snr_aux), gpmodels_temp, M, snr=snr_aux)
 
-                        if torch.all(torch.where(resp_temp > 0.9)[1] == torch.where(resp_temp_ > 0.9)[1]):
-                            resp_temp = resp_temp_
-                            respPair_temp = respPair_temp_
-                            q_bas_post, elbo_post = q_bas_post_, elbo_post_
-                            break
+                        if torch.where(resp_temp > 0.9)[1].shape[0] == torch.where(resp_temp_ > 0.9)[1].shape[0]:
+                            if torch.all(torch.where(resp_temp > 0.9)[1] == torch.where(resp_temp_ > 0.9)[1]):
+                                resp_temp = resp_temp_
+                                respPair_temp = respPair_temp_
+                                q_bas_post, elbo_post = q_bas_post_, elbo_post_
+                                break
+                            else:
+                                if q_bas_post + elbo_post < q_bas_post_ + elbo_post_:
+                                    resp_temp = resp_temp_
+                                    respPair_temp = respPair_temp_
+                                    q_bas_post, elbo_post = q_bas_post_, elbo_post_
+                                else:
+                                    break
                         else:
                             if q_bas_post + elbo_post < q_bas_post_ + elbo_post_:
                                 resp_temp = resp_temp_
