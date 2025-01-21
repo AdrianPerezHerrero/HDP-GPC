@@ -328,7 +328,7 @@ class GPI_model():
         x_train = self.cond_to_cuda(self.cond_to_torch(x_train))
         new_x_basis = self.x_basis
         #Responsability truncated to 0.9 for stability purposes.
-        if h > 0.9:
+        if h == 1.0:
             if self.N == 0 and not self.fitted:
                 if torch.allclose(torch.from_numpy(self.gp.kernel.theta), torch.from_numpy(self.ini_kernel_theta)):
                     new_x_basis, _ = self.fit_kernel_params(x_train, y, self.Sigma[-1], self.Gamma[-1], valid=True)
@@ -607,7 +607,7 @@ class GPI_model():
     def backwards(self, h=1.0):
         """Method to compute backward recursion weighted by the responsibility.
         """
-        if h > 0.99:
+        if h == 1.0:
             mean = list(self.f_star[1:])
             covs = list(self.cov_f[1:])
             aux_f_star, aux_cov_f = self.gp.backward(self.A[1:], self.Gamma[1:], mean, covs)
@@ -619,7 +619,7 @@ class GPI_model():
         """ Fast method to compute the last two backward iterations.
         """
         if len(self.indexes) > 1:
-            if h > 0.9:
+            if h == 1.0:
                 if snr is None:
                     mean = list(self.f_star[-2:])
                     covs = list(self.cov_f[-2:])
@@ -880,7 +880,7 @@ class GPI_model():
         """ Method to compute the variational Bayesian step for LDS parameters. Can deal with dynamic or static models.
             Can use full data batch n-step estimation or 1-step estimation.
         """
-        if h > 0.9:
+        if h == 1.0:
             if snr > 0.5:
                 if (full_data and 1 < self.N) or 1 < self.N < self.estimation_limit or force:
                     try:

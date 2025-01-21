@@ -1135,6 +1135,7 @@ class GPI_HDP():
                     respPair_temp = torch.exp(respPairlog_temp)
                     resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
                     q_bas_post, elbo_post = torch.from_numpy(np.array([np.NINF])), torch.from_numpy(np.array([np.NINF]))
+                    snr_aux = torch.clone(self.snr_norm)
 
                     while True:
                         #Reallocating resp to preserve order.
@@ -1157,7 +1158,7 @@ class GPI_HDP():
                                     q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains_w[:,:,[ld]],
                                                                         resp_temp[:, m], q=q_[:,reorder[m], ld],
                                                                         q_lat=q_lat[:, reorder[m], ld],
-                                                                        snr=self.snr_norm[:,ld])
+                                                                        snr=snr_aux[:,ld])
                                     snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp)
                                 else:
                                     gp = self.gpmodel_deepcopy(self.gpmodels[ld][reorder[m]])
@@ -1168,7 +1169,7 @@ class GPI_HDP():
                                         q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains_w[:,:,[ld]],
                                                                             resp_temp[:, m], q=q_[:,reorder[m], ld],
                                                                             q_lat=q_lat[:, reorder[m], ld],
-                                                                            snr=self.snr_norm[:,ld])
+                                                                            snr=snr_aux[:,ld])
                                         snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp)
                                     else:
                                         q[:, m, ld] = torch.clone(q_[:, reorder[m], ld])
@@ -1189,8 +1190,8 @@ class GPI_HDP():
                         q_bas_post_, elbo_post_ = self.compute_q_elbo(resp_temp_, respPair_temp_, self.weight_mean(q, snr_aux),
                                                 self.weight_mean(q_lat, snr_aux), gpmodels_temp, M, snr=snr_aux)
 
-                        if torch.where(resp_temp > 0.9)[1].shape[0] == torch.where(resp_temp_ > 0.9)[1].shape[0]:
-                            if torch.all(torch.where(resp_temp > 0.9)[1] == torch.where(resp_temp_ > 0.9)[1]):
+                        if torch.where(resp_temp == 1.0)[1].shape[0] == torch.where(resp_temp_ == 1.0)[1].shape[0]:
+                            if torch.all(torch.where(resp_temp == 1.0)[1] == torch.where(resp_temp_ == 1.0)[1]):
                                 resp_temp = resp_temp_
                                 respPair_temp = respPair_temp_
                                 q_bas_post, elbo_post = q_bas_post_, elbo_post_
@@ -1318,9 +1319,9 @@ class GPI_HDP():
         # Good results using 0.02
         # Good results using 0.01.
         # Good results using 0.018
-        ini_Sigma = var_y_y * 0.030
+        ini_Sigma = var_y_y * 0.020
         #ini_Gamma = self.cond_to_torch(np.max([var_y_y * 1.0, var_y_y_])) * 0.021
-        ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.0]), var_y_y * 2.0])) * 0.035
+        ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.0]), var_y_y * 2.0])) * 0.022
         #ini_Sigma = var_y_y * 2.0
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.5])) * 2.0
         #ini_Gamma = var_y_y_ * 1.0
