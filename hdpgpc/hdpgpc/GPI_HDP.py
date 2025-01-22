@@ -1055,15 +1055,15 @@ class GPI_HDP():
             else:
                 print("Not reallocating, trying to generate new group.")
         #f_ind_new_potential = torch.argsort(self.weight_mean(q_simple)[torch.where(resp == 1.0)])
-        f_ind_new_potential = torch.argsort(self.weight_mean(q_simple + q_lat_)[torch.where(resp == 1.0)])
-        q_rank = self.weight_mean(q_simple + q_lat_)[torch.where(resp == 1.0)]
+        f_ind_new_potential = torch.argsort(self.weight_mean(q_simple)[torch.where(resp == 1.0)])
+        q_rank = self.weight_mean(q_simple)[torch.where(resp == 1.0)]
         potential_weight = torch.zeros(f_ind_new_potential.shape[0])
         potential_ind = {}
         potential_q = torch.zeros(f_ind_new_potential.shape[0])
         for j, ind in enumerate(f_ind_new_potential):
             potential_ind[ind.item()] = torch.where(torch.isclose(q_rank, q_rank[ind], rtol=0.01))[0]
             potential_weight[ind] = torch.where(torch.isclose(q_rank, q_rank[ind], rtol=0.01))[0].shape[0]
-            potential_q[ind] = torch.mean(q_rank[potential_ind[ind.item()]])
+            potential_q[ind] = torch.sum(q_rank[potential_ind[ind.item()]])
         n_steps = self.n_explore_steps
         f_ind_new_potential_def = torch.zeros(n_steps).long()
         last_indexes = torch.tensor([-1])
@@ -1092,10 +1092,11 @@ class GPI_HDP():
         #f_ind_new_potential_def[:n_steps] = f_ind_new_potential_def[ord_]
         # Adding 5 possible potential indexes not by q.
         f_ind_new_potential_def = torch.concatenate([f_ind_new_potential_def, torch.argsort(potential_q)[:5]])
+        n_steps = n_steps + 5
         step = 0
         last_indexes = torch.tensor([-1])
         for j, f_ind_new in enumerate(f_ind_new_potential_def):
-            if step == n_steps + 5:
+            if step == n_steps:
                 break
             m_chosen = -1
             for m in range(M - 1):
