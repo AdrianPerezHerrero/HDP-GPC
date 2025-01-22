@@ -642,8 +642,6 @@ class IterativeGaussianProcess():
                 lik = gpytorch.likelihoods.GaussianLikelihood(
                     noise_constraint=gpytorch.constraints.Interval(alpha_ini_bounds[0], alpha_ini_bounds[1]))
                 gp = ExactGPModel(x_, y_, lik)
-                gp.covar_module.base_kernel.raw_lengthscale_constraint = \
-                    gpytorch.constraints.Interval(lengthscale_bounds[0], lengthscale_bounds[1])
 
             lik.train()
             gp.train()
