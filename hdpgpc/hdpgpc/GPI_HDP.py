@@ -1130,7 +1130,8 @@ class GPI_HDP():
                     resp_temp = torch.exp(resplog_temp)
                     respPair_temp = torch.exp(respPairlog_temp)
                     resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
-                    
+                    q_bas_post, elbo_post = torch.from_numpy(np.array([np.NINF])), torch.from_numpy(np.array([np.NINF]))
+
                     while True:
                         #Reallocating resp to preserve order.
                         resp_per_group_temp = torch.sum(resp_temp, axis=0)
@@ -1181,18 +1182,31 @@ class GPI_HDP():
                         resp_temp_ = torch.exp(resplog_temp)
                         respPair_temp_ = torch.exp(respPairlog_temp)
                         resp_temp_, respPair_temp_ = self.refill_resp(resp_temp_, respPair_temp_)
+                        q_bas_post_, elbo_post_ = self.compute_q_elbo(resp_temp_, respPair_temp_,
+                                                                      self.weight_mean(q, snr_aux),
+                                                                      self.weight_mean(q_lat, snr_aux), gpmodels_temp,
+                                                                      M, snr=snr_aux)
 
-                        if torch.where(resp_temp == 1.0)[0].shape[0] == torch.where(resp_temp_ == 1.0)[0].shape[0]:
-                            if torch.all(torch.where(resp_temp == 1.0)[0] == torch.where(resp_temp_ == 1.0)[0]):
+                        if torch.where(resp_temp == 1.0)[1].shape[0] == torch.where(resp_temp_ == 1.0)[1].shape[0]:
+                            if torch.all(torch.where(resp_temp > 1.0)[1] == torch.where(resp_temp_ > 1.0)[1]):
                                 resp_temp = resp_temp_
                                 respPair_temp = respPair_temp_
+                                q_bas_post, elbo_post = q_bas_post_, elbo_post_
                                 break
                             else:
+                                if q_bas_post + elbo_post < q_bas_post_ + elbo_post_:
+                                    resp_temp = resp_temp_
+                                    respPair_temp = respPair_temp_
+                                    q_bas_post, elbo_post = q_bas_post_, elbo_post_
+                                else:
+                                    break
+                        else:
+                            if q_bas_post + elbo_post < q_bas_post_ + elbo_post_:
                                 resp_temp = resp_temp_
                                 respPair_temp = respPair_temp_
-                        else:
-                            resp_temp = resp_temp_
-                            respPair_temp = respPair_temp_
+                                q_bas_post, elbo_post = q_bas_post_, elbo_post_
+                            else:
+                                break
 
                     new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
                     q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_), self.weight_mean(q_lat_, snr_), self.gpmodels, self.M, snr=snr_, prev=True)
