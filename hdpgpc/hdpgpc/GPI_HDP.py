@@ -1095,7 +1095,7 @@ class GPI_HDP():
         step = 0
         last_indexes = torch.tensor([-1])
         for j, f_ind_new in enumerate(f_ind_new_potential_def):
-            if step == n_steps:
+            if step == n_steps + 5:
                 break
             m_chosen = -1
             for m in range(M - 1):
