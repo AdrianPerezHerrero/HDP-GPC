@@ -1090,6 +1090,8 @@ class GPI_HDP():
         q_aux = torch.clone(q_simple)
         #ord_ = torch.argsort(potential_q[f_ind_new_potential_def[:n_steps]])#, descending=True)
         #f_ind_new_potential_def[:n_steps] = f_ind_new_potential_def[ord_]
+        # Adding 5 possible potential indexes not by q.
+        f_ind_new_potential_def = torch.concatenate([f_ind_new_potential_def, torch.argsort(potential_q)[:5]])
         step = 0
         last_indexes = torch.tensor([-1])
         for j, f_ind_new in enumerate(f_ind_new_potential_def):
