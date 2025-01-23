@@ -1232,7 +1232,7 @@ class GPI_HDP():
                         pos_new = torch.where(reorder == M - 1)[0].long()
                         indexes = torch.where(resp_temp[:, pos_new] == 1.0)[0]
                         if len(indexes) > 0:
-                            f_ind_old[-1] = indexes[torch.argmax(self.weight_mean(q, snr_aux)[indexes, pos_new]).long()]
+                            f_ind_old[-1] = indexes[torch.argmax(self.weight_mean(q_simple, snr_aux)[indexes, pos_new]).long()]
                         else:
                             f_ind_old[-1] = f_ind_new
                         self.f_ind_old = torch.clone(f_ind_old[reorder])
