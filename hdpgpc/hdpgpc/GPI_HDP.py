@@ -1059,7 +1059,7 @@ class GPI_HDP():
         for j, ind in enumerate(f_ind_new_potential):
             potential_ind[ind.item()] = torch.where(torch.isclose(q_rank, q_rank[ind], rtol=0.01))[0]
             potential_weight[ind] = torch.where(torch.isclose(q_rank, q_rank[ind], rtol=0.01))[0].shape[0]
-            potential_q[ind] = torch.mean(q_rank[potential_ind[ind.item()]])
+            potential_q[ind] = torch.sum(q_rank[potential_ind[ind.item()]])
         n_steps = self.n_explore_steps
         f_ind_new_potential_def = torch.zeros(n_steps).long()
         last_indexes = torch.tensor([-1])
@@ -1086,6 +1086,9 @@ class GPI_HDP():
         q_aux = torch.clone(q_simple)
         #ord_ = torch.argsort(potential_q[f_ind_new_potential_def[:n_steps]])#, descending=True)
         #f_ind_new_potential_def[:n_steps] = f_ind_new_potential_def[ord_]
+        # Adding 5 possible potential indexes not by q.
+        f_ind_new_potential_def = torch.concatenate([f_ind_new_potential_def, torch.argsort(potential_q)[:5]])
+        n_steps = n_steps + 5
         step = 0
         last_indexes = torch.tensor([-1])
         for j, f_ind_new in enumerate(f_ind_new_potential_def):
@@ -1144,9 +1147,9 @@ class GPI_HDP():
                         for ld in range(self.n_outputs):
                             for m in range(M):
                                 if reorder[m] == M-1:
-                                    gp = self.gpmodel_deepcopy(self.gpmodels[ld][m_chosen])
+                                    #gp = self.gpmodel_deepcopy(self.gpmodels[ld][m_chosen])
                                     # If uncommented then new GP is used for a new model, more expensive but official model.
-                                    #gp = self.create_gp_default(i=reorder[m])
+                                    gp = self.create_gp_default(i=reorder[m])
                                     if gp.fitted:
                                         gp.reinit_LDS(save_last=False)
                                         gp.reinit_GP(save_last=False)
@@ -1226,7 +1229,7 @@ class GPI_HDP():
                         pos_new = torch.where(reorder == M - 1)[0].long()
                         indexes = torch.where(resp_temp[:, pos_new] == 1.0)[0]
                         if len(indexes) > 0:
-                            f_ind_old[-1] = indexes[torch.argmax(self.weight_mean(q, snr_aux)[indexes, pos_new]).long()]
+                            f_ind_old[-1] = indexes[torch.argmax(self.weight_mean(q_simple, snr_aux)[indexes, pos_new]).long()]
                         else:
                             f_ind_old[-1] = f_ind_new
                         self.f_ind_old = torch.clone(f_ind_old[reorder])
