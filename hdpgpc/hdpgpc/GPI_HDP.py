@@ -160,6 +160,8 @@ class GPI_HDP():
                                  annealing[0], method_compute_warp, model_type[0], recursive_warp[0], warp_updating[0], inducing_points[0],
                                  estimation_limit[0], free_deg_MNIV)
         # Define some characteristics of the model with an initial M decided
+        self.ini_lengthscale = ini_lengthscale
+        self.bound_lengthscale = bound_lengthscale
         self.bound_sigma = bound_sigma
         self.bound_gamma = bound_gamma
         self.bound_sigma_warp = bound_noise_warp
@@ -1358,14 +1360,16 @@ class GPI_HDP():
         # ini_Gamma = self.cond_to_torch(np.max(([ini_Gamma, 12.0])))
         #ini_Gamma = self.cond_to_torch(np.max([var_y_y_, var_y_y * 1.5]))
         #ini_Gamma = var_y_y_ * 1.5
-        bound_sigma = (ini_Sigma * 1e-5, ini_Sigma * 1e-3)
-        bound_gamma = (ini_Gamma * 1e-5, ini_Gamma * 1e-3)
+        bound_sigma = (ini_Sigma.item() * 1e-5, ini_Sigma.item() * 1e-3)
+        bound_gamma = (ini_Gamma.item() * 1e-5, ini_Gamma.item() * 1e-3)
         #bound_sigma = (0.1, 20.0)
         #bound_gamma = (0.1, 20.0)
         print("-----------Reestimated ------------", flush=True)
         print("Sigma: ", ini_Sigma)
         print("Gamma: ", ini_Gamma)
         print("-----------------------------", flush=True)
+        kernel = (ConstantKernel(ini_outputscale, (ini_outputscale, ini_outputscale*5.0)) *
+                  RBF(self.ini_lengthscale[0], self.bound_lengthscale[0]) + WhiteKernel(bound_sigma[0], bound_sigma[1]))
         self.set_default_options(kernel, ini_Sigma, ini_Gamma, ini_outputscale, bound_sigma, bound_gamma,
                                  bound_noise_warp, annealing, method_compute_warp,
                                  model_type, recursive_warp, warp_updating, inducing_points, estimation_limit, free_deg_MNIV)
