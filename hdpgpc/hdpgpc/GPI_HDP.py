@@ -1058,7 +1058,7 @@ class GPI_HDP():
                 print("Not reallocating, trying to generate new group.")
         #f_ind_new_potential = torch.argsort(self.weight_mean(q_simple)[torch.where(resp == 1.0)])
         f_ind_new_potential = torch.argsort(self.weight_mean(q_simple)[torch.where(resp == 1.0)])
-        q_rank = self.weight_mean(q_)[torch.where(resp == 1.0)]
+        q_rank = self.weight_mean(q_simple)[torch.where(resp == 1.0)]
         potential_weight = torch.zeros(f_ind_new_potential.shape[0])
         potential_ind = {}
         potential_q = torch.zeros(f_ind_new_potential.shape[0])
@@ -1360,8 +1360,8 @@ class GPI_HDP():
         # ini_Gamma = self.cond_to_torch(np.max(([ini_Gamma, 12.0])))
         #ini_Gamma = self.cond_to_torch(np.max([var_y_y_, var_y_y * 1.5]))
         #ini_Gamma = var_y_y_ * 1.5
-        bound_sigma = (ini_Sigma.item() * 1e-5, ini_Sigma.item() * 1e-3)
-        bound_gamma = (ini_Gamma.item() * 1e-5, ini_Gamma.item() * 1e-3)
+        bound_sigma = (ini_Sigma.item() * 1e-5, ini_Sigma.item() * 1e-1)
+        bound_gamma = (ini_Gamma.item() * 1e-5, ini_Gamma.item() * 1e-1)
         #bound_sigma = (0.1, 20.0)
         #bound_gamma = (0.1, 20.0)
         print("-----------Reestimated ------------", flush=True)
