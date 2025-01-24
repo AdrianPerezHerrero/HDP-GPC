@@ -815,7 +815,7 @@ class GPI_HDP():
         """
         resp_per_group = torch.sum(resp, axis=0)
         n_samples = self.T
-        print("Group responsability estimated: "+str(resp_per_group.detach().cpu().numpy().astype(np.int64)))
+        print("Group responsability estimated: "+str(resp_per_group.detach().cpu().numpy().astype(np.int64)), flush=True)
         if not torch.any(resp_per_group[:-1] < 1.0):
             if resp_per_group[-1] >= 1.0:
                 self.M = self.M + 1
