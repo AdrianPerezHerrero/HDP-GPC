@@ -1369,7 +1369,7 @@ class GPI_HDP():
         print("Gamma: ", ini_Gamma)
         print("-----------------------------", flush=True)
         kernel = (ConstantKernel(ini_outputscale, (ini_outputscale, ini_outputscale*5.0)) *
-                  RBF(self.ini_lengthscale[0], self.bound_lengthscale[0]) + WhiteKernel(bound_sigma[0], bound_sigma[1]))
+                  RBF(self.ini_lengthscale[0], self.bound_lengthscale[0]) + WhiteKernel(bound_sigma[0], bound_sigma))
         self.set_default_options(kernel, ini_Sigma, ini_Gamma, ini_outputscale, bound_sigma, bound_gamma,
                                  bound_noise_warp, annealing, method_compute_warp,
                                  model_type, recursive_warp, warp_updating, inducing_points, estimation_limit, free_deg_MNIV)
