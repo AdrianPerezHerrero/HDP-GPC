@@ -1088,10 +1088,32 @@ class GPI_HDP():
                         break
 
         q_aux = torch.clone(q_simple)
+        f_ind_new_q = torch.argsort(potential_q)
+        f_ind_new_q_def = torch.zeros(5).long()
+        last_indexes = torch.tensor([-1])
+        j_ = 0
+        for j, f_ind_new in enumerate(f_ind_new_q):
+            if j_ == 5:
+                break
+            m_chosen = -1
+            for m in range(M - 1):
+                if f_ind_new in indexes_[m]:
+                    m_chosen = m
+                    break
+            if m_chosen == -1:
+                m_chosen = torch.argmax(resp[f_ind_new])
+            f_ind_old_chosen = f_ind_old[m_chosen]
+            if f_ind_new != f_ind_old_chosen:
+                for l_ in last_indexes:
+                    if not l_ in potential_ind[f_ind_new.item()]:
+                        last_indexes = potential_ind[f_ind_new.item()]
+                        f_ind_new_q_def[j_] = f_ind_new
+                        j_ = j_ + 1
+                        break
         #ord_ = torch.argsort(potential_q[f_ind_new_potential_def[:n_steps]])#, descending=True)
         #f_ind_new_potential_def[:n_steps] = f_ind_new_potential_def[ord_]
         # Adding 5 possible potential indexes not by q.
-        f_ind_new_potential_def = torch.concatenate([f_ind_new_potential_def, torch.argsort(potential_q)[:5]])
+        f_ind_new_potential_def = torch.concatenate([f_ind_new_potential_def,f_ind_new_q_def])
         n_steps = n_steps + 5
         step = 0
         last_indexes = torch.tensor([-1])
