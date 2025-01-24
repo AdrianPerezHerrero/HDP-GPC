@@ -1058,11 +1058,11 @@ class GPI_HDP():
                 print("Not reallocating, trying to generate new group.")
         #f_ind_new_potential = torch.argsort(self.weight_mean(q_simple)[torch.where(resp == 1.0)])
         q_sim_s = self.weight_mean(q_simple)[torch.where(resp == 1.0)]
-        q_sim_s = (q_sim_s - np.max(q_sim_s)) / (np.max(q_sim_s) - np.min(q_sim_s))
+        q_sim_s = (q_sim_s - torch.max(q_sim_s)) / (torch.max(q_sim_s) - torch.min(q_sim_s))
         q_s = self.weight_mean(q_)[torch.where(resp == 1.0)]
-        q_s = (q_s - np.max(q_s)) / (np.max(q_s) - np.min(q_s))
+        q_s = (q_s - torch.max(q_s)) / (torch.max(q_s) - torch.min(q_s))
         q_lat_s = self.weight_mean(q_lat_)[torch.where(resp == 1.0)]
-        q_lat_s = (q_lat_s - np.max(q_lat_s)) / (np.max(q_lat_s) - np.min(q_lat_s))
+        q_lat_s = (q_lat_s - torch.max(q_lat_s)) / (torch.max(q_lat_s) - torch.min(q_lat_s))
         f_ind_new_potential = torch.argsort(q_sim_s + q_s + q_lat_s)
         q_rank = q_sim_s + q_s + q_lat_s
         potential_weight = torch.zeros(f_ind_new_potential.shape[0])
