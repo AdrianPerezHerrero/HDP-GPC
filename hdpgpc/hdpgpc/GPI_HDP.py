@@ -1063,8 +1063,8 @@ class GPI_HDP():
         q_s = (q_s - torch.max(q_s)) / (torch.max(q_s) - torch.min(q_s))
         q_lat_s = self.weight_mean(q_lat_)[torch.where(resp == 1.0)]
         q_lat_s = (q_lat_s - torch.max(q_lat_s)) / (torch.max(q_lat_s) - torch.min(q_lat_s))
-        f_ind_new_potential = torch.argsort(q_sim_s + q_s + q_lat_s)
-        q_rank = q_sim_s + q_s + q_lat_s
+        f_ind_new_potential = torch.argsort(q_sim_s)
+        q_rank = q_sim_s
         potential_weight = torch.zeros(f_ind_new_potential.shape[0])
         potential_ind = {}
         potential_q = torch.zeros(f_ind_new_potential.shape[0])
@@ -1077,7 +1077,7 @@ class GPI_HDP():
         last_indexes = torch.tensor([-1])
         j_ = 0
         for j, f_ind_new in enumerate(f_ind_new_potential):
-            if j_ == n_steps:
+            if j_ == n_steps // 2.0:
                 break
             m_chosen = -1
             for m in range(M - 1):
@@ -1096,12 +1096,11 @@ class GPI_HDP():
                         break
 
         q_aux = torch.clone(q_simple)
-        f_ind_new_q = torch.argsort(potential_q)
-        f_ind_new_q_def = torch.zeros(5).long()
+        f_ind_new_q = torch.argsort(q_s + q_lat_s)
         last_indexes = torch.tensor([-1])
-        j_ = 0
+        j_ = n_steps // 2.0
         for j, f_ind_new in enumerate(f_ind_new_q):
-            if j_ == 5:
+            if j_ == n_steps:
                 break
             m_chosen = -1
             for m in range(M - 1):
@@ -1115,14 +1114,14 @@ class GPI_HDP():
                 for l_ in last_indexes:
                     if not l_ in potential_ind[f_ind_new.item()]:
                         last_indexes = potential_ind[f_ind_new.item()]
-                        f_ind_new_q_def[j_] = f_ind_new
+                        f_ind_new_potential_def[j_] = f_ind_new
                         j_ = j_ + 1
                         break
         #ord_ = torch.argsort(potential_q[f_ind_new_potential_def[:n_steps]])#, descending=True)
         #f_ind_new_potential_def[:n_steps] = f_ind_new_potential_def[ord_]
         # Adding 5 possible potential indexes not by q.
-        f_ind_new_potential_def = torch.concatenate([f_ind_new_potential_def,f_ind_new_q_def])
-        n_steps = n_steps + 5
+        #f_ind_new_potential_def = torch.concatenate([f_ind_new_potential_def,f_ind_new_q_def])
+        #n_steps = n_steps + 5
         step = 0
         last_indexes = torch.tensor([-1])
         for j, f_ind_new in enumerate(f_ind_new_potential_def):
