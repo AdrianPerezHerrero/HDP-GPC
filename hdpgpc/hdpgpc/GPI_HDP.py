@@ -1098,7 +1098,7 @@ class GPI_HDP():
         q_aux = torch.clone(q_simple)
         f_ind_new_q = torch.argsort(q_s + q_lat_s)
         last_indexes = torch.tensor([-1])
-        j_ = n_steps // 2.0
+        j_ = int(n_steps // 2.0)
         for j, f_ind_new in enumerate(f_ind_new_q):
             if j_ == n_steps:
                 break
@@ -1350,9 +1350,9 @@ class GPI_HDP():
         # Good results using 0.02
         # Good results using 0.01.
         # Good results using 0.018
-        ini_Sigma = var_y_y * 0.015
+        ini_Sigma = var_y_y * 0.010
         #ini_Gamma = self.cond_to_torch(np.max([var_y_y * 1.0, var_y_y_])) * 0.021
-        ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.0]), var_y_y * 2.0])) * 0.017
+        ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.0]), var_y_y * 2.0])) * 0.012
         #ini_Sigma = var_y_y * 2.0
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.5])) * 2.0
         #ini_Gamma = var_y_y_ * 1.0
@@ -1365,7 +1365,7 @@ class GPI_HDP():
         # ini_Gamma = self.cond_to_torch(np.max(([ini_Gamma, 12.0])))
         #ini_Gamma = self.cond_to_torch(np.max([var_y_y_, var_y_y * 1.5]))
         #ini_Gamma = var_y_y_ * 1.5
-        bound_sigma = (ini_Sigma.item() * 1e-5, ini_Sigma.item() * 1e-1)
+        bound_sigma = (ini_Sigma.item() * 1e-5, np.min(ini_Sigma.item() * 1e-1, ))
         bound_gamma = (ini_Gamma.item() * 1e-5, ini_Gamma.item() * 1e-1)
         #bound_sigma = (0.1, 20.0)
         #bound_gamma = (0.1, 20.0)
