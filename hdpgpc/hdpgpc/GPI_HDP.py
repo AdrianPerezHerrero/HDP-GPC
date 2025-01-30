@@ -1038,9 +1038,11 @@ class GPI_HDP():
             update_snr = True
             print("Sum resp_temp: " + str(torch.sum(resp_temp, dim=0)))
             print("Q_bas: " + str(q_bas) + ", Q_lat: " + str(
-                torch.sum(self.weight_mean(q_lat_, snr_))) + ", Elbo_bas: " + str(elbo_bas))
-            print("Q_bas_post: " + str(q_bas_post) + ", Q_lat: " + str(
-                torch.sum(self.weight_mean(q_lat, snr_aux))) + ", Elbo_post: " + str(elbo_post))
+                torch.sum(self.weight_mean(q_lat_, snr_)[torch.where(resp.int() > 0.99)])) + ", Elbo_bas: " + str(
+                elbo_bas))
+            print("Q_bas_post: " + str(q_bas_post) + ", Q_lat: " + str(torch.sum(
+                self.weight_mean(q_lat, snr_aux)[torch.where(resp_temp.int() > 0.99)])) + ", Elbo_post: " + str(
+                elbo_post))
             if q_bas < q_bas_post:
                 if not q_bas + elbo_bas < q_bas_post + elbo_post:
                     print("Possibly better q_obs but worse elbo.")
@@ -1250,8 +1252,12 @@ class GPI_HDP():
                     update_snr = True
 
                     print("Sum resp_temp: "+str(torch.sum(resp_temp,dim=0)))
-                    print("Q_bas: " + str(q_bas) + ", Q_lat: " + str(torch.sum(self.weight_mean(q_lat_, snr_))) + ", Elbo_bas: " + str(elbo_bas))
-                    print("Q_bas_post: " + str(q_bas_post) + ", Q_lat: " + str(torch.sum(self.weight_mean(q_lat, snr_aux)))+ ", Elbo_post: " + str(elbo_post))
+                    print("Q_bas: " + str(q_bas) + ", Q_lat: " + str(torch.sum(
+                        self.weight_mean(q_lat_, snr_)[torch.where(resp.int() > 0.99)])) + ", Elbo_bas: " + str(
+                        elbo_bas))
+                    print("Q_bas_post: " + str(q_bas_post) + ", Q_lat: " + str(torch.sum(
+                        self.weight_mean(q_lat, snr_aux)[torch.where(resp_temp.int() > 0.99)])) + ", Elbo_post: " + str(
+                        elbo_post))
                     if q_bas < q_bas_post:
                         if not q_bas + elbo_bas < q_bas_post + elbo_post:
                             print("Possibly better q_obs but worse elbo.")
@@ -1351,7 +1357,7 @@ class GPI_HDP():
         # Good results using 0.01.
         # Good results using 0.018
         ini_Sigma = torch.sqrt(var_y_y) * 0.5
-        ini_Gamma = torch.sqrt(self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.0]))) * 0.5
+        ini_Gamma = torch.sqrt(self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.5]), var_y_y * 3.0]))) * 0.6
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.0]), var_y_y * 2.0])) * 0.020
         #ini_Sigma = var_y_y * 2.0
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.5])) * 2.0
