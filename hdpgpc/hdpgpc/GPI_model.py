@@ -1213,7 +1213,7 @@ class matrix_normal_inv_wishart():
         if sse_matrix is None:
             sse_matrix = id
         scale = self.m_r_cov
-        jitter = 1e-2 * id
+        jitter = 1e-2 * torch.mean(torch.diag(self.scale)) * id
         scale = (scale + scale.T)/2 + jitter
         scale_c = torch.linalg.cholesky(scale)
         #
