@@ -162,6 +162,8 @@ class GPI_HDP():
         # Define some characteristics of the model with an initial M decided
         self.ini_lengthscale = ini_lengthscale
         self.bound_lengthscale = bound_lengthscale
+        self.static_factor = ini_sigma[0] / (ini_sigma[0] + ini_gamma[0])
+        self.dynamic_factor = ini_gamma[0] / (ini_sigma[0] + ini_gamma[0])
         self.bound_sigma = bound_sigma
         self.bound_gamma = bound_gamma
         self.bound_sigma_warp = bound_noise_warp
@@ -1283,8 +1285,8 @@ class GPI_HDP():
     def compute_q_elbo(self, resp, respPair, q, q_lat, gpmodels, M, new_indexes=None, snr=None, prev=False, one_sample=False):
         """ Method to compute ELBO terms.
         """
-        q_bas = torch.sum(q[torch.where(resp.int() > 0.99)])
-        elbo_latent = torch.sum(q_lat[torch.where(resp.int() > 0.99)])# / q.shape[0]
+        q_bas = torch.sum(q[torch.where(resp.int() > 0.99)]) * self.static_factor
+        elbo_latent = torch.sum(q_lat[torch.where(resp.int() > 0.99)]) * self.dynamic_factor# / q.shape[0]
         if prev:
             if torch.sum(resp, dim=0)[-1] < 1.0:
                 elbo_bas = self.elbo_Linears(resp, respPair, prev=prev)
@@ -1356,8 +1358,8 @@ class GPI_HDP():
         # Good results using 0.02
         # Good results using 0.01.
         # Good results using 0.018
-        ini_Sigma = var_y_y * 0.1
-        ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 3.0])) * 0.1
+        ini_Sigma = var_y_y * 0.01
+        ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 3.0])) * 0.01
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.0]), var_y_y * 2.0])) * 0.020
         #ini_Sigma = var_y_y * 2.0
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.5])) * 2.0
