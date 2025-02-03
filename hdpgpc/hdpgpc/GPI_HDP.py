@@ -1040,10 +1040,10 @@ class GPI_HDP():
             update_snr = True
             print("Sum resp_temp: " + str(torch.sum(resp_temp, dim=0)))
             print("Q_bas: " + str(q_bas) + ", Q_lat: " + str(
-                torch.sum(self.weight_mean(q_lat_, snr_)[torch.where(resp.int() > 0.99)])) + ", Elbo_bas: " + str(
+                torch.sum(self.weight_mean(q_lat_, snr_)[torch.where(resp.int() > 0.99)])* self.dynamic_factor) + ", Elbo_bas: " + str(
                 elbo_bas))
             print("Q_bas_post: " + str(q_bas_post) + ", Q_lat: " + str(torch.sum(
-                self.weight_mean(q_lat, snr_aux)[torch.where(resp_temp.int() > 0.99)])) + ", Elbo_post: " + str(
+                self.weight_mean(q_lat, snr_aux)[torch.where(resp_temp.int() > 0.99)])* self.dynamic_factor) + ", Elbo_post: " + str(
                 elbo_post))
             if q_bas < q_bas_post:
                 if not q_bas + elbo_bas < q_bas_post + elbo_post:
@@ -1255,10 +1255,10 @@ class GPI_HDP():
 
                     print("Sum resp_temp: "+str(torch.sum(resp_temp,dim=0)))
                     print("Q_bas: " + str(q_bas) + ", Q_lat: " + str(torch.sum(
-                        self.weight_mean(q_lat_, snr_)[torch.where(resp.int() > 0.99)])) + ", Elbo_bas: " + str(
+                        self.weight_mean(q_lat_, snr_)[torch.where(resp.int() > 0.99)])* self.dynamic_factor) + ", Elbo_bas: " + str(
                         elbo_bas))
                     print("Q_bas_post: " + str(q_bas_post) + ", Q_lat: " + str(torch.sum(
-                        self.weight_mean(q_lat, snr_aux)[torch.where(resp_temp.int() > 0.99)])) + ", Elbo_post: " + str(
+                        self.weight_mean(q_lat, snr_aux)[torch.where(resp_temp.int() > 0.99)])* self.dynamic_factor) + ", Elbo_post: " + str(
                         elbo_post))
                     if q_bas < q_bas_post:
                         if not q_bas + elbo_bas < q_bas_post + elbo_post:
