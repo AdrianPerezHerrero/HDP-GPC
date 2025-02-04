@@ -713,7 +713,7 @@ class GPI_HDP():
                 elbo_ = self.calcELBO_NonlinearTerms(resp=self.cond_to_numpy(self.cond_cpu(resp)),
                                                              respPair=self.cond_to_numpy(self.cond_cpu(respPair)))
 
-                q_obs, elbo_lin = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat), self.gpmodels, self.M, snr='saved', prev=True)
+                q_obs, elbo_lin = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat), self.gpmodels, self.M, snr='saved', prev=False)
                 elbo_ = elbo_ + elbo_lin + q_obs
                 print("Mean_sq: "+str(q_obs))
                 print("ELBO: "+ str(elbo_))
@@ -1034,9 +1034,9 @@ class GPI_HDP():
 
             new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
             q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_), self.weight_mean(q_lat_, snr_),
-                                                  self.gpmodels, M, snr=snr_, prev=True)
+                                                  self.gpmodels, M, snr=snr_, prev=False)
             q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux), self.weight_mean(q_lat, snr_aux),
-                                                        gpmodels_temp, M, snr=snr_aux, prev=True)
+                                                        gpmodels_temp, M, snr=snr_aux, prev=False)
             update_snr = True
             print("Sum resp_temp: " + str(torch.sum(resp_temp, dim=0)))
             print("Q_bas: " + str(q_bas) + ", Q_lat: " + str(
@@ -1248,7 +1248,7 @@ class GPI_HDP():
 
 
                     new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
-                    q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_), self.weight_mean(q_lat_, snr_), self.gpmodels, self.M, snr=snr_, prev=True)
+                    q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_), self.weight_mean(q_lat_, snr_), self.gpmodels, self.M, snr=snr_, prev=False)
                     q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux), self.weight_mean(q_lat, snr_aux), gpmodels_temp, M, snr=snr_aux)
 
                     update_snr = True
@@ -1358,14 +1358,14 @@ class GPI_HDP():
         # Good results using 0.02
         # Good results using 0.01.
         # Good results using 0.018
-        #ini_Sigma = torch.sqrt(var_y_y) * 0.5
-        #ini_Gamma = torch.sqrt(self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 3.0]))) * 0.5
+        ini_Sigma = var_y_y * 0.1
+        ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 3.0])) * 0.1
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.0]), var_y_y * 2.0])) * 0.020
         #ini_Sigma = var_y_y * 2.0
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.5])) * 2.0
         #ini_Gamma = var_y_y_ * 1.0
-        ini_Sigma = self.cond_to_torch(25.0)
-        ini_Gamma = self.cond_to_torch(35.0)
+        #ini_Sigma = self.cond_to_torch(25.0)
+        #ini_Gamma = self.cond_to_torch(35.0)
         # if ini_Sigma > 200.0:
         #      ini_Sigma = ini_Sigma * 0.3
         #      ini_Gamma = ini_Gamma * 0.3
@@ -1459,7 +1459,7 @@ class GPI_HDP():
             resp, resp_log, respPair, respPair_log = self.variational_local_terms(q_aux, self.transTheta, self.startTheta)
             q_all, elbo = self.compute_q_elbo(resp[:-1], respPair[:-1], self.weight_mean(q_aux)[:-1],
                                                               self.weight_mean(q_lat)[:-1],
-                                                              self.gpmodels, self.M, snr='saved', prev=True, one_sample=True)
+                                                              self.gpmodels, self.M, snr='saved', prev=False, one_sample=True)
         if t > 0:
             # Define order
             q_ord = torch.argsort(self.weight_mean(q_aux)[-1,:-1], descending=True)
@@ -1500,7 +1500,7 @@ class GPI_HDP():
                     resp_post, resp_post_log, respPair_post, respPair_post_log = self.variational_local_terms(q_post, self.transTheta, self.startTheta, liks)
                     q_bas_post, elbo_bas_post = self.compute_q_elbo(resp_post, respPair_post, self.weight_mean(q_post),
                                                           self.weight_mean(q_lat_post),
-                                                          self.gpmodels, self.M, snr='saved', prev=True, one_sample=True)
+                                                          self.gpmodels, self.M, snr='saved', prev=False, one_sample=True)
                     elbo_bas_post = elbo_bas_post - elbo#/ np.log(self.T + 1)
                     q_bas_post = q_bas_post - q_all
                     print("Q_prev: " + str(q_prev_post) + ", Elbo_prev: " + str(elbo_prev_post))
