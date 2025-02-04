@@ -1285,8 +1285,8 @@ class GPI_HDP():
     def compute_q_elbo(self, resp, respPair, q, q_lat, gpmodels, M, new_indexes=None, snr=None, prev=False, one_sample=False):
         """ Method to compute ELBO terms.
         """
-        q_bas = torch.sum(q[torch.where(resp.int() > 0.99)]) * self.static_factor
-        elbo_latent = torch.sum(q_lat[torch.where(resp.int() > 0.99)]) * self.dynamic_factor# / q.shape[0]
+        q_bas = torch.sum(q[torch.where(resp.int() > 0.99)])# * self.static_factor
+        elbo_latent = torch.sum(q_lat[torch.where(resp.int() > 0.99)]) #* self.dynamic_factor# / q.shape[0]
         if prev:
             if torch.sum(resp, dim=0)[-1] < 1.0:
                 elbo_bas = self.elbo_Linears(resp, respPair, prev=prev)
@@ -1358,8 +1358,8 @@ class GPI_HDP():
         # Good results using 0.02
         # Good results using 0.01.
         # Good results using 0.018
-        ini_Sigma = torch.sqrt(var_y_y) * 0.8
-        ini_Gamma = torch.sqrt(self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 3.0]))) * 0.8
+        ini_Sigma = torch.sqrt(var_y_y) * 0.5
+        ini_Gamma = torch.sqrt(self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 3.0]))) * 0.5
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.0]), var_y_y * 2.0])) * 0.020
         #ini_Sigma = var_y_y * 2.0
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.5])) * 2.0
