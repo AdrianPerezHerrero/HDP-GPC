@@ -1236,6 +1236,10 @@ class GPI_HDP():
                     resp_temp = torch.exp(resplog_temp)
                     respPair_temp = torch.exp(respPairlog_temp)
                     resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
+                    q_bas, elbo_bas = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
+                                                            self.weight_mean(q_lat, snr_aux), gpmodels_temp, M,
+                                                            snr=snr_aux)
+                    i__ = 0
                     while True:
                         resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, gpmodels_temp = self.estimate_q_all(M,
                                                                                                                  x_trains=x_trains,
@@ -1250,19 +1254,16 @@ class GPI_HDP():
                                                                                                                  transPi=transPi,
                                                                                                                  gpmodels=gpmodels_temp,
                                                                                                                  reparam=reparam)
-                        print("Current resp: " + str(torch.sum(resp, axis=0)))
-                        q_post, elbo_post = self.compute_q_elbo(resp, respPair, self.weight_mean(q),
-                                                                self.weight_mean(q_lat), self.gpmodels, self.M, snr='saved')
+                        print("Current resp: " + str(torch.sum(resp_temp, axis=0)))
+                        q_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
+                                                                self.weight_mean(q_lat, snr_aux), gpmodels_temp, M, snr=snr_aux)
                         print("ELBO_reduction: " + str(((q_post + elbo_post) - (q_bas + elbo_bas)).item()))
                         if (torch.isclose(q_bas + elbo_bas, q_post + elbo_post,
-                                          rtol=1e-5) and i > 0) or i == 10:  # or reparam:
-                            if not reparam:
-                                reparam = True
-                            else:
+                                          rtol=1e-5) and i__ > 0) or i__ == 10:  # or reparam:
                                 break
                         q_bas = q_post
                         elbo_bas = elbo_post
-                        i = i + 1
+                        i__ = i__ + 1
 
 
                     new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
