@@ -168,7 +168,7 @@ class GPI_model():
         gam_ = self.cond_to_torch(gamma_ini[0][0])
         if valid:
             fitted = self.gp.fit_torch(self.cond_to_torch(x_train), self.cond_to_torch(y), alph_, gam_,
-                                       reduced_points=self.inducing_points, verbose=True)
+                                       reduced_points=self.inducing_points, verbose=self.verbose)
         noise = self.gp.kernel.get_params()["k2__noise_level"]
         noise = alph_
         self.x_basis = self.cond_to_cuda(self.cond_to_torch(self.gp.x_basis))

@@ -534,7 +534,7 @@ class GPI_HDP():
         resp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
         m_resp = np.argmax(self.cond_cpu(resp[-1]))
         respPair, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_, margprob), axis=1)
-        if m_ != m_resp:
+        if m_ != m_resp and self.verbose:
             print("Mismatch between SSE ("+str(m_+1)+") and Resp ("+str(m_resp+1)+").")
         if torch.any(torch.isnan(resp)):
             print("Error")
@@ -1048,7 +1048,7 @@ class GPI_HDP():
             print("Q_bas_post: " + str(q_bas_post) + ", Q_lat: " + str(torch.sum(
                 self.weight_mean(q_lat, snr_aux)[torch.where(resp_temp.int() > 0.99)])* self.dynamic_factor) + ", Elbo_post: " + str(
                 elbo_post))
-            if torch.all(torch.sum(resp_temp, dim=0)[:-1] > 0.0):
+            if torch.all(torch.sum(resp_temp, dim=0)[:-1] >= 1.0):
                 if q_bas < q_bas_post:
                     if not q_bas + elbo_bas < q_bas_post + elbo_post:
                         print("Possibly better q_obs but worse elbo.")
@@ -1176,7 +1176,6 @@ class GPI_HDP():
                     resp_temp = torch.exp(resplog_temp)
                     respPair_temp = torch.exp(respPairlog_temp)
                     resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
-                    #q_bas_post, elbo_post = torch.from_numpy(np.array([np.NINF])), torch.from_numpy(np.array([np.NINF]))
 
 
                     #Reallocating resp to preserve order.
@@ -1228,38 +1227,35 @@ class GPI_HDP():
                     resp_temp = torch.exp(resplog_temp)
                     respPair_temp = torch.exp(respPairlog_temp)
                     resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
-                    resp_temp, respPair_temp, q, q_lat, snr, y_trains_w, gpmodels_temp = self.estimate_q_all(M, x_trains=x_trains,
-                                                                                    y_trains=y_trains,
-                                                                                    y_trains_w=y_trains_w,
-                                                                                    resp=resp_temp, respPair=respPair_temp, q_=q,
-                                                                                    q_lat_=q_lat, snr_=snr_aux,
-                                                                                    startPi=startPi, transPi=transPi, gpmodels=gpmodels_temp,
-                                                                                    reparam=reparam)
-                    # q_bas_post_, elbo_post_ = self.compute_q_elbo(resp_temp, respPair_temp,
-                    #                                               self.weight_mean(q, snr_aux),
-                    #                                               self.weight_mean(q_lat, snr_aux), gpmodels_temp,
-                    #                                               M, snr=snr_aux)
-
-                        # if torch.where(resp_temp == 1.0)[1].shape[0] == torch.where(resp_temp_ == 1.0)[1].shape[0]:
-                        #     if torch.all(torch.where(resp_temp == 1.0)[1] == torch.where(resp_temp_ == 1.0)[1]):
-                        #         resp_temp = resp_temp_
-                        #         respPair_temp = respPair_temp_
-                        #         q_bas_post, elbo_post = q_bas_post_, elbo_post_
-                        #         break
-                        #     else:
-                        #         if q_bas_post + elbo_post < q_bas_post_ + elbo_post_:
-                        #             resp_temp = resp_temp_
-                        #             respPair_temp = respPair_temp_
-                        #             q_bas_post, elbo_post = q_bas_post_, elbo_post_
-                        #         else:
-                        #             break
-                        # else:
-                        #     if q_bas_post + elbo_post < q_bas_post_ + elbo_post_:
-                        #         resp_temp = resp_temp_
-                        #         respPair_temp = respPair_temp_
-                        #         q_bas_post, elbo_post = q_bas_post_, elbo_post_
-                        #     else:
-                        #         break
+                    q_bas, elbo_bas = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
+                                                          self.weight_mean(q_lat, snr_aux), gpmodels_temp, M,
+                                                          snr=snr_aux)
+                    i__ = 0
+                    while True:
+                        resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, gpmodels_temp = self.estimate_q_all(M,
+                                                                                                                     x_trains=x_trains,
+                                                                                                                     y_trains=y_trains,
+                                                                                                                     y_trains_w=y_trains_w,
+                                                                                                                     resp=resp_temp,
+                                                                                                                     respPair=respPair_temp,
+                                                                                                                     q_=q,
+                                                                                                                     q_lat_=q_lat,
+                                                                                                                     snr_=snr_aux,
+                                                                                                                     startPi=startPi,
+                                                                                                                     transPi=transPi,
+                                                                                                                     gpmodels=gpmodels_temp,
+                                                                                                                     reparam=reparam)
+                        print("Current resp: " + str(torch.sum(resp_temp, axis=0)))
+                        q_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
+                                                                self.weight_mean(q_lat, snr_aux), gpmodels_temp, M,
+                                                                snr=snr_aux)
+                        print("ELBO_reduction: " + str(((q_post + elbo_post) - (q_bas + elbo_bas)).item()))
+                        if (torch.isclose(q_bas + elbo_bas, q_post + elbo_post,
+                                          rtol=1e-5) and i__ > 0) or i__ == 10:  # or reparam:
+                            break
+                        q_bas = q_post
+                        elbo_bas = elbo_post
+                        i__ = i__ + 1
 
                     new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
                     q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_), self.weight_mean(q_lat_, snr_), self.gpmodels, self.M, snr=snr_, prev=False)
@@ -1270,7 +1266,7 @@ class GPI_HDP():
                     print("Sum resp_temp: "+str(torch.sum(resp_temp,dim=0)))
                     print("Q_bas: " + str(q_bas) + ", Q_lat: " + str(torch.sum(self.weight_mean(q_lat_, snr_)[torch.where(resp.int() > 0.99)]) * self.dynamic_factor) + ", Elbo_bas: " + str(elbo_bas))
                     print("Q_bas_post: " + str(q_bas_post) + ", Q_lat: " + str(torch.sum(self.weight_mean(q_lat, snr_aux)[torch.where(resp_temp.int() > 0.99)]) * self.dynamic_factor)+ ", Elbo_post: " + str(elbo_post))
-                    if torch.all(torch.sum(resp_temp, dim=0) > 0.0):
+                    if torch.all(torch.sum(resp_temp, dim=0) >= 1.0):
                         if q_bas < q_bas_post:
                             if not q_bas + elbo_bas < q_bas_post + elbo_post:
                                 print("Possibly better q_obs but worse elbo.")
@@ -1889,17 +1885,21 @@ class GPI_HDP():
         new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
         q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_), self.weight_mean(q_lat_, snr_), gpmodels, self.M, snr=snr_)
         q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux), self.weight_mean(q_lat, snr_aux), gpmodels_temp, M, snr=snr_aux)
-        update_snr = False
-        if q_bas + elbo_bas < q_bas_post + elbo_post:
-            #self.gpmodels = gpmodels_temp
-            if reorder.shape[0] == self.f_ind_old.shape[0]:
-                self.f_ind_old = self.f_ind_old[reorder]
-            if update_snr:
-                self.snr_norm = self.normalize_snr(snr_aux)
+        update_snr = True
+        if torch.all(torch.sum(resp_temp, dim=0) >= 1.0):
+            if q_bas + elbo_bas < q_bas_post + elbo_post:
+                #self.gpmodels = gpmodels_temp
+                if reorder.shape[0] == self.f_ind_old.shape[0]:
+                    self.f_ind_old = self.f_ind_old[reorder]
+                if update_snr:
+                    self.snr_norm = self.normalize_snr(snr_aux)
+                else:
+                    snr_aux = snr_
+                return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, gpmodels_temp
             else:
-                snr_aux = snr_
-            return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, gpmodels_temp
+                return resp, respPair, q_, q_lat_, snr_, y_trains_w, gpmodels
         else:
+            print("Bad estimation")
             return resp, respPair, q_, q_lat_, snr_, y_trains_w, gpmodels
 
 
@@ -2118,7 +2118,7 @@ class GPI_HDP():
         if torch.any(torch.isnan(torch.log(fmsg))):
             print("Error nan")
             return None, None
-        if torch.argmax(fmsg[-1]) != torch.argmax(q[-1]):
+        if torch.argmax(fmsg[-1]) != torch.argmax(q[-1]) and self.verbose:
             print("Miss")
         return fmsg, margPrObs
 
