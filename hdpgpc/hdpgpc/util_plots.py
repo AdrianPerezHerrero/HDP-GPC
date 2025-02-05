@@ -722,7 +722,7 @@ def plot_MDS_plotly(sw_gp, main_model, labels, N_0, lead=0, save=None):
         plt.show()
 
 
-def plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, N_0, title=None, save=None, lead=0, step=0.1, plot_latent=False, ticks=False):
+def plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, N_0, title=None, save=None, lead=0, step=0.1, plot_latent=False, ticks=False, yscale=False):
     num_models = len(selected_gpmodels)
     num_cols = int(np.ceil(np.sqrt(num_models)))
     num_rows = int(np.ceil(num_models / num_cols))
@@ -753,33 +753,43 @@ def plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, N_0, title=
 
         # Mean and variance
         x_b = gp.x_basis.T[0]
-        x_ = torch.arange(min(x_b), max(x_b), step, dtype=torch.float64).cpu()
+        if (x_b[1] - x_b[0]) == step:
+            x_ = torch.clone(x_b)
+        else:
+            x_ = torch.arange(min(x_b), max(x_b), step, dtype=torch.float64).cpu()
 
         mean_, Sig_ = gp.observe_last(torch.atleast_2d(x_).T)
         #mean_l, Sig_l = gp.step_forward_last(torch.atleast_2d(x_).T)
 
         noise_ob = np.sqrt(np.diag(Sig_.cpu()))
         mean = mean_.cpu().T[0]
-
+        neg_lim = mean - 1.9 * noise_ob
+        neg_lim[neg_lim < 0.0] = 0.0
         ax.plot(x_, mean, color='black', linewidth=2, label=f'Emission GP mean [{m + 1}]')
-        ax.fill_between(x_, mean - 1.9 * noise_ob, mean + 1.9 * noise_ob, color=col_fun(main_model[i]), alpha=0.3)
+        ax.fill_between(x_, neg_lim, mean + 1.9 * noise_ob, color=col_fun(main_model[i]), alpha=0.3)
 
         # Latent mean
         mean_latent = gp.f_star_sm[-1].cpu().T[0]
         noise_lat = 1.9 * np.sqrt(np.diag(gp.Gamma[-1].cpu()))
-
+        neg_lim = mean_latent - noise_lat
+        neg_lim[neg_lim < 0.0] = 0.0
         # ax.plot(x_b.cpu(), mean_latent, color='grey', linewidth=1.5, label=f'Latent GP Mean [{m + 1}]')
-        ax.fill_between(x_b.cpu(), mean_latent-noise_lat, mean_latent+noise_lat, color=col_fun(main_model[i]), alpha=0.22)
+        ax.fill_between(x_b.cpu(), neg_lim, mean_latent+noise_lat, color=col_fun(main_model[i]), alpha=0.22)
+
+        #Experimental mean
+        mean = np.mean(np.array(gp.y_train), axis=0)
+        ax.plot(x_b.cpu(), mean, color='black', linewidth=2, label=f'Experimental mean [{m + 1}]', linestyle='--')
 
         if title is None:
             ax.set_title(f"ECG CLUSTER {m + 1} ({main_model[m]})")
         else:
             ax.set_title(title)
         #ax.grid(True)
-
+    if yscale:
+        for ax in fig.get_axes():
+            ax.set_ylim(-0.5, 15)
     if not ticks:
         for ax in fig.get_axes():
-        #     ax.set_ylim(-390,320)
         #     ax.label_outer()
         #     ax.set_yticklabels([])
             ax.set_xticklabels([])

@@ -162,6 +162,10 @@ class GPI_HDP():
         # Define some characteristics of the model with an initial M decided
         self.bound_sigma = bound_sigma
         self.bound_gamma = bound_gamma
+        #self.static_factor = ini_sigma[0] / (ini_sigma[0] + ini_gamma[0])
+        #self.dynamic_factor = ini_gamma[0] / (ini_sigma[0] + ini_gamma[0])
+        self.static_factor = ini_sigma[0] / ini_sigma[0]
+        self.dynamic_factor = ini_gamma[0] / ini_gamma[0]
         self.bound_sigma_warp = bound_noise_warp
         self.annealing = annealing
         self.hmm_switch = hmm_switch
@@ -238,9 +242,9 @@ class GPI_HDP():
         # transAlpha represent a factor of prior probability of state-state transition
         # startAlpha represent a factor of prior probability of starting state
         # kappa represent the sticky factor of self transition
-        self.gamma = 700.0
-        self.transAlpha = 1400.0
-        self.startAlpha = 1400.0
+        self.gamma = 0.5
+        self.transAlpha = 0.5
+        self.startAlpha = 0.5
         self.kappa = 0.0
         # self.gamma = 100.0
         # self.transAlpha = 200.0
@@ -650,6 +654,12 @@ class GPI_HDP():
         -------
         self : returns an instance of self.
         """
+        #Redefine HDP hyperparams for batch inclusion
+        self.gamma = 2.0
+        self.transAlpha = 2.0
+        self.startAlpha = 2.0
+        self.kappa = 0.0
+
         n_samples = np.array(y_trains).shape[0]
         n_outputs = np.array(y_trains).shape[2]
         t = self.T
@@ -705,7 +715,7 @@ class GPI_HDP():
                 elbo_ = self.calcELBO_NonlinearTerms(resp=self.cond_to_numpy(self.cond_cpu(resp)),
                                                              respPair=self.cond_to_numpy(self.cond_cpu(respPair)))
 
-                q_obs, elbo_lin = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat), self.gpmodels, self.M, snr='saved', prev=True)
+                q_obs, elbo_lin = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat), self.gpmodels, self.M, snr='saved', prev=False)
                 elbo_ = elbo_ + elbo_lin + q_obs
                 print("Mean_sq: "+str(q_obs))
                 print("ELBO: "+ str(elbo_))
@@ -718,7 +728,7 @@ class GPI_HDP():
                 resp_group = torch.sum(resp, axis=0)
                 self.train_elbo.append(elbo_)
                 self.resp_assigned.append(torch.where(resp == 1.0)[1])
-                if ((np.isclose(elbo, elbo_, rtol=1e-6) and resp_group[-1] < 1.0) or
+                if ((np.isclose(elbo, elbo_, rtol=1e-4) and resp_group[-1] < 1.0) or
                         torch.where(resp_group==0.0)[0].shape[0] > 1.0):
                     if warp_computed or not warp:
                         if not warp:
@@ -773,14 +783,14 @@ class GPI_HDP():
                 M = resp.shape[1] - 1
                 rho_, omega_, transTheta_, startTheta_ = self.temp_reinit_global_params(1,
                                                                                         torch.clone(transStateCount[:M, :M]),
-                                                                                        startStateCount[:M])
+                                                                                        torch.clone(startStateCount[:M]))
             else:
                 M = resp.shape[1]-1
-                rho_, omega_, transTheta_, startTheta_ = self.temp_reinit_global_params(M - 1, torch.clone(transStateCount[:M,:M]),
-                                                                                       startStateCount[:M])
+                rho_, omega_, transTheta_, startTheta_ = self.temp_reinit_global_params(M-1, torch.clone(transStateCount[:M,:M]),
+                                                                                       torch.clone(startStateCount[:M]))
                 for giter in range(4):
-                    transTheta_, startTheta_ = self._calcThetaFull(torch.clone(self.cond_cuda(transStateCount)),
-                                                                   self.cond_cuda(startStateCount), M, rho=rho_)
+                    transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount[:M,:M])),
+                                                                   self.cond_cuda(torch.clone(startStateCount[:M])), M, rho=rho_)
                     rho_, omega_ = self.find_optimum_rhoOmega(startTheta_, transTheta_, rho=rho_, omega=omega_, M=M)
 
                 transStateCount = transStateCount[:M ,:M]
@@ -790,8 +800,8 @@ class GPI_HDP():
             rho_ = torch.clone(self.rho)
             omega_ = torch.clone(self.omega)
             for giter in range(2):
-                transTheta_, startTheta_ = self._calcThetaFull(torch.clone(self.cond_cuda(transStateCount)),
-                                                               self.cond_cuda(startStateCount), rho=rho_)
+                transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount)),
+                                                               self.cond_cuda(torch.clone(startStateCount)), rho=rho_)
                 rho_, omega_ = self.find_optimum_rhoOmega(startTheta_, transTheta_, rho=rho_, omega=omega_)
         return self.calcELBO_LinearTerms(rho=self.cond_to_numpy(self.cond_cpu(rho_)),
                                   omega=self.cond_to_numpy(self.cond_cpu(omega_)),
@@ -911,9 +921,10 @@ class GPI_HDP():
             print("Not first estimated q.")
         if not reallocate:
             while True:
-                resp, respPair, q, q_lat, snr, y_trains_w = self.estimate_q_all( M, x_trains=x_trains, y_trains=y_trains, y_trains_w=y_trains_w,
+                resp, respPair, q, q_lat, snr, y_trains_w, gpmodels = self.estimate_q_all( M, x_trains=x_trains, y_trains=y_trains, y_trains_w=y_trains_w,
                                                resp=resp, respPair=respPair, q_=q, q_lat_=q_lat, snr_=snr, startPi=startPi, transPi=transPi,
                                                reparam=reparam)
+                self.gpmodels = gpmodels
                 print("Current resp: "+str(torch.sum(resp, axis=0)))
                 q_post, elbo_post = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat), self.gpmodels, self.M, snr='saved')
                 print("ELBO_reduction: "+str(((q_post + elbo_post) - (q_bas + elbo_bas)).item()))
@@ -1026,33 +1037,44 @@ class GPI_HDP():
 
             new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
             q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_), self.weight_mean(q_lat_, snr_),
-                                                  self.gpmodels, M, snr=snr_, prev=True)
+                                                  self.gpmodels, M, snr=snr_, prev=False)
             q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux), self.weight_mean(q_lat, snr_aux),
-                                                        gpmodels_temp, M, snr=snr_aux, prev=True)
+                                                        gpmodels_temp, M, snr=snr_aux, prev=False)
             update_snr = True
             print("Sum resp_temp: " + str(torch.sum(resp_temp, dim=0)))
             print("Q_bas: " + str(q_bas) + ", Q_lat: " + str(
-                torch.sum(self.weight_mean(q_lat_, snr_))) + ", Elbo_bas: " + str(elbo_bas))
-            print("Q_bas_post: " + str(q_bas_post) + ", Q_lat: " + str(
-                torch.sum(self.weight_mean(q_lat, snr_aux))) + ", Elbo_post: " + str(elbo_post))
-            if q_bas < q_bas_post:
-                if not q_bas + elbo_bas < q_bas_post + elbo_post:
-                    print("Possibly better q_obs but worse elbo.")
-            if q_bas + elbo_bas < q_bas_post + elbo_post and q_bas != q_bas_post:
-                print("Reallocating beats into existing groups.")
-                reallocate = True
-                self.gpmodels = gpmodels_temp
-                self.f_ind_old = f_ind_old[reorder]
-                if update_snr:
-                    self.snr_norm = self.normalize_snr(snr_aux)
+                torch.sum(self.weight_mean(q_lat_, snr_)[torch.where(resp.int() > 0.99)])* self.dynamic_factor) + ", Elbo_bas: " + str(
+                elbo_bas))
+            print("Q_bas_post: " + str(q_bas_post) + ", Q_lat: " + str(torch.sum(
+                self.weight_mean(q_lat, snr_aux)[torch.where(resp_temp.int() > 0.99)])* self.dynamic_factor) + ", Elbo_post: " + str(
+                elbo_post))
+            if torch.all(torch.sum(resp_temp, dim=0)[:-1] > 0.0):
+                if q_bas < q_bas_post:
+                    if not q_bas + elbo_bas < q_bas_post + elbo_post:
+                        print("Possibly better q_obs but worse elbo.")
+                if q_bas + elbo_bas < q_bas_post + elbo_post and q_bas != q_bas_post:
+                    print("Reallocating beats into existing groups.")
+                    reallocate = True
+                    self.gpmodels = gpmodels_temp
+                    self.f_ind_old = f_ind_old[reorder]
+                    if update_snr:
+                        self.snr_norm = self.normalize_snr(snr_aux)
+                    else:
+                        snr_aux = snr_
+                    return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w_, reallocate
                 else:
-                    snr_aux = snr_
-                return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w_, reallocate
+                    print("Not reallocating, trying to generate new group.")
             else:
-                print("Not reallocating, trying to generate new group.")
+                print("Bad estimation")
         #f_ind_new_potential = torch.argsort(self.weight_mean(q_simple)[torch.where(resp == 1.0)])
-        f_ind_new_potential = torch.argsort(self.weight_mean(q_simple + q_lat_)[torch.where(resp == 1.0)])
-        q_rank = self.weight_mean(q_simple + q_lat_)[torch.where(resp == 1.0)]
+        q_sim_s = self.weight_mean(q_simple)[torch.where(resp == 1.0)]
+        q_sim_s = (q_sim_s - torch.max(q_sim_s)) / (torch.max(q_sim_s) - torch.min(q_sim_s))
+        q_s = self.weight_mean(q_)[torch.where(resp == 1.0)]
+        q_s = (q_s - torch.max(q_s)) / (torch.max(q_s) - torch.min(q_s))
+        q_lat_s = self.weight_mean(q_lat_)[torch.where(resp == 1.0)]
+        q_lat_s = (q_lat_s - torch.max(q_lat_s)) / (torch.max(q_lat_s) - torch.min(q_lat_s))
+        f_ind_new_potential = torch.argsort(q_sim_s)
+        q_rank = q_sim_s
         potential_weight = torch.zeros(f_ind_new_potential.shape[0])
         potential_ind = {}
         potential_q = torch.zeros(f_ind_new_potential.shape[0])
@@ -1065,7 +1087,7 @@ class GPI_HDP():
         last_indexes = torch.tensor([-1])
         j_ = 0
         for j, f_ind_new in enumerate(f_ind_new_potential):
-            if j_ == n_steps:
+            if j_ == n_steps // 2.0:
                 break
             m_chosen = -1
             for m in range(M - 1):
@@ -1084,11 +1106,32 @@ class GPI_HDP():
                         break
 
         q_aux = torch.clone(q_simple)
-        #ord_ = torch.argsort(potential_q[f_ind_new_potential_def[:n_steps]])#, descending=True)
-        #f_ind_new_potential_def[:n_steps] = f_ind_new_potential_def[ord_]
+        f_ind_new_q = torch.argsort(q_s + q_lat_s)
+        last_indexes = torch.tensor([-1])
+        j_ = int(n_steps // 2.0)
+        for j, f_ind_new in enumerate(f_ind_new_q):
+            if j_ == n_steps:
+                break
+            m_chosen = -1
+            for m in range(M - 1):
+                if f_ind_new in indexes_[m]:
+                    m_chosen = m
+                    break
+            if m_chosen == -1:
+                m_chosen = torch.argmax(resp[f_ind_new])
+            f_ind_old_chosen = f_ind_old[m_chosen]
+            if f_ind_new != f_ind_old_chosen:
+                for l_ in last_indexes:
+                    if not l_ in potential_ind[f_ind_new.item()]:
+                        last_indexes = potential_ind[f_ind_new.item()]
+                        f_ind_new_potential_def[j_] = f_ind_new
+                        j_ = j_ + 1
+                        break
+        # ord_ = torch.argsort(potential_q[f_ind_new_potential_def[:n_steps]])#, descending=True)
+        # f_ind_new_potential_def[:n_steps] = f_ind_new_potential_def[ord_]
         # Adding 5 possible potential indexes not by q.
-        f_ind_new_potential_def = torch.concatenate([f_ind_new_potential_def, torch.argsort(potential_q)[:5]])
-        n_steps = n_steps + 5
+        # f_ind_new_potential_def = torch.concatenate([f_ind_new_potential_def,f_ind_new_q_def])
+        # n_steps = n_steps + 5
         step = 0
         last_indexes = torch.tensor([-1])
         for j, f_ind_new in enumerate(f_ind_new_potential_def):
@@ -1133,23 +1176,34 @@ class GPI_HDP():
                     resp_temp = torch.exp(resplog_temp)
                     respPair_temp = torch.exp(respPairlog_temp)
                     resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
-                    q_bas_post, elbo_post = torch.from_numpy(np.array([np.NINF])), torch.from_numpy(np.array([np.NINF]))
+                    #q_bas_post, elbo_post = torch.from_numpy(np.array([np.NINF])), torch.from_numpy(np.array([np.NINF]))
 
-                    while True:
-                        #Reallocating resp to preserve order.
-                        resp_per_group_temp = torch.sum(resp_temp, axis=0)
-                        reorder = torch.argsort(resp_per_group_temp, descending=True)
-                        resp_temp = resp_temp[:,reorder]
 
-                        #Compute chosen model conditioned on new resp
-                        #Update all models conditioned on new resp if it has changed
-                        gpmodels_temp = [[] for _ in range(self.n_outputs)]
-                        for ld in range(self.n_outputs):
-                            for m in range(M):
-                                if reorder[m] == M-1:
-                                    #gp = self.gpmodel_deepcopy(self.gpmodels[ld][m_chosen])
-                                    # If uncommented then new GP is used for a new model, more expensive but official model.
-                                    gp = self.create_gp_default(i=reorder[m])
+                    #Reallocating resp to preserve order.
+                    resp_per_group_temp = torch.sum(resp_temp, axis=0)
+                    reorder = torch.argsort(resp_per_group_temp, descending=True)
+                    resp_temp = resp_temp[:,reorder]
+
+                    #Compute chosen model conditioned on new resp
+                    #Update all models conditioned on new resp if it has changed
+                    gpmodels_temp = [[] for _ in range(self.n_outputs)]
+                    for ld in range(self.n_outputs):
+                        for m in range(M):
+                            if reorder[m] == M-1:
+                                #gp = self.gpmodel_deepcopy(self.gpmodels[ld][m_chosen])
+                                # If uncommented then new GP is used for a new model, more expensive but official model.
+                                gp = self.create_gp_default(i=reorder[m])
+                                if gp.fitted:
+                                    gp.reinit_LDS(save_last=False)
+                                    gp.reinit_GP(save_last=False)
+                                q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains_w[:,:,[ld]],
+                                                                    resp_temp[:, m], q=q_[:,reorder[m], ld],
+                                                                    q_lat=q_lat[:, reorder[m], ld],
+                                                                    snr=self.snr_norm[:,ld])
+                                snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp.f_star[-1].T[0])
+                            else:
+                                gp = self.gpmodel_deepcopy(self.gpmodels[ld][reorder[m]])
+                                if not torch.equal(resp[:, reorder[m]].long(), resp_temp[:, m].long()):
                                     if gp.fitted:
                                         gp.reinit_LDS(save_last=False)
                                         gp.reinit_GP(save_last=False)
@@ -1159,85 +1213,84 @@ class GPI_HDP():
                                                                         snr=self.snr_norm[:,ld])
                                     snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp.f_star[-1].T[0])
                                 else:
-                                    gp = self.gpmodel_deepcopy(self.gpmodels[ld][reorder[m]])
-                                    if not torch.equal(resp[:, reorder[m]].long(), resp_temp[:, m].long()):
-                                        if gp.fitted:
-                                            gp.reinit_LDS(save_last=False)
-                                            gp.reinit_GP(save_last=False)
-                                        q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains_w[:,:,[ld]],
-                                                                            resp_temp[:, m], q=q_[:,reorder[m], ld],
-                                                                            q_lat=q_lat[:, reorder[m], ld],
-                                                                            snr=self.snr_norm[:,ld])
-                                        snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp.f_star[-1].T[0])
-                                    else:
-                                        q[:, m, ld] = torch.clone(q_[:, reorder[m], ld])
-                                        q_lat[:, m, ld] = torch.clone(q_lat_[:, reorder[m], ld])
-                                        snr_aux[:, m, ld] = torch.clone(snr_[:, reorder[m], ld])
-                                gpmodels_temp[ld].append(gp)
+                                    q[:, m, ld] = torch.clone(q_[:, reorder[m], ld])
+                                    q_lat[:, m, ld] = torch.clone(q_lat_[:, reorder[m], ld])
+                                    snr_aux[:, m, ld] = torch.clone(snr_[:, reorder[m], ld])
+                            gpmodels_temp[ld].append(gp)
 
-                        #Recompute resp
-                        q_mean = self.weight_mean(q, snr_aux)
-                        q_norm, _ = self.LogLik(q_mean)
-                        alpha, margprob = self.forward(startPi, transPi, q_norm)
-                        beta = self.backward(transPi, q_norm, margprob)
-                        resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
-                        respPairlog_temp, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
-                        resp_temp_ = torch.exp(resplog_temp)
-                        respPair_temp_ = torch.exp(respPairlog_temp)
-                        resp_temp_, respPair_temp_ = self.refill_resp(resp_temp_, respPair_temp_)
-                        q_bas_post_, elbo_post_ = self.compute_q_elbo(resp_temp_, respPair_temp_,
-                                                                      self.weight_mean(q, snr_aux),
-                                                                      self.weight_mean(q_lat, snr_aux), gpmodels_temp,
-                                                                      M, snr=snr_aux)
+                    #Recompute resp
+                    q_mean = self.weight_mean(q, snr_aux)
+                    q_norm, _ = self.LogLik(q_mean)
+                    alpha, margprob = self.forward(startPi, transPi, q_norm)
+                    beta = self.backward(transPi, q_norm, margprob)
+                    resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
+                    respPairlog_temp, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
+                    resp_temp = torch.exp(resplog_temp)
+                    respPair_temp = torch.exp(respPairlog_temp)
+                    resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
+                    resp_temp, respPair_temp, q, q_lat, snr, y_trains_w, gpmodels_temp = self.estimate_q_all(M, x_trains=x_trains,
+                                                                                    y_trains=y_trains,
+                                                                                    y_trains_w=y_trains_w,
+                                                                                    resp=resp_temp, respPair=respPair_temp, q_=q,
+                                                                                    q_lat_=q_lat, snr_=snr_aux,
+                                                                                    startPi=startPi, transPi=transPi, gpmodels=gpmodels_temp,
+                                                                                    reparam=reparam)
+                    # q_bas_post_, elbo_post_ = self.compute_q_elbo(resp_temp, respPair_temp,
+                    #                                               self.weight_mean(q, snr_aux),
+                    #                                               self.weight_mean(q_lat, snr_aux), gpmodels_temp,
+                    #                                               M, snr=snr_aux)
 
-                        if torch.where(resp_temp == 1.0)[1].shape[0] == torch.where(resp_temp_ == 1.0)[1].shape[0]:
-                            if torch.all(torch.where(resp_temp > 1.0)[1] == torch.where(resp_temp_ > 1.0)[1]):
-                                resp_temp = resp_temp_
-                                respPair_temp = respPair_temp_
-                                q_bas_post, elbo_post = q_bas_post_, elbo_post_
-                                break
-                            else:
-                                if q_bas_post + elbo_post < q_bas_post_ + elbo_post_:
-                                    resp_temp = resp_temp_
-                                    respPair_temp = respPair_temp_
-                                    q_bas_post, elbo_post = q_bas_post_, elbo_post_
-                                else:
-                                    break
-                        else:
-                            if q_bas_post + elbo_post < q_bas_post_ + elbo_post_:
-                                resp_temp = resp_temp_
-                                respPair_temp = respPair_temp_
-                                q_bas_post, elbo_post = q_bas_post_, elbo_post_
-                            else:
-                                break
+                        # if torch.where(resp_temp == 1.0)[1].shape[0] == torch.where(resp_temp_ == 1.0)[1].shape[0]:
+                        #     if torch.all(torch.where(resp_temp == 1.0)[1] == torch.where(resp_temp_ == 1.0)[1]):
+                        #         resp_temp = resp_temp_
+                        #         respPair_temp = respPair_temp_
+                        #         q_bas_post, elbo_post = q_bas_post_, elbo_post_
+                        #         break
+                        #     else:
+                        #         if q_bas_post + elbo_post < q_bas_post_ + elbo_post_:
+                        #             resp_temp = resp_temp_
+                        #             respPair_temp = respPair_temp_
+                        #             q_bas_post, elbo_post = q_bas_post_, elbo_post_
+                        #         else:
+                        #             break
+                        # else:
+                        #     if q_bas_post + elbo_post < q_bas_post_ + elbo_post_:
+                        #         resp_temp = resp_temp_
+                        #         respPair_temp = respPair_temp_
+                        #         q_bas_post, elbo_post = q_bas_post_, elbo_post_
+                        #     else:
+                        #         break
 
                     new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
-                    q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_), self.weight_mean(q_lat_, snr_), self.gpmodels, self.M, snr=snr_, prev=True)
+                    q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_), self.weight_mean(q_lat_, snr_), self.gpmodels, self.M, snr=snr_, prev=False)
                     q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux), self.weight_mean(q_lat, snr_aux), gpmodels_temp, M, snr=snr_aux)
 
                     update_snr = True
 
                     print("Sum resp_temp: "+str(torch.sum(resp_temp,dim=0)))
-                    print("Q_bas: " + str(q_bas) + ", Q_lat: " + str(torch.sum(self.weight_mean(q_lat_, snr_))) + ", Elbo_bas: " + str(elbo_bas))
-                    print("Q_bas_post: " + str(q_bas_post) + ", Q_lat: " + str(torch.sum(self.weight_mean(q_lat, snr_aux)))+ ", Elbo_post: " + str(elbo_post))
-                    if q_bas < q_bas_post:
-                        if not q_bas + elbo_bas < q_bas_post + elbo_post:
-                            print("Possibly better q_obs but worse elbo.")
-                    if q_bas + elbo_bas < q_bas_post + elbo_post:
-                        print("Chosen to divide: "+str(m_chosen)+" with beat "+str(f_ind_new.item()))
-                        self.gpmodels = gpmodels_temp
-                        pos_new = torch.where(reorder == M - 1)[0].long()
-                        indexes = torch.where(resp_temp[:, pos_new] == 1.0)[0]
-                        if len(indexes) > 0:
-                            f_ind_old[-1] = indexes[torch.argmax(self.weight_mean(q_simple, snr_aux)[indexes, pos_new]).long()]
-                        else:
-                            f_ind_old[-1] = f_ind_new
-                        self.f_ind_old = torch.clone(f_ind_old[reorder])
-                        if update_snr:
-                            self.snr_norm = self.normalize_snr(snr_aux)
-                        else:
-                            snr_aux = snr_
-                        return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, reallocate
+                    print("Q_bas: " + str(q_bas) + ", Q_lat: " + str(torch.sum(self.weight_mean(q_lat_, snr_)[torch.where(resp.int() > 0.99)]) * self.dynamic_factor) + ", Elbo_bas: " + str(elbo_bas))
+                    print("Q_bas_post: " + str(q_bas_post) + ", Q_lat: " + str(torch.sum(self.weight_mean(q_lat, snr_aux)[torch.where(resp_temp.int() > 0.99)]) * self.dynamic_factor)+ ", Elbo_post: " + str(elbo_post))
+                    if torch.all(torch.sum(resp_temp, dim=0) > 0.0):
+                        if q_bas < q_bas_post:
+                            if not q_bas + elbo_bas < q_bas_post + elbo_post:
+                                print("Possibly better q_obs but worse elbo.")
+                        if q_bas + elbo_bas < q_bas_post + elbo_post:
+                            print("Chosen to divide: "+str(m_chosen)+" with beat "+str(f_ind_new.item()))
+                            self.gpmodels = gpmodels_temp
+                            pos_new = torch.where(reorder == M - 1)[0].long()
+                            indexes = torch.where(resp_temp[:, pos_new] == 1.0)[0]
+                            if len(indexes) > 0:
+                                f_ind_old[-1] = indexes[torch.argmax(self.weight_mean(q, snr_aux)[indexes, pos_new]).long()]
+                            else:
+                                f_ind_old[-1] = f_ind_new
+                            self.f_ind_old = torch.clone(f_ind_old[reorder])
+                            if update_snr:
+                                self.snr_norm = self.normalize_snr(snr_aux)
+                            else:
+                                snr_aux = snr_
+                            return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, reallocate
+                    else:
+                        print("Bad estimation")
         reallocate = True
         return resp, respPair, q_, q_lat_, snr_, y_trains_w_, reallocate
 
@@ -1245,8 +1298,8 @@ class GPI_HDP():
     def compute_q_elbo(self, resp, respPair, q, q_lat, gpmodels, M, new_indexes=None, snr=None, prev=False, one_sample=False):
         """ Method to compute ELBO terms.
         """
-        q_bas = torch.sum(q[torch.where(resp.int() > 0.99)])
-        elbo_latent = torch.sum(q_lat[torch.where(resp.int() > 0.99)])# / q.shape[0]
+        q_bas = torch.sum(q[torch.where(resp.int() > 0.99)]) * self.static_factor
+        elbo_latent = torch.sum(q_lat[torch.where(resp.int() > 0.99)]) * self.dynamic_factor# / q.shape[0]
         if prev:
             if torch.sum(resp, dim=0)[-1] < 1.0:
                 elbo_bas = self.elbo_Linears(resp, respPair, prev=prev)
@@ -1277,19 +1330,19 @@ class GPI_HDP():
         elb = torch.zeros(1)
         M_ = 0
         if one_sample:
-            frac = sum_resp / torch.sum(sum_resp)
+            frac = sum_resp / sum_resp
         else:
             frac = sum_resp / sum_resp
-        for i in sum_resp[:-1]:
+        for i in sum_resp:
             if i > 0:
                 M_ = M_ + 1
-        gp_temp = gpmodels if one_sample else gpmodels[:-1]
+        gp_temp = gpmodels if one_sample else gpmodels
         for i, gp in enumerate(gp_temp):
             if sum_resp[i] > 0:
                 if sum_resp[i] < 2.0:
                     #elb = elb + gp.return_LDS_param_likelihood(first=True)
                     if one_sample:
-                        elb = elb + gp.return_LDS_param_likelihood(first=True) * frac[i] * 1.0
+                        elb = elb + gp.return_LDS_param_likelihood(first=False) * frac[i] * 1.0
                     else:
                         elb = elb + gp.return_LDS_param_likelihood(first=False) * frac[i] * 1.0
                 else:
@@ -1297,7 +1350,7 @@ class GPI_HDP():
         if one_sample:
             return elb# / M_
         else:
-            return elb / M_ #/ torch.sum(sum_resp)
+            return elb / M_
 
     def redefine_default(self, x_trains, y_trains, resp):
         """ Method to compute Sigma and Gamma from a batch of examples and assign it to initial values.
@@ -1411,18 +1464,19 @@ class GPI_HDP():
             q_aux[:-1, :self.q[-1].shape[1], :] = torch.clone(self.q[-1])
         for ld in range(self.n_outputs):
             for m, gp in enumerate(self.gpmodels[ld][:-1]):
-                q_lat[:, m, ld] = gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)), h_ini=0.1)
+                q_lat[:, m, ld] = gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)), h_ini=1.0)
                 q_aux[-1, m, ld] = gp.log_sq_error(torch.from_numpy(np.array(self.x_train[-1])), y_mod[m][-1], i=-1)
         if t > 0:
             resp, resp_log, respPair, respPair_log = self.variational_local_terms(q_aux, self.transTheta, self.startTheta)
             q_all, elbo = self.compute_q_elbo(resp[:-1], respPair[:-1], self.weight_mean(q_aux)[:-1],
                                                               self.weight_mean(q_lat)[:-1],
-                                                              self.gpmodels, self.M, snr='saved', prev=True, one_sample=True)
+                                                              self.gpmodels, self.M, prev=False, snr='saved', one_sample=True)
         if t > 0:
             # Define order
             q_ord = torch.argsort(self.weight_mean(q_aux)[-1,:-1], descending=True)
-            m = q_ord[-1].item()
+            #m = q_ord[-1].item()
             #m = q_ord[0].item()
+            m = 0
             q_prev = torch.clone(q_aux)
             q_lat_prev = torch.clone(q_lat)
             # Compute first birth cost
@@ -1458,11 +1512,12 @@ class GPI_HDP():
                     resp_post, resp_post_log, respPair_post, respPair_post_log = self.variational_local_terms(q_post, self.transTheta, self.startTheta, liks)
                     q_bas_post, elbo_bas_post = self.compute_q_elbo(resp_post, respPair_post, self.weight_mean(q_post),
                                                           self.weight_mean(q_lat_post),
-                                                          self.gpmodels, self.M, snr='saved', prev=True, one_sample=True)
+                                                          self.gpmodels, self.M, snr='saved', prev=False, one_sample=True)
                     elbo_bas_post = elbo_bas_post - elbo#/ np.log(self.T + 1)
                     q_bas_post = q_bas_post - q_all
-                    print("Q_prev: " + str(q_prev_post) + ", Elbo_prev: " + str(elbo_prev_post))
-                    print("Q_bas_post: " + str(q_bas_post) + ", Elbo_post: " + str(elbo_bas_post))
+                    if self.verbose:
+                        print("Q_prev: " + str(q_prev_post) + ", Elbo_prev: " + str(elbo_prev_post))
+                        print("Q_bas_post: " + str(q_bas_post) + ", Elbo_post: " + str(elbo_bas_post))
                     if q_bas_post + elbo_bas_post > q_prev_post + elbo_prev_post:
                         resp, resplog, respPair, respPairlog = self.variational_local_terms(q_post, self.transTheta, self.startTheta, liks)
                         q_chos = q_post
@@ -1555,6 +1610,7 @@ class GPI_HDP():
         for ld in range(self.n_outputs):
             for m in range(M + 1):
                 new_x_basis = self.gpmodels[ld][m].include_weighted_sample(t, self.x_train[-1], self.x_train[-1], y_mod[m][-1], resp_mod[m])
+                #self.gpmodels[ld][m].backwards(resp_mod[m])
                 self.x_basis[m] = self.cond_cuda(self.cond_to_torch(new_x_basis.detach()))
                 if resp_mod[m] > 0.9:
                     self.y_train = torch.concatenate([self.y_train, torch.atleast_2d(y_mod[m][-1]).T[:, :, np.newaxis]])
@@ -1765,9 +1821,11 @@ class GPI_HDP():
             q_new = gpmodel.log_sq_error(x_train, y, mean=mean_[-1], cov=cov_[-1], C=C_[-1], Sigma=Sigma_[-1], i=-1)#, first=True)
         return q_new
 
-    def estimate_q_all(self, M, x_trains, y_trains, y_trains_w, resp, respPair, q_, q_lat_, snr_, startPi, transPi, reparam=False):
-        """ Internal method to converge the ELBO using the actual assignation of the examples.
+    def estimate_q_all(self, M, x_trains, y_trains, y_trains_w, resp, respPair, q_, q_lat_, snr_, startPi, transPi, gpmodels=None, reparam=False):
+        """ Internal method to converge the ELBO using the most recent assignation of the examples.
         """
+        if gpmodels is None:
+            gpmodels = self.gpmodels
         q = torch.zeros((len(x_trains), M, self.n_outputs), device=self.device) + torch.min(q_) * 2.0
         q_lat = torch.zeros((len(x_trains), M, self.n_outputs), device=self.device)# + torch.min(q_lat_) * 2.0
         snr_aux = torch.clone(snr_)
@@ -1781,9 +1839,9 @@ class GPI_HDP():
             print("\n-----------Lead " + str(ld + 1) + "-----------")
             for m in range(M):
                 print("\n   -----------Model " + str(m + 1) + "-----------")
-                indexes_[ld].append(torch.where(resp_temp[:, m] > self.cond_cuda(torch.tensor(0.9)))[0].int())
-                if len(self.gpmodels[ld]) > reorder[m]:
-                    gp = self.gpmodel_deepcopy(self.gpmodels[ld][reorder[m]])
+                indexes_[ld].append(torch.where(resp_temp[:, m] == self.cond_cuda(torch.tensor(1.0)))[0].int())
+                if len(gpmodels[ld]) > reorder[m]:
+                    gp = self.gpmodel_deepcopy(gpmodels[ld][reorder[m]])
                     gp_indexes = torch.tensor(gp.indexes, device=indexes_[ld][m].device).int()
                     if not torch.equal(indexes_[ld][m], gp_indexes):
                         if gp.fitted:
@@ -1800,11 +1858,11 @@ class GPI_HDP():
                                                                           q=q_[:, reorder[m], ld],
                                                                           q_lat=q_lat[:, reorder[m], ld],
                                                                           snr=self.snr_norm[:,ld])
-                       # snr_aux[:, m, ld] = self.compute_snr(y_trains[:, :, ld], gp.f_star[-1].T[0])
+                        snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp.f_star[-1].T[0])
                     else:
                         q[:, m, ld] = q_[:, reorder[m], ld]
                         q_lat[:, m, ld] = q_lat_[:, reorder[m], ld]
-                        #snr_aux[:, m, ld] = torch.clone(snr_[:, m, ld])
+                        snr_aux[:, m, ld] = torch.clone(snr_[:, m, ld])
                 else:
                     # New GP to add
                     gp = self.create_gp_default(i=reorder[m])
@@ -1813,11 +1871,11 @@ class GPI_HDP():
                                                                         q=q_[:,reorder[m], ld],
                                                                         q_lat=q_lat[:, reorder[m], ld],
                                                                         snr=self.snr_norm[:,ld])
-                        #snr_aux[:, m, ld] = self.compute_snr(y_trains[:, :, ld], gp.f_star[-1].T[0])
+                        snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp.f_star[-1].T[0])
                     else:
                         q[:, m, ld] = q_[:, m, ld]
                         q_lat[:, m, ld] = q_lat_[:, m, ld]
-                        #snr_aux[:, m, ld] = torch.zeros(snr_.shape[0])
+                        snr_aux[:, m, ld] = torch.zeros(snr_.shape[0])
                 gpmodels_temp[ld].append(gp)
         q_norm, _ = self.LogLik(self.weight_mean(q, snr_aux))
         alpha, margprob = self.forward(startPi, transPi, q_norm)
@@ -1829,20 +1887,20 @@ class GPI_HDP():
         resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
         # Finally see if it is worthy to birth new cluster
         new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
-        q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_), self.weight_mean(q_lat_, snr_), self.gpmodels, self.M, snr=snr_)
+        q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_), self.weight_mean(q_lat_, snr_), gpmodels, self.M, snr=snr_)
         q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux), self.weight_mean(q_lat, snr_aux), gpmodels_temp, M, snr=snr_aux)
         update_snr = False
         if q_bas + elbo_bas < q_bas_post + elbo_post:
-            self.gpmodels = gpmodels_temp
+            #self.gpmodels = gpmodels_temp
             if reorder.shape[0] == self.f_ind_old.shape[0]:
                 self.f_ind_old = self.f_ind_old[reorder]
             if update_snr:
                 self.snr_norm = self.normalize_snr(snr_aux)
             else:
                 snr_aux = snr_
-            return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w
+            return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, gpmodels_temp
         else:
-            return resp, respPair, q_, q_lat_, snr_, y_trains_w
+            return resp, respPair, q_, q_lat_, snr_, y_trains_w, gpmodels
 
 
     def compute_warp_y(self, x_train, y, strategie='standard', force_model=None, gpmodel=None, i=None, ld=0):

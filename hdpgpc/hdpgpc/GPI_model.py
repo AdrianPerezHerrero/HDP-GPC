@@ -428,26 +428,26 @@ class GPI_model():
         """ Method to compute the likelihood of LDS parameters over the prior.
         """
         elb_LDS = 0
-        for i in range(len(self.A)):
-            ini_A, ini_Gamma, ini_C, ini_Sigma, n0 = self.A_def, self.Gamma_def, self.C_def, self.Sigma_def, self.internal_params.n0
-            if first:
-                #ini_noise = self.cond_to_cuda(self.cond_to_torch(self.gp.kernel.get_params()["k2__noise_level"]))
-                ini_noise = torch.mean(torch.diag(self.Sigma[-1])) #* 1e-1
-                ini_noise_ = torch.mean(torch.diag(self.Gamma[-1])) #* 1e-1
-                A_, Gam_, C_, Sig_ = (self.A[-1],
-                                      self.Gamma[-1] + torch.mul(ini_noise_, torch.eye(self.Sigma[-1].shape[0],
-                                                                                      device=ini_noise.device)),
-                                      self.C[-1],
-                                      self.Sigma[-1] + torch.mul(ini_noise, torch.eye(self.Sigma[-1].shape[0],
-                                                                                      device=ini_noise.device)))
-                # A_, Gam_, C_, Sig_ = (self.A[-1], self.Gamma[-1] + self.cov_f[-1], self.C[-1],
-                #                        self.Sigma[-1] + self.cov_f[-1])
-            else:
-                A_, Gam_, C_, Sig_, n0 = self.A[i], self.Gamma[i], self.C[i], self.Sigma[i], self.internal_params.n0
-            int_params = matrix_normal_inv_wishart(ini_A, torch.eye(ini_A.shape[0], device=self.device), self.free_deg_MNIV, ini_Gamma)
-            obs_params = matrix_normal_inv_wishart(ini_C, torch.eye(ini_C.shape[0], device=self.device), self.free_deg_MNIV, ini_Sigma)
-            elb_LDS = elb_LDS + int_params.log_likelihood_MNIW(A_, Gam_, n0) + obs_params.log_likelihood_MNIW(C_, Sig_, n0)
-        return elb_LDS / len(self.A)
+        #for i in range(len(self.A)):
+        ini_A, ini_Gamma, ini_C, ini_Sigma, n0 = self.A_def, self.Gamma_def, self.C_def, self.Sigma_def, self.internal_params.n0
+        if first:
+            #ini_noise = self.cond_to_cuda(self.cond_to_torch(self.gp.kernel.get_params()["k2__noise_level"]))
+            ini_noise = torch.mean(torch.diag(self.Sigma[-1])) #* 1e-1
+            ini_noise_ = torch.mean(torch.diag(self.Gamma[-1])) #* 1e-1
+            A_, Gam_, C_, Sig_ = (self.A[-1],
+                                  self.Gamma[-1] + torch.mul(ini_noise_, torch.eye(self.Sigma[-1].shape[0],
+                                                                                  device=ini_noise.device)),
+                                  self.C[-1],
+                                  self.Sigma[-1] + torch.mul(ini_noise, torch.eye(self.Sigma[-1].shape[0],
+                                                                                  device=ini_noise.device)))
+            # A_, Gam_, C_, Sig_ = (self.A[-1], self.Gamma[-1] + self.cov_f[-1], self.C[-1],
+            #                        self.Sigma[-1] + self.cov_f[-1])
+        else:
+            A_, Gam_, C_, Sig_, n0 = self.A[-1], self.Gamma[-1], self.C[-1], self.Sigma[-1], self.internal_params.n0
+        int_params = matrix_normal_inv_wishart(ini_A, torch.eye(ini_A.shape[0], device=self.device), self.free_deg_MNIV, ini_Gamma)
+        obs_params = matrix_normal_inv_wishart(ini_C, torch.eye(ini_C.shape[0], device=self.device), self.free_deg_MNIV, ini_Sigma)
+        elb_LDS = elb_LDS + int_params.log_likelihood_MNIW(A_, Gam_, n0) + obs_params.log_likelihood_MNIW(C_, Sig_, n0)
+        return elb_LDS #/ len(self.A)
 
     def compute_sq_err_all(self, x_trains, y_trains, no_first=False):
         """ Method to compute the squared error over all provided examples y_trains.
@@ -1213,7 +1213,7 @@ class matrix_normal_inv_wishart():
         if sse_matrix is None:
             sse_matrix = id
         scale = self.m_r_cov
-        jitter = 1e-2 * id
+        jitter = 1e-2 * torch.mean(torch.diag(self.scale)) * id
         scale = (scale + scale.T)/2 + jitter
         scale_c = torch.linalg.cholesky(scale)
         #
@@ -1267,12 +1267,13 @@ class matrix_normal_inv_wishart():
                    # - d * 0.5 * torch.logdet(self.m_r_cov)\
                    # - self.n0 * 0.5 * torch.logdet(self.scale)\
                    # - self.n0 * d * 0.5 * torch.log(torch.tensor(2.0 * torch.pi, device=self.scale.device))
-        scale_lik = - (self.n0 + 1) * 0.5 * torch.logdet(Sigma) \
-                    - 0.5 * torch.trace(torch.matmul(sig_inv, self.scale))
-                    #- n0 * 0.5 * torch.logdet(self.scale)
-                    #- n0 * d * 0.5 * torch.log(torch.tensor(2.0, device=self.scale.device))\
-                    #- torch.special.multigammaln(torch.tensor((n0 + d)*0.5, device=self.scale.device), d)
-                    # - 0.5 * torch.trace(Sigma)
+        # scale_lik = - (self.n0 + 1) * 0.5 * torch.logdet(Sigma) \
+        #             - 0.5 * torch.trace(torch.matmul(sig_inv, self.scale)) \
+        #             - n0 * 0.5 * torch.logdet(self.scale) \
+        #             - n0 * d * 0.5 * torch.log(torch.tensor(2.0, device=self.scale.device))\
+        #             - torch.special.multigammaln(torch.tensor((n0 + d)*0.5, device=self.scale.device), d) \
+        #             - 0.5 * torch.trace(Sigma)
+        scale_lik = - 0.5 * torch.trace(torch.matmul(sig_inv, self.scale))
         #Scale with dimension:
         #scale_lik = scale_lik / self.scale.shape[0]
         #return scale_lik# / d
