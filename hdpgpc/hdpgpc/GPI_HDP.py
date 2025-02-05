@@ -536,7 +536,7 @@ class GPI_HDP():
         resp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
         m_resp = np.argmax(self.cond_cpu(resp[-1]))
         respPair, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_, margprob), axis=1)
-        if m_ != m_resp:
+        if m_ != m_resp and self.verbose:
             print("Mismatch between SSE ("+str(m_+1)+") and Resp ("+str(m_resp+1)+").")
         if torch.any(torch.isnan(resp)):
             print("Error")
@@ -661,9 +661,9 @@ class GPI_HDP():
         self : returns an instance of self.
         """
         # Redefine HDP hyperparams for batch inclusion
-        self.gamma = 2.0
-        self.transAlpha = 2.0
-        self.startAlpha = 2.0
+        self.gamma = 0.1
+        self.transAlpha = 0.1
+        self.startAlpha = 0.5
         self.kappa = 0.0
 
         n_samples = np.array(y_trains).shape[0]
@@ -2113,7 +2113,7 @@ class GPI_HDP():
         if torch.any(torch.isnan(torch.log(fmsg))):
             print("Error nan")
             return None, None
-        if torch.argmax(fmsg[-1]) != torch.argmax(q[-1]):
+        if torch.argmax(fmsg[-1]) != torch.argmax(q[-1]) and self.verbose:
             print("Miss")
         return fmsg, margPrObs
 
