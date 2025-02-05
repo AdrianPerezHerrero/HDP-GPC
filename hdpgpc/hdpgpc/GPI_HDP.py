@@ -661,8 +661,8 @@ class GPI_HDP():
         self : returns an instance of self.
         """
         # Redefine HDP hyperparams for batch inclusion
-        self.gamma = 0.1
-        self.transAlpha = 0.1
+        self.gamma = 0.5
+        self.transAlpha = 0.5
         self.startAlpha = 0.5
         self.kappa = 0.0
 
@@ -1054,21 +1054,24 @@ class GPI_HDP():
             print("Q_bas_post: " + str(q_bas_post) + ", Q_lat: " + str(torch.sum(
                 self.weight_mean(q_lat, snr_aux)[torch.where(resp_temp.int() > 0.99)])* self.dynamic_factor) + ", Elbo_post: " + str(
                 elbo_post))
-            if q_bas < q_bas_post:
-                if not q_bas + elbo_bas < q_bas_post + elbo_post:
-                    print("Possibly better q_obs but worse elbo.")
-            if q_bas + elbo_bas < q_bas_post + elbo_post and q_bas != q_bas_post:
-                print("Reallocating beats into existing groups.")
-                reallocate = True
-                self.gpmodels = gpmodels_temp
-                self.f_ind_old = f_ind_old[reorder]
-                if update_snr:
-                    self.snr_norm = self.normalize_snr(snr_aux)
+            if torch.all(torch.sum(resp_temp, dim=0)[:-1] >= 1.0):
+                if q_bas < q_bas_post:
+                    if not q_bas + elbo_bas < q_bas_post + elbo_post:
+                        print("Possibly better q_obs but worse elbo.")
+                if q_bas + elbo_bas < q_bas_post + elbo_post and q_bas != q_bas_post:
+                    print("Reallocating beats into existing groups.")
+                    reallocate = True
+                    self.gpmodels = gpmodels_temp
+                    self.f_ind_old = f_ind_old[reorder]
+                    if update_snr:
+                        self.snr_norm = self.normalize_snr(snr_aux)
+                    else:
+                        snr_aux = snr_
+                    return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w_, reallocate
                 else:
-                    snr_aux = snr_
-                return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w_, reallocate
+                    print("Not reallocating, trying to generate new group.")
             else:
-                print("Not reallocating, trying to generate new group.")
+                print("Bad estimation")
         #f_ind_new_potential = torch.argsort(self.weight_mean(q_simple)[torch.where(resp == 1.0)])
         q_sim_s = self.weight_mean(q_simple)[torch.where(resp == 1.0)]
         q_sim_s = (q_sim_s - torch.max(q_sim_s)) / (torch.max(q_sim_s) - torch.min(q_sim_s))
@@ -1279,24 +1282,27 @@ class GPI_HDP():
                     print("Q_bas_post: " + str(q_bas_post) + ", Q_lat: " + str(torch.sum(
                         self.weight_mean(q_lat, snr_aux)[torch.where(resp_temp.int() > 0.99)])* self.dynamic_factor) + ", Elbo_post: " + str(
                         elbo_post))
-                    if q_bas < q_bas_post:
-                        if not q_bas + elbo_bas < q_bas_post + elbo_post:
-                            print("Possibly better q_obs but worse elbo.")
-                    if q_bas + elbo_bas < q_bas_post + elbo_post:
-                        print("Chosen to divide: "+str(m_chosen)+" with beat "+str(f_ind_new.item()))
-                        self.gpmodels = gpmodels_temp
-                        pos_new = torch.where(reorder == M - 1)[0].long()
-                        indexes = torch.where(resp_temp[:, pos_new] == 1.0)[0]
-                        if len(indexes) > 0:
-                            f_ind_old[-1] = indexes[torch.argmax(self.weight_mean(q, snr_aux)[indexes, pos_new]).long()]
-                        else:
-                            f_ind_old[-1] = f_ind_new
-                        self.f_ind_old = torch.clone(f_ind_old[reorder])
-                        if update_snr:
-                            self.snr_norm = self.normalize_snr(snr_aux)
-                        else:
-                            snr_aux = snr_
-                        return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, reallocate
+                    if torch.all(torch.sum(resp_temp, dim=0) >= 1.0):
+                        if q_bas < q_bas_post:
+                            if not q_bas + elbo_bas < q_bas_post + elbo_post:
+                                print("Possibly better q_obs but worse elbo.")
+                        if q_bas + elbo_bas < q_bas_post + elbo_post:
+                            print("Chosen to divide: "+str(m_chosen)+" with beat "+str(f_ind_new.item()))
+                            self.gpmodels = gpmodels_temp
+                            pos_new = torch.where(reorder == M - 1)[0].long()
+                            indexes = torch.where(resp_temp[:, pos_new] == 1.0)[0]
+                            if len(indexes) > 0:
+                                f_ind_old[-1] = indexes[torch.argmax(self.weight_mean(q, snr_aux)[indexes, pos_new]).long()]
+                            else:
+                                f_ind_old[-1] = f_ind_new
+                            self.f_ind_old = torch.clone(f_ind_old[reorder])
+                            if update_snr:
+                                self.snr_norm = self.normalize_snr(snr_aux)
+                            else:
+                                snr_aux = snr_
+                            return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, reallocate
+                    else:
+                        print("Bad estimation")
         reallocate = True
         return resp, respPair, q_, q_lat_, snr_, y_trains_w_, reallocate
 
