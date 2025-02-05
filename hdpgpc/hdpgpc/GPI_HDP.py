@@ -1905,17 +1905,21 @@ class GPI_HDP():
                                               self.weight_mean(q_lat_, snr_), gpmodels, self.M, snr=snr_)
         q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                     self.weight_mean(q_lat, snr_aux), gpmodels_temp, M, snr=snr_aux)
-        update_snr = False
-        if q_bas + elbo_bas < q_bas_post + elbo_post:
-            # self.gpmodels = gpmodels_temp
-            if reorder.shape[0] == self.f_ind_old.shape[0]:
-                self.f_ind_old = self.f_ind_old[reorder]
-            if update_snr:
-                self.snr_norm = self.normalize_snr(snr_aux)
+        update_snr = True
+        if torch.all(torch.sum(resp_temp, dim=0) >= 1.0):
+            if q_bas + elbo_bas < q_bas_post + elbo_post:
+                # self.gpmodels = gpmodels_temp
+                if reorder.shape[0] == self.f_ind_old.shape[0]:
+                    self.f_ind_old = self.f_ind_old[reorder]
+                if update_snr:
+                    self.snr_norm = self.normalize_snr(snr_aux)
+                else:
+                    snr_aux = snr_
+                return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, gpmodels_temp
             else:
-                snr_aux = snr_
-            return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, gpmodels_temp
+                return resp, respPair, q_, q_lat_, snr_, y_trains_w, gpmodels
         else:
+            print("Bad estimation")
             return resp, respPair, q_, q_lat_, snr_, y_trains_w, gpmodels
 
 
