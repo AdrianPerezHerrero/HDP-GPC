@@ -1204,7 +1204,7 @@ class GPI_HDP():
                                                                                      q=q_[:, reorder[m], ld],
                                                                                      q_lat=q_lat[:, reorder[m], ld],
                                                                                      snr=self.snr_norm[:, ld])
-                                snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp.f_star[-1].T[0])
+                                snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp)
                             else:
                                 gp = self.gpmodel_deepcopy(self.gpmodels[ld][reorder[m]])
                                 if not torch.equal(resp[:, reorder[m]].long(), resp_temp[:, m].long()):
@@ -1218,7 +1218,7 @@ class GPI_HDP():
                                                                                          q_lat=q_lat[:, reorder[m],
                                                                                                ld],
                                                                                          snr=self.snr_norm[:, ld])
-                                    snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp.f_star[-1].T[0])
+                                    snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp)
                                 else:
                                     q[:, m, ld] = torch.clone(q_[:, reorder[m], ld])
                                     q_lat[:, m, ld] = torch.clone(q_lat_[:, reorder[m], ld])
@@ -1850,7 +1850,7 @@ class GPI_HDP():
                                                                              q=q_[:, reorder[m], ld],
                                                                              q_lat=q_lat[:, reorder[m], ld],
                                                                              snr=self.snr_norm[:, ld])
-                        snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp.f_star[-1].T[0])
+                        snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp)
                     else:
                         q[:, m, ld] = q_[:, reorder[m], ld]
                         q_lat[:, m, ld] = q_lat_[:, reorder[m], ld]
@@ -1864,7 +1864,7 @@ class GPI_HDP():
                                                                              q=q_[:, reorder[m], ld],
                                                                              q_lat=q_lat[:, reorder[m], ld],
                                                                              snr=self.snr_norm[:, ld])
-                        snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp.f_star[-1].T[0])
+                        snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp)
                     else:
                         q[:, m, ld] = q_[:, m, ld]
                         q_lat[:, m, ld] = q_lat_[:, m, ld]
