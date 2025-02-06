@@ -787,7 +787,7 @@ def plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, N_0, title=
         #ax.grid(True)
     if yscale:
         for ax in fig.get_axes():
-            ax.set_ylim(-0.5, 15)
+            ax.set_ylim(np.min(sw_gp.y_train.numpy())-0.5, np.max(sw_gp.y_train.numpy()) + 0.5)
     if not ticks:
         for ax in fig.get_axes():
         #     ax.label_outer()

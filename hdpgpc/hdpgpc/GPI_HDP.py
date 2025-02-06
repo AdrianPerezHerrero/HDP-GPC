@@ -1357,18 +1357,34 @@ class GPI_HDP():
         else:
             n_f = min(self.estimation_limit_def, y_trains.shape[0] - 1) if (
                 self.estimation_limit != np.PINF) else y_trains.shape[0] - 1
-        samples = y_trains[:n_f][:, :, 0].T
-        samples_ = y_trains[1:n_f+1][:, :, 0].T
-        var_y_y = torch.mean(torch.diag(torch.linalg.multi_dot([(samples - torch.mean(samples, dim=1)[:,np.newaxis]), (samples - torch.mean(samples, dim=1)[:,np.newaxis]).T])) / n_f)# * 0.15
-        var_y_y_ = torch.mean(torch.diag(torch.linalg.multi_dot([(samples_ - samples), (samples_ - samples).T])) / n_f)# * 0.15
+        gp = self.gpmodels[0][0]
+        q__ = gp.full_pass_weighted(x_trains, y_trains[:, :, [0]], resp[:, 0], snr=self.snr_norm[:, 0])
+        f_ind = torch.argmax(q__)
+        gp = self.create_gp_default()
+        gp.include_weighted_sample(0, x_trains[f_ind], x_trains[f_ind], y_trains[f_ind, :, [0]], h=1.0)
+        q__ = gp.compute_sq_err_all(x_trains, y_trains[:, :, [0]])
+        n_samp = int(y_trains.shape[0]*0.4)
+        selected_beats = torch.argsort(q__, descending=True)[:n_samp]
+        resp_red = torch.zeros(resp.shape)
+        resp_red[selected_beats,0] = torch.ones(n_samp)
+        gp = self.create_gp_default()
+        gp.full_pass_weighted(x_trains, y_trains[:, :, [0]], resp_red[:, 0], snr=self.snr_norm[:, 0])
+        ind_ = -1
+        #noise = (torch.mean(torch.diag(gp.Sigma[ind_])) + torch.mean(torch.diag(gp.Gamma[ind_]))) / 2.0
+        var_y_y_ = torch.mean(torch.diag(gp.Gamma[ind_]))
+        var_y_y = torch.mean(torch.diag(gp.Sigma[ind_]))
+        # samples = y_trains[:n_f][:, :, 0].T
+        # samples_ = y_trains[1:n_f+1][:, :, 0].T
+        # var_y_y = torch.mean(torch.diag(torch.linalg.multi_dot([(samples - torch.mean(samples, dim=1)[:,np.newaxis]), (samples - torch.mean(samples, dim=1)[:,np.newaxis]).T])) / n_f)# * 0.15
+        # var_y_y_ = torch.mean(torch.diag(torch.linalg.multi_dot([(samples_ - samples), (samples_ - samples).T])) / n_f)# * 0.15
         kernel, ini_sigma, ini_gamma, ini_outputscale, bound_sigma, bound_gamma, bound_noise_warp, annealing, method_compute_warp, \
             model_type, recursive_warp, warp_updating, inducing_points, estimation_limit, free_deg_MNIV = self.get_default_options()
         # Good results using 0.012
         # Good results using 0.02
         # Good results using 0.01.
         # Good results using 0.018
-        ini_Sigma = var_y_y * 0.010
-        ini_Gamma = var_y_y * 0.015
+        ini_Sigma = var_y_y * 1.0
+        ini_Gamma = var_y_y_ * 1.0
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 0.9]), var_y_y * 1.8])) * 0.012
         #ini_Sigma = var_y_y * 2.0
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.5])) * 2.0
