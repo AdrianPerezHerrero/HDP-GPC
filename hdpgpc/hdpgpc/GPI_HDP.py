@@ -728,7 +728,7 @@ class GPI_HDP():
                 resp_group = torch.sum(resp, axis=0)
                 self.train_elbo.append(elbo_)
                 self.resp_assigned.append(torch.where(resp == 1.0)[1])
-                if ((np.isclose(elbo, elbo_, rtol=1e-4) and resp_group[-1] < 1.0) or
+                if ((np.isclose(elbo, elbo_, rtol=1e-5) and resp_group[-1] < 1.0) or
                         torch.where(resp_group==0.0)[0].shape[0] > 1.0):
                     if warp_computed or not warp:
                         if not warp:

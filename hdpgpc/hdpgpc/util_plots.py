@@ -805,3 +805,128 @@ def plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, N_0, title=
         plt.savefig(save)
     else:
         plt.show()
+
+
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+
+
+class FunctionEvolutionVisualizer:
+    def __init__(self, gp, initial_step, num_steps):
+        """
+        Initialize the visualizer with required parameters.
+
+        Parameters:
+        - gp: GP_model.
+        - initial_step: int initial state for animation.
+        - num_steps: Number of time steps to simulate.
+        - initial_function: Initial function f_0.
+        - observations: List of observed functions for each step.
+        """
+        self.gp = gp
+        self.num_steps = num_steps
+        self.initial_step = initial_step
+
+        # Initialize figure and lines for animation
+        self.fig, self.ax = plt.subplots(figsize=(8, 6))
+        self.lines = {
+            "prediction": self.ax.plot([], [], label="Predicted Mean", color="red")[0],
+            "observation": self.ax.plot([], [], label="Observation", color="blue")[0],
+            "correction": self.ax.plot([], [], label="Corrected Mean", color="green")[0],
+        }
+
+        # Set plot properties
+        self.ax.legend()
+        self.ax.set_xlabel("Frequency (Hz)")
+        self.ax.set_ylabel("Energy")
+        self.ax.set_title("Function Evolution Over Time")
+
+    def init_animation(self):
+        """Initialize the animation by clearing all lines."""
+        for line in self.lines.values():
+            line.set_data([], [])
+        return self.lines.values()
+
+    def animate(self, i):
+        """
+        Animation function for each frame.
+
+        Parameters:
+        - i: Current frame index.
+
+        Steps:
+        1. Predict the next function using f_{n+1} = A f_n.
+        2. Plot the predicted function.
+        3. Add the observation and correct it.
+        4. Clear predictions and observations after correction.
+        """
+        j = self.initial_step + i
+        x_ = self.gp.x_train[j].T[0]
+        if i == 0:
+            # Reset the initial function for new animation
+            self.current_function = self.gp.f_star[j].T[0].numpy().copy()
+            self.lines["correction"].set_data(x_, self.current_function)
+
+        # Prediction step: f_{n+1} = A f_n
+        predicted_f = self.gp.A[-1].numpy() @ self.current_function
+        # Observation step
+        observed_f = self.gp.y_train[j].T[0].numpy()
+
+        # Correction step (posterior update)
+        corrected_f = self.gp.f_star[j+1].T[0].numpy().copy()
+
+        # Update plot data
+        self.lines["prediction"].set_data(x_, predicted_f)
+        self.lines["observation"].set_data(x_, observed_f)
+
+        #Clear last corrected
+        self.lines["correction"].set_data([], [])
+        # Update corrected mean line
+        self.lines["correction"].set_data(x_, corrected_f)
+
+        # Show corrected mean and clear previous predictions/observations
+        if i > 0:
+            self.lines["prediction"].set_data([], [])
+            self.lines["observation"].set_data([], [])
+
+        # Update current function for the next iteration
+        self.current_function = corrected_f
+
+        return self.lines.values()
+
+    def create_animation(self, output_filename="function_evolution.gif"):
+        """
+        Create and save the animation as a GIF.
+
+        Parameters:
+          - output_filename: Name of the output GIF file.
+
+        Returns:
+          None
+          (The GIF will be saved to disk.)
+        """
+
+        ani = animation.FuncAnimation(
+            self.fig,
+            func=self.animate,
+            init_func=self.init_animation,
+            frames=self.num_steps,
+            interval=1000,
+            blit=True,
+            repeat=False,
+        )
+
+        ani.save(output_filename, writer="pillow")
+
+
+
+
+
+
+
+
