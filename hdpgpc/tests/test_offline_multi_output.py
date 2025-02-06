@@ -43,7 +43,7 @@ std, std_dif, bound_sigma, bound_gamma = compute_estimators_LDS(data)
 #Outputscale is the max amplitude of the records (if data is standardized it can be set to 1.0)
 M = 2
 sigma = std * 1.0
-gamma = std * 1.0
+gamma = std * 1.1
 outputscale_ = 300.0
 ini_lengthscale = 3.0
 bound_lengthscale = (1.0, 20.0)
