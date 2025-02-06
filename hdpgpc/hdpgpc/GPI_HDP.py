@@ -1384,13 +1384,14 @@ class GPI_HDP():
         else:
             n_f = min(self.estimation_limit_def, y_trains.shape[0] - 1) if (
                 self.estimation_limit != np.PINF) else y_trains.shape[0] - 1
-        gp = self.gpmodels[0][0]
-        q__, q_lat__= gp.full_pass_weighted(x_trains, y_trains[:, :, [0]], resp[:, 0], snr=self.snr_norm[:, 0])
-        f_ind = torch.argmax(q__ + q_lat__)
+        #gp = self.gpmodels[0][0]
+        #q__, q_lat__= gp.full_pass_weighted(x_trains, y_trains[:, :, [0]], resp[:, 0], snr=self.snr_norm[:, 0])
+        #f_ind = torch.argmax(q__ + q_lat__)
+        f_ind = 0
         gp = self.create_gp_default()
         gp.include_weighted_sample(0, x_trains[f_ind], x_trains[f_ind], y_trains[f_ind, :, [0]], h=1.0)
         q__ = gp.compute_sq_err_all(x_trains, y_trains[:, :, [0]])
-        n_samp = int(y_trains.shape[0]*0.4)
+        n_samp = int(y_trains.shape[0]*0.1)
         selected_beats = torch.argsort(q__, descending=True)[:n_samp]
         resp_red = torch.zeros(resp.shape)
         resp_red[selected_beats,0] = torch.ones(n_samp)
