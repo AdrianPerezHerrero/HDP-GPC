@@ -1385,8 +1385,8 @@ class GPI_HDP():
             n_f = min(self.estimation_limit_def, y_trains.shape[0] - 1) if (
                 self.estimation_limit != np.PINF) else y_trains.shape[0] - 1
         gp = self.gpmodels[0][0]
-        q__ = gp.full_pass_weighted(x_trains, y_trains[:, :, [0]], resp[:, 0], snr=self.snr_norm[:, 0])
-        f_ind = torch.argmax(q__)
+        q__, q_lat__= gp.full_pass_weighted(x_trains, y_trains[:, :, [0]], resp[:, 0], snr=self.snr_norm[:, 0])
+        f_ind = torch.argmax(q__ + q_lat__)
         gp = self.create_gp_default()
         gp.include_weighted_sample(0, x_trains[f_ind], x_trains[f_ind], y_trains[f_ind, :, [0]], h=1.0)
         q__ = gp.compute_sq_err_all(x_trains, y_trains[:, :, [0]])
