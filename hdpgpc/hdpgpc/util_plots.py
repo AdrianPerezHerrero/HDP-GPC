@@ -823,10 +823,8 @@ class FunctionEvolutionVisualizer:
 
         Parameters:
         - gp: GP_model.
-        - initial_step: int initial state for animation.
+        - initial_step: Initial time step for animation.
         - num_steps: Number of time steps to simulate.
-        - initial_function: Initial function f_0.
-        - observations: List of observed functions for each step.
         """
         self.gp = gp
         self.num_steps = num_steps
@@ -850,7 +848,7 @@ class FunctionEvolutionVisualizer:
         """Initialize the animation by clearing all lines."""
         for line in self.lines.values():
             line.set_data([], [])
-        return self.lines.values()
+        return list(self.lines.values())
 
     def animate(self, i):
         """
@@ -884,20 +882,19 @@ class FunctionEvolutionVisualizer:
         self.lines["prediction"].set_data(x_, predicted_f)
         self.lines["observation"].set_data(x_, observed_f)
 
-        #Clear last corrected
-        self.lines["correction"].set_data([], [])
-        # Update corrected mean line
-        self.lines["correction"].set_data(x_, corrected_f)
 
         # Show corrected mean and clear previous predictions/observations
         if i > 0:
             self.lines["prediction"].set_data([], [])
             self.lines["observation"].set_data([], [])
 
+            # Update corrected mean line
+            self.lines["correction"].set_data(x_, corrected_f)
+
         # Update current function for the next iteration
         self.current_function = corrected_f
 
-        return self.lines.values()
+        return list(self.lines.values())
 
     def create_animation(self, output_filename="function_evolution.gif"):
         """
@@ -917,7 +914,7 @@ class FunctionEvolutionVisualizer:
             init_func=self.init_animation,
             frames=self.num_steps,
             interval=1000,
-            blit=True,
+            blit=False,
             repeat=False,
         )
 
