@@ -662,7 +662,7 @@ class GPI_HDP():
         """
         # Redefine HDP hyperparams for batch inclusion
         self.gamma = 0.5
-        self.transAlpha = 0.5
+        self.transAlpha = 1.5
         self.startAlpha = 0.5
         self.kappa = 0.0
 
