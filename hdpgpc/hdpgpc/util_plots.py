@@ -727,7 +727,7 @@ def plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, N_0, title=
     num_cols = int(np.ceil(np.sqrt(num_models)))
     num_rows = int(np.ceil(num_models / num_cols))
 
-    fig, axes = plt.subplots(num_rows, num_cols, figsize=(15, 10), squeeze=False)
+    fig, axes = plt.subplots(num_rows, num_cols, figsize=(25, 20), squeeze=False)
     axes = axes.flatten()
 
     def col_fun(lab):
@@ -788,6 +788,7 @@ def plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, N_0, title=
     if yscale:
         for ax in fig.get_axes():
             ax.set_ylim(np.min(sw_gp.y_train.numpy())-0.5, np.max(sw_gp.y_train.numpy()) + 0.5)
+            ax.set_xticks(np.arange(0.0,0.5,0.1))
     if not ticks:
         for ax in fig.get_axes():
         #     ax.label_outer()
@@ -806,15 +807,7 @@ def plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, N_0, title=
     else:
         plt.show()
 
-
-import numpy as np
-import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-
 
 class FunctionEvolutionVisualizer:
     def __init__(self, gp, initial_step, num_steps):
@@ -838,8 +831,13 @@ class FunctionEvolutionVisualizer:
             "correction": self.ax.plot([], [], label="Corrected Mean", color="green")[0],
         }
 
+        # Add fill_between for variance band (initially empty)
+        self.variance_band = None
+
         # Set plot properties
         self.ax.legend()
+        self.ax.set_xlim(0.0, 0.5)
+        self.ax.set_ylim(0.0, 7.0)
         self.ax.set_xlabel("Frequency (Hz)")
         self.ax.set_ylabel("Energy")
         self.ax.set_title("Function Evolution Over Time")
@@ -848,6 +846,12 @@ class FunctionEvolutionVisualizer:
         """Initialize the animation by clearing all lines."""
         for line in self.lines.values():
             line.set_data([], [])
+
+        # Clear the variance band if it exists
+        if self.variance_band is not None:
+            self.variance_band.remove()
+            self.variance_band = None
+
         return list(self.lines.values())
 
     def animate(self, i):
@@ -858,41 +862,62 @@ class FunctionEvolutionVisualizer:
         - i: Current frame index.
 
         Steps:
-        1. Predict the next function using f_{n+1} = A f_n.
-        2. Plot the predicted function.
-        3. Add the observation and correct it.
-        4. Clear predictions and observations after correction.
+        1. Show prediction.
+        2. Show observation.
+        3. Show correction.
+
+        Each step is shown with a delay of half a second (500 ms).
         """
-        j = self.initial_step + i
+        # Determine which logical step (sub-frame) we are in
+        step = i % 4  # Cycle through 0 (prediction), 1 (observation), 2 (correction)
+        j = self.initial_step + i // 4  # Determine the actual time step
+
+        if j >= len(self.gp.x_train):  # Stop if we exceed available data
+            return list(self.lines.values())
+
         x_ = self.gp.x_train[j].T[0]
-        if i == 0:
-            # Reset the initial function for new animation
-            self.current_function = self.gp.f_star[j].T[0].numpy().copy()
-            self.lines["correction"].set_data(x_, self.current_function)
 
-        # Prediction step: f_{n+1} = A f_n
-        predicted_f = self.gp.A[-1].numpy() @ self.current_function
-        # Observation step
-        observed_f = self.gp.y_train[j].T[0].numpy()
+        if step == 0:  # First correction step
+            if i == 0:
+                # Initialize the current function for new animation
+                self.current_function = self.gp.f_star[j].T[0].numpy().copy()
+                self.lines["correction"].set_data(x_, self.current_function)
+            # Update the title dynamically with the current time step
+            self.ax.set_title(f"Function Evolution Over Time - Time Step: {j}")
 
-        # Correction step (posterior update)
-        corrected_f = self.gp.f_star[j+1].T[0].numpy().copy()
-
-        # Update plot data
-        self.lines["prediction"].set_data(x_, predicted_f)
-        self.lines["observation"].set_data(x_, observed_f)
-
-
-        # Show corrected mean and clear previous predictions/observations
-        if i > 0:
-            self.lines["prediction"].set_data([], [])
+            # Clear observation and correction temporarily
             self.lines["observation"].set_data([], [])
+            self.lines["prediction"].set_data([], [])
+            # Clear observation and prediction temporarily
+            if self.variance_band is not None:
+                self.variance_band.remove()
+                self.variance_band = None
 
-            # Update corrected mean line
+        elif step == 1:  # Prediction step
+
+            predicted_f = np.linalg.matrix_power(self.gp.A[j].numpy(),20) @ self.current_function
+            self.lines["prediction"].set_data(x_, predicted_f)
+
+            variance = np.sqrt(torch.diag(self.gp.Gamma[j]).numpy()) * 1.96
+            # Update variance band dynamically
+            if self.variance_band is not None:
+                self.variance_band.remove()  # Remove the old band
+            lower_bound = predicted_f - variance
+            upper_bound = predicted_f + variance
+            self.variance_band = self.ax.fill_between(x_, lower_bound, upper_bound, color="red", alpha=0.2)
+
+        elif step == 2:  # Observation step
+
+            observed_f = self.gp.y_train[j].T[0].numpy()
+            self.lines["observation"].set_data(x_, observed_f)
+
+        elif step == 3:
+
+            corrected_f = self.gp.f_star[j + 1].T[0].numpy().copy()
             self.lines["correction"].set_data(x_, corrected_f)
 
-        # Update current function for the next iteration
-        self.current_function = corrected_f
+            # Update current function for the next iteration
+            self.current_function = corrected_f
 
         return list(self.lines.values())
 
@@ -913,7 +938,7 @@ class FunctionEvolutionVisualizer:
             func=self.animate,
             init_func=self.init_animation,
             frames=self.num_steps,
-            interval=1000,
+            interval=400,
             blit=False,
             repeat=False,
         )
