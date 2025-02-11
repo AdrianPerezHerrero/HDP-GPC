@@ -661,8 +661,8 @@ class GPI_HDP():
         self : returns an instance of self.
         """
         # Redefine HDP hyperparams for batch inclusion
-        self.gamma = 0.5
-        self.transAlpha = 1.5
+        self.gamma = 2.0
+        self.transAlpha = 2.0
         self.startAlpha = 0.5
         self.kappa = 0.0
 
@@ -1412,8 +1412,8 @@ class GPI_HDP():
         # Good results using 0.02
         # Good results using 0.01.
         # Good results using 0.018
-        ini_Sigma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.0
-        ini_Gamma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.5
+        ini_Sigma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 1.0
+        ini_Gamma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 1.2
         #ini_Gamma = torch.sqrt(self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.0])) * 0.5)
         #ini_Sigma = var_y_y * 2.0
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.5])) * 2.0
