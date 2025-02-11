@@ -275,7 +275,7 @@ class GPI_model():
                 Gamma_inv = torch.linalg.solve(self.Gamma[i+1], self.cond_to_cuda(torch.eye(self.Gamma[i].shape[0])))
                 A = self.A[i+1]
             else:
-                Gamma_inv = self.gamma_inv
+                Gamma_inv = torch.linalg.solve(self.Gamma[-1], self.cond_to_cuda(torch.eye(self.Gamma[-1].shape[0])))
                 A = self.A[-1]
         #cov_f = self.cov_f_sm[i + 1]
         lat_f = self.f_star_sm[i + 1]
@@ -428,26 +428,26 @@ class GPI_model():
         """ Method to compute the likelihood of LDS parameters over the prior.
         """
         elb_LDS = 0
-        for i in range(len(self.A)):
-            ini_A, ini_Gamma, ini_C, ini_Sigma, n0 = self.A_def, self.Gamma_def, self.C_def, self.Sigma_def, self.internal_params.n0
-            if first:
-                #ini_noise = self.cond_to_cuda(self.cond_to_torch(self.gp.kernel.get_params()["k2__noise_level"]))
-                ini_noise = torch.mean(torch.diag(self.Sigma[-1])) #* 1e-1
-                ini_noise_ = torch.mean(torch.diag(self.Gamma[-1])) #* 1e-1
-                A_, Gam_, C_, Sig_ = (self.A[-1],
-                                      self.Gamma[-1] + torch.mul(ini_noise_, torch.eye(self.Sigma[-1].shape[0],
-                                                                                      device=ini_noise.device)),
-                                      self.C[-1],
-                                      self.Sigma[-1] + torch.mul(ini_noise, torch.eye(self.Sigma[-1].shape[0],
-                                                                                      device=ini_noise.device)))
-                # A_, Gam_, C_, Sig_ = (self.A[-1], self.Gamma[-1] + self.cov_f[-1], self.C[-1],
-                #                        self.Sigma[-1] + self.cov_f[-1])
-            else:
-                A_, Gam_, C_, Sig_, n0 = self.A[i], self.Gamma[i], self.C[i], self.Sigma[i], self.internal_params.n0
-            int_params = matrix_normal_inv_wishart(ini_A, torch.eye(ini_A.shape[0], device=self.device), self.free_deg_MNIV, ini_Gamma)
-            obs_params = matrix_normal_inv_wishart(ini_C, torch.eye(ini_C.shape[0], device=self.device), self.free_deg_MNIV, ini_Sigma)
-            elb_LDS = elb_LDS + int_params.log_likelihood_MNIW(A_, Gam_, n0) + obs_params.log_likelihood_MNIW(C_, Sig_, n0)
-        return elb_LDS / len(self.A)
+        #for i in range(len(self.A)):
+        ini_A, ini_Gamma, ini_C, ini_Sigma, n0 = self.A_def, self.Gamma_def, self.C_def, self.Sigma_def, self.internal_params.n0
+        if first:
+            #ini_noise = self.cond_to_cuda(self.cond_to_torch(self.gp.kernel.get_params()["k2__noise_level"]))
+            ini_noise = torch.mean(torch.diag(self.Sigma[-1])) #* 1e-1
+            ini_noise_ = torch.mean(torch.diag(self.Gamma[-1])) #* 1e-1
+            A_, Gam_, C_, Sig_ = (self.A[-1],
+                                  self.Gamma[-1] + torch.mul(ini_noise_, torch.eye(self.Sigma[-1].shape[0],
+                                                                                  device=ini_noise.device)),
+                                  self.C[-1],
+                                  self.Sigma[-1] + torch.mul(ini_noise, torch.eye(self.Sigma[-1].shape[0],
+                                                                                  device=ini_noise.device)))
+            # A_, Gam_, C_, Sig_ = (self.A[-1], self.Gamma[-1] + self.cov_f[-1], self.C[-1],
+            #                        self.Sigma[-1] + self.cov_f[-1])
+        else:
+            A_, Gam_, C_, Sig_, n0 = self.A[i], self.Gamma[i], self.C[i], self.Sigma[i], self.internal_params.n0
+        int_params = matrix_normal_inv_wishart(ini_A, torch.eye(ini_A.shape[0], device=self.device), self.free_deg_MNIV, ini_Gamma)
+        obs_params = matrix_normal_inv_wishart(ini_C, torch.eye(ini_C.shape[0], device=self.device), self.free_deg_MNIV, ini_Sigma)
+        elb_LDS = elb_LDS + int_params.log_likelihood_MNIW(A_, Gam_, n0) + obs_params.log_likelihood_MNIW(C_, Sig_, n0)
+        return elb_LDS# / len(self.A)
 
     def compute_sq_err_all(self, x_trains, y_trains, no_first=False):
         """ Method to compute the squared error over all provided examples y_trains.

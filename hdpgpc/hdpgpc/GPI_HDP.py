@@ -252,8 +252,8 @@ class GPI_HDP():
         # self.transAlpha = 200.0
         # self.startAlpha = 200.0
         # self.kappa = 0.0
-        self.gamma = 0.1
-        self.transAlpha = 0.1
+        self.gamma = 0.5
+        self.transAlpha = 0.5
         self.startAlpha = 0.5
         self.kappa = 0.0
 
@@ -663,7 +663,7 @@ class GPI_HDP():
         # Redefine HDP hyperparams for batch inclusion
         self.gamma = 2.0
         self.transAlpha = 2.0
-        self.startAlpha = 0.5
+        self.startAlpha = 2.0
         self.kappa = 0.0
 
         n_samples = np.array(y_trains).shape[0]
@@ -779,46 +779,51 @@ class GPI_HDP():
         self.y_train = y_trains_w
         return q, q_lat, warp_computed
 
-
     def elbo_Linears(self, resp, respPair, prev=False):
         """ Compute ELBO for linear terms. HDP.
         """
         startStateCount = resp[0]
         transStateCount = torch.sum(respPair, axis=0)
         if prev:
-            if transStateCount[0,0] == torch.sum(transStateCount):
+            if transStateCount[0, 0] == torch.sum(transStateCount):
                 M = resp.shape[1] - 1
                 rho_, omega_, transTheta_, startTheta_ = self.temp_reinit_global_params(1,
-                                                                                        torch.clone(transStateCount[:M, :M]),
-                                                                                        startStateCount[:M])
+                                                                                        torch.clone(
+                                                                                            transStateCount[:M, :M]),
+                                                                                        torch.clone(
+                                                                                            startStateCount[:M]))
             else:
-                M = resp.shape[1]-1
-                rho_, omega_, transTheta_, startTheta_ = self.temp_reinit_global_params(M - 1, torch.clone(transStateCount[:M,:M]),
-                                                                                       startStateCount[:M])
+                M = resp.shape[1] - 1
+                rho_, omega_, transTheta_, startTheta_ = self.temp_reinit_global_params(M - 1, torch.clone(
+                    transStateCount[:M, :M]),
+                                                                                        torch.clone(
+                                                                                            startStateCount[:M]))
                 for giter in range(4):
-                    transTheta_, startTheta_ = self._calcThetaFull(torch.clone(self.cond_cuda(transStateCount)),
-                                                                   self.cond_cuda(startStateCount), M, rho=rho_)
+                    transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount[:M, :M])),
+                                                                   self.cond_cuda(torch.clone(startStateCount[:M])), M,
+                                                                   rho=rho_)
                     rho_, omega_ = self.find_optimum_rhoOmega(startTheta_, transTheta_, rho=rho_, omega=omega_, M=M)
 
-                transStateCount = transStateCount[:M ,:M]
+                transStateCount = transStateCount[:M, :M]
                 startStateCount = startStateCount[:M]
 
         else:
             rho_ = torch.clone(self.rho)
             omega_ = torch.clone(self.omega)
             for giter in range(2):
-                transTheta_, startTheta_ = self._calcThetaFull(torch.clone(self.cond_cuda(transStateCount)),
-                                                               self.cond_cuda(startStateCount), rho=rho_)
+                transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount)),
+                                                               self.cond_cuda(torch.clone(startStateCount)), rho=rho_)
                 rho_, omega_ = self.find_optimum_rhoOmega(startTheta_, transTheta_, rho=rho_, omega=omega_)
         return self.calcELBO_LinearTerms(rho=self.cond_to_numpy(self.cond_cpu(rho_)),
-                                  omega=self.cond_to_numpy(self.cond_cpu(omega_)),
-                                  alpha=self.transAlpha,
-                                  startAlpha=self.startAlpha,
-                                  kappa=self.kappa, gamma=self.gamma,
-                                  transTheta=self.cond_to_numpy(self.cond_cpu(transTheta_)),
-                                  startTheta=self.cond_to_numpy(self.cond_cpu(startTheta_)),
-                                  startStateCount=self.cond_to_numpy(self.cond_cpu(startStateCount)),
-                                  transStateCount=self.cond_to_numpy(torch.clone(self.cond_cpu(transStateCount))))
+                                         omega=self.cond_to_numpy(self.cond_cpu(omega_)),
+                                         alpha=self.transAlpha,
+                                         startAlpha=self.startAlpha,
+                                         kappa=self.kappa, gamma=self.gamma,
+                                         transTheta=self.cond_to_numpy(self.cond_cpu(transTheta_)),
+                                         startTheta=self.cond_to_numpy(self.cond_cpu(startTheta_)),
+                                         startStateCount=self.cond_to_numpy(self.cond_cpu(startStateCount)),
+                                         transStateCount=self.cond_to_numpy(
+                                             torch.clone(self.cond_cpu(transStateCount))))
 
 
     def new_model_or_refill(self, resp, respPair, startStateCount, transStateCount, q, q_lat, snr):
@@ -1346,16 +1351,16 @@ class GPI_HDP():
             frac = sum_resp / torch.sum(sum_resp)
         else:
             frac = sum_resp / sum_resp
-        for i in sum_resp[:-1]:
+        for i in sum_resp:
             if i > 0:
                 M_ = M_ + 1
-        gp_temp = gpmodels if one_sample else gpmodels[:-1]
+        gp_temp = gpmodels if one_sample else gpmodels
         for i, gp in enumerate(gp_temp):
             if sum_resp[i] > 0:
                 if sum_resp[i] < 2.0:
                     #elb = elb + gp.return_LDS_param_likelihood(first=True)
                     if one_sample:
-                        elb = elb + gp.return_LDS_param_likelihood(first=True) * frac[i] * 1.0
+                        elb = elb + gp.return_LDS_param_likelihood(first=False) * frac[i] * 1.0
                     else:
                         elb = elb + gp.return_LDS_param_likelihood(first=False) * frac[i] * 1.0
                 else:
@@ -1392,7 +1397,7 @@ class GPI_HDP():
         gp = self.create_gp_default()
         gp.include_weighted_sample(0, x_trains[f_ind], x_trains[f_ind], y_trains[f_ind, :, [0]], h=1.0)
         q__ = gp.compute_sq_err_all(x_trains, y_trains[:, :, [0]])
-        n_samp = int(y_trains.shape[0]*0.1)
+        n_samp = 50
         selected_beats = torch.argsort(q__, descending=True)[:n_samp]
         resp_red = torch.zeros(resp.shape)
         resp_red[selected_beats,0] = torch.ones(n_samp)
@@ -1400,8 +1405,8 @@ class GPI_HDP():
         gp.full_pass_weighted(x_trains, y_trains[:, :, [0]], resp_red[:, 0], snr=self.snr_norm[:, 0])
         ind_ = -1
         #noise = (torch.mean(torch.diag(gp.Sigma[ind_])) + torch.mean(torch.diag(gp.Gamma[ind_]))) / 2.0
-        var_y_y_ = torch.mean(torch.diag(gp.Gamma[ind_]))
-        var_y_y = torch.mean(torch.diag(gp.Sigma[ind_]))
+        var_y_y_ = torch.max(torch.diag(gp.Gamma[ind_]))
+        var_y_y = torch.max(torch.diag(gp.Sigma[ind_]))
         # samples = y_trains[:n_f][:, :, 0].T
         # samples_ = y_trains[1:n_f+1][:, :, 0].T
         # var_y_y = torch.mean(torch.diag(torch.linalg.multi_dot([(samples - torch.mean(samples, dim=1)[:,np.newaxis]), (samples - torch.mean(samples, dim=1)[:,np.newaxis]).T])) / n_f)# * 0.15
@@ -1507,7 +1512,7 @@ class GPI_HDP():
             q_aux[:-1, :self.q[-1].shape[1], :] = torch.clone(self.q[-1])
         for ld in range(self.n_outputs):
             for m, gp in enumerate(self.gpmodels[ld][:-1]):
-                q_lat[:, m, ld] = gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)), h_ini=0.1)
+                q_lat[:, m, ld] = gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)), h_ini=1.0)
                 q_aux[-1, m, ld] = gp.log_sq_error(torch.from_numpy(np.array(self.x_train[-1])), y_mod[m][-1], i=-1)
         if t > 0:
             resp, resp_log, respPair, respPair_log = self.variational_local_terms(q_aux, self.transTheta, self.startTheta)
