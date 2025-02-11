@@ -1393,7 +1393,7 @@ class GPI_HDP():
         gp = self.gpmodels[0][0]
         q__ = torch.zeros(y_trains.shape[0])
         for j, y in enumerate(y_trains[:,:,[0]]):
-            q__[j] = self.log_sq_error(x_trains[j], y)
+            q__[j] = gp.log_sq_error(x_trains[j], y)
         #q__, q_lat__= gp.full_pass_weighted(x_trains, y_trains[:, :, [0]], resp[:, 0], snr=self.snr_norm[:, 0])
         f_ind = torch.where(q__ == torch.median(q__))[0].item()
         #f_ind = 0
