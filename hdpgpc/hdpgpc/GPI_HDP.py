@@ -1393,7 +1393,7 @@ class GPI_HDP():
         gp = self.gpmodels[0][0]
         q__ = torch.zeros(y_trains.shape[0])
         for j, y in enumerate(y_trains[:,:,[0]]):
-            q__[j] = gp.log_sq_error(x_trains[j], y)
+             q__[j] = gp.log_sq_error(x_trains[j], y)
         #q__, q_lat__= gp.full_pass_weighted(x_trains, y_trains[:, :, [0]], resp[:, 0], snr=self.snr_norm[:, 0])
         f_ind = torch.where(q__ == torch.median(q__))[0].item()
         #f_ind = 0
@@ -1408,8 +1408,8 @@ class GPI_HDP():
         gp.full_pass_weighted(x_trains, y_trains[:, :, [0]], resp_red[:, 0], snr=self.snr_norm[:, 0])
         ind_ = -1
         #noise = (torch.mean(torch.diag(gp.Sigma[ind_])) + torch.mean(torch.diag(gp.Gamma[ind_]))) / 2.0
-        var_y_y_ = torch.mean(torch.diag(gp.Gamma[ind_]))
-        var_y_y = torch.mean(torch.diag(gp.Sigma[ind_]))
+        var_y_y_ = torch.median(torch.diag(gp.Gamma[ind_]))
+        var_y_y = torch.median(torch.diag(gp.Sigma[ind_]))
         # samples = y_trains[:n_f][:, :, 0].T
         # samples_ = y_trains[1:n_f+1][:, :, 0].T
         # var_y_y = torch.mean(torch.diag(torch.linalg.multi_dot([(samples - torch.mean(samples, dim=1)[:,np.newaxis]), (samples - torch.mean(samples, dim=1)[:,np.newaxis]).T])) / n_f)# * 0.15
@@ -1420,8 +1420,8 @@ class GPI_HDP():
         # Good results using 0.02
         # Good results using 0.01.
         # Good results using 0.018
-        ini_Sigma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 1.0
-        ini_Gamma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.0
+        ini_Sigma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.0
+        ini_Gamma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.5
         #ini_Gamma = torch.sqrt(self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.0])) * 0.5)
         #ini_Sigma = var_y_y * 2.0
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.5])) * 2.0
