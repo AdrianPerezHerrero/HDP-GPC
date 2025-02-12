@@ -736,6 +736,7 @@ def plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, N_0, title=
         else:
             return to_hex(color.get(labels_trans.get(lab, 0), 'b'))
 
+    y_max = 0.0
     for i, m in enumerate(selected_gpmodels):
         ax = axes[i]
         gp = sw_gp.gpmodels[lead][m]
@@ -745,6 +746,8 @@ def plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, N_0, title=
             j = gp.indexes[j_]
             x_t = gp.x_train[j_].T[0]
             d = sw_gp.y_train[j,:,[lead]]
+            if y_max < np.max(d.numpy()):
+                y_max = np.max(d.numpy())
             if isinstance(d, torch.Tensor):
                 d = d.detach().cpu()
                 x_t = x_t.cpu()
@@ -787,7 +790,7 @@ def plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, N_0, title=
         #ax.grid(True)
     if yscale:
         for ax in fig.get_axes():
-            ax.set_ylim(np.min(sw_gp.y_train.numpy())-0.5, np.max(sw_gp.y_train.numpy()) + 0.5)
+            ax.set_ylim(np.min(sw_gp.y_train.numpy())-0.5, y_max + 0.5)
             ax.set_xticks(np.arange(0.0,0.5,0.1))
     if not ticks:
         for ax in fig.get_axes():
