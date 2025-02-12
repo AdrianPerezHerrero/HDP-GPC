@@ -1400,7 +1400,7 @@ class GPI_HDP():
         gp = self.create_gp_default()
         gp.include_weighted_sample(0, x_trains[f_ind], x_trains[f_ind], y_trains[f_ind, :, [0]], h=1.0)
         q__ = gp.compute_sq_err_all(x_trains, y_trains[:, :, [0]])
-        n_samp = 50
+        n_samp = 200
         selected_beats = torch.argsort(q__, descending=True)[:n_samp]
         resp_red = torch.zeros(resp.shape)
         resp_red[selected_beats,0] = torch.ones(n_samp)
