@@ -1437,8 +1437,8 @@ class GPI_HDP():
         # ini_Gamma = self.cond_to_torch(np.max(([ini_Gamma, 12.0])))
         #ini_Gamma = self.cond_to_torch(np.max([var_y_y_, var_y_y * 1.5]))
         #ini_Gamma = var_y_y_ * 1.5
-        bound_sigma = (ini_Sigma.item() * 1e-5, 1.0)
-        bound_gamma = (ini_Gamma.item() * 1e-5, 1.0)
+        bound_sigma = (ini_Sigma.item() * 1e-5, 0.1)
+        bound_gamma = (ini_Gamma.item() * 1e-5, 0.1)
         #bound_sigma = (0.1, 20.0)
         #bound_gamma = (0.1, 20.0)
         print("-----------Reestimated ------------", flush=True)
