@@ -1360,7 +1360,7 @@ class GPI_HDP():
                 if sum_resp[i] < 2.0:
                     #elb = elb + gp.return_LDS_param_likelihood(first=True)
                     if one_sample:
-                        elb = elb + gp.return_LDS_param_likelihood(first=False) * frac[i] * 1.0
+                        elb = elb + gp.return_LDS_param_likelihood(first=True) * frac[i] * 1.0
                     else:
                         elb = elb + gp.return_LDS_param_likelihood(first=False) * frac[i] * 1.0
                 else:
