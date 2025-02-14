@@ -262,7 +262,6 @@ class GPI_model():
     def log_lat_error(self, i, h_ini):
         """Compute the log-squared-error of the latent process.
         """
-        err = 0.0
         if i == 0:
             cov_f_ = self.cov_f[i + 1]
             lat_f_ = self.f_star_sm[i + 1]
@@ -278,7 +277,7 @@ class GPI_model():
                 Gamma_inv = torch.linalg.solve(self.Gamma[-1], self.cond_to_cuda(torch.eye(self.Gamma[-1].shape[0])))
                 A = self.A[-1]
         #cov_f = self.cov_f_sm[i + 1]
-        lat_f = self.f_star[i + 1]
+        lat_f = self.f_star[i + 1]#
         #Gamma = self.Gamma[i]
 
         #t = Gamma.shape[0]
