@@ -661,9 +661,9 @@ class GPI_HDP():
         self : returns an instance of self.
         """
         # Redefine HDP hyperparams for batch inclusion
-        self.gamma = 0.01
-        self.transAlpha = 0.01
-        self.startAlpha = 0.01
+        self.gamma = 2.0
+        self.transAlpha = 2.0
+        self.startAlpha = 2.0
         self.kappa = 0.0
 
         n_samples = np.array(y_trains).shape[0]
@@ -1368,7 +1368,7 @@ class GPI_HDP():
         if one_sample:
             return elb# / M_
         else:
-            return elb / M_ # / torch.sum(sum_resp)
+            return elb# / M_ # / torch.sum(sum_resp)
 
     def redefine_default(self, x_trains, y_trains, resp):
         """ Method to compute Sigma and Gamma from a batch of examples and assign it to initial values.
