@@ -1266,8 +1266,8 @@ class matrix_normal_inv_wishart():
                    # - d * 0.5 * torch.logdet(self.m_r_cov)\
                    # - self.n0 * 0.5 * torch.logdet(self.scale)\
                    # - self.n0 * d * 0.5 * torch.log(torch.tensor(2.0 * torch.pi, device=self.scale.device))
-        scale_lik = - 0.5 * torch.trace(torch.matmul(sig_inv, self.scale)) \
-                    - (self.n0 + 1) * 0.5 * torch.logdet(Sigma) #\
+        scale_lik = - 0.5 * torch.trace(torch.matmul(sig_inv, self.scale)) #\
+                    # - (self.n0 + 1) * 0.5 * torch.logdet(Sigma) #\
                     #- n0 * 0.5 * torch.logdet(self.scale)
                     #- n0 * d * 0.5 * torch.log(torch.tensor(2.0, device=self.scale.device))\
                     #- torch.special.multigammaln(torch.tensor((n0 + d)*0.5, device=self.scale.device), d)
