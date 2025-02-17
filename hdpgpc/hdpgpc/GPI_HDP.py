@@ -664,8 +664,8 @@ class GPI_HDP():
         self : returns an instance of self.
         """
         # Redefine HDP hyperparams for batch inclusion
-        self.gamma = 0.5
-        self.transAlpha = 5.0
+        self.gamma = 0.2
+        self.transAlpha = 0.2
         self.startAlpha = 2.0
         self.kappa = 0.0
 
