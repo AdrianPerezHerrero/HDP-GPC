@@ -664,9 +664,9 @@ class GPI_HDP():
         self : returns an instance of self.
         """
         # Redefine HDP hyperparams for batch inclusion
-        self.gamma = 2.0
-        self.transAlpha = 2.0
-        self.startAlpha = 2.0
+        self.gamma = 1.0
+        self.transAlpha = 1.0
+        self.startAlpha = 1.0
         self.kappa = 0.0
 
         n_samples = np.array(y_trains).shape[0]
