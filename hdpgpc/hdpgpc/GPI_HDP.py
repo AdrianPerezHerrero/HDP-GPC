@@ -1357,7 +1357,7 @@ class GPI_HDP():
         gp_temp = gpmodels if one_sample else gpmodels
         for i, gp in enumerate(gp_temp):
             if sum_resp[i] > 0:
-                if sum_resp[i] < 2.0:
+                if sum_resp[i] < self.free_deg_MNIV:
                     #elb = elb + gp.return_LDS_param_likelihood(first=True)
                     if one_sample:
                         elb = elb + gp.return_LDS_param_likelihood(first=True) * frac[i] * 1.0
