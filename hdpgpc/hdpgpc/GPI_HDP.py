@@ -1051,18 +1051,13 @@ class GPI_HDP():
             resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
 
             new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
+            print("Prev -------")
             q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_), self.weight_mean(q_lat_, snr_),
                                                   self.gpmodels, M, snr=snr_, prev=False)
+            print("Post -------")
             q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux), self.weight_mean(q_lat, snr_aux),
                                                         gpmodels_temp, M, snr=snr_aux, prev=False)
             update_snr = True
-            print("Sum resp_temp: " + str(torch.sum(resp_temp, dim=0)))
-            print("Q_bas: " + str(q_bas) + ", Q_lat: " + str(
-                torch.sum(self.weight_mean(q_lat_, snr_)[torch.where(resp.int() > 0.99)])* self.dynamic_factor) + ", Elbo_bas: " + str(
-                elbo_bas))
-            print("Q_bas_post: " + str(q_bas_post) + ", Q_lat: " + str(torch.sum(
-                self.weight_mean(q_lat, snr_aux)[torch.where(resp_temp.int() > 0.99)])* self.dynamic_factor) + ", Elbo_post: " + str(
-                elbo_post))
             if torch.all(torch.sum(resp_temp, dim=0)[:-1] >= 1.0):
                 if q_bas < q_bas_post:
                     if not q_bas + elbo_bas < q_bas_post + elbo_post:
@@ -1279,18 +1274,13 @@ class GPI_HDP():
 
 
                     new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
+                    print("Prev -------")
                     q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_), self.weight_mean(q_lat_, snr_), self.gpmodels, self.M, snr=snr_, prev=False)
+                    print("Post -------")
                     q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux), self.weight_mean(q_lat, snr_aux), gpmodels_temp, M, snr=snr_aux)
 
                     update_snr = True
 
-                    print("Sum resp_temp: "+str(torch.sum(resp_temp,dim=0)))
-                    print("Q_bas: " + str(q_bas) + ", Q_lat: " + str(torch.sum(
-                        self.weight_mean(q_lat_, snr_)[torch.where(resp.int() > 0.99)])* self.dynamic_factor) + ", Elbo_bas: " + str(
-                        elbo_bas))
-                    print("Q_bas_post: " + str(q_bas_post) + ", Q_lat: " + str(torch.sum(
-                        self.weight_mean(q_lat, snr_aux)[torch.where(resp_temp.int() > 0.99)])* self.dynamic_factor) + ", Elbo_post: " + str(
-                        elbo_post))
                     if torch.all(torch.sum(resp_temp, dim=0) >= 1.0):
                         if q_bas < q_bas_post:
                             if not q_bas + elbo_bas < q_bas_post + elbo_post:
@@ -1342,6 +1332,9 @@ class GPI_HDP():
         elbo_bas = elbo_bas + elbo_bas_LDS + elbo_latent
         #elbo_bas = elbo_bas + elbo_latent
         #elbo_bas = 0
+        print("Sum resp_temp: " + str(torch.sum(resp, dim=0)))
+        print("Q_em: " + str(q_bas) + ", Q_lat: " + elbo_latent + ", Elbo: " + str(
+            elbo_bas + elbo_bas_LDS))
         return q_bas, elbo_bas
 
 
@@ -1943,8 +1936,10 @@ class GPI_HDP():
         resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
         # Finally see if it is worthy to birth new cluster
         new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
+        print("Prev -------")
         q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_),
                                               self.weight_mean(q_lat_, snr_), gpmodels, self.M, snr=snr_)
+        print("Post -------")
         q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                     self.weight_mean(q_lat, snr_aux), gpmodels_temp, M, snr=snr_aux)
         update_snr = True
