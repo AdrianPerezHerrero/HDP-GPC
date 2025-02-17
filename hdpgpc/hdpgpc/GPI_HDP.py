@@ -1333,7 +1333,7 @@ class GPI_HDP():
         #elbo_bas = elbo_bas + elbo_latent
         #elbo_bas = 0
         print("Sum resp_temp: " + str(torch.sum(resp, dim=0)))
-        print("Q_em: " + str(q_bas) + ", Q_lat: " + elbo_latent + ", Elbo: " + str(
+        print("Q_em: " + str(q_bas) + ", Q_lat: " + str(elbo_latent) + ", Elbo: " + str(
             elbo_bas + elbo_bas_LDS))
         return q_bas, elbo_bas
 
