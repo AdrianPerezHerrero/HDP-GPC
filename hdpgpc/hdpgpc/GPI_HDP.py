@@ -818,7 +818,7 @@ class GPI_HDP():
                 transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount)),
                                                                self.cond_cuda(torch.clone(startStateCount)),
                                                                rho=rho_)
-                rho_, omega_ = self.find_optimum_rhoOmega(startTheta_, transTheta_, rho=rho_, omega=omega_)
+                rho_, omega_ = self.find_optimum_rhoOmega(startTheta_, transTheta_, rho=rho_, omega=omega_, M=M)
 
         else:
             rho_ = torch.clone(self.rho)
