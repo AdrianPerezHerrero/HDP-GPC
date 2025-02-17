@@ -812,8 +812,8 @@ class GPI_HDP():
             transStateCount = transStateCount[:M, :M]
             startStateCount = startStateCount[:M]
 
-            rho_ = torch.clone(self.rho)
-            omega_ = torch.clone(self.omega)
+            rho_ = torch.clone(self.rho[:M])
+            omega_ = torch.clone(self.omega[:M])
             for giter in range(2):
                 transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount)),
                                                                self.cond_cuda(torch.clone(startStateCount)),
