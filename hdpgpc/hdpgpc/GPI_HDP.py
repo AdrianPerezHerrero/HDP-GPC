@@ -1051,10 +1051,10 @@ class GPI_HDP():
             resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
 
             new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
-            print("Prev -------")
+            print(">>> Prev -------")
             q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_), self.weight_mean(q_lat_, snr_),
                                                   self.gpmodels, M, snr=snr_, prev=False)
-            print("Post -------")
+            print(">>> Post -------")
             q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux), self.weight_mean(q_lat, snr_aux),
                                                         gpmodels_temp, M, snr=snr_aux, prev=False)
             update_snr = True
@@ -1274,9 +1274,9 @@ class GPI_HDP():
 
 
                     new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
-                    print("Prev -------")
+                    print(">>> Prev -------")
                     q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_), self.weight_mean(q_lat_, snr_), self.gpmodels, self.M, snr=snr_, prev=False)
-                    print("Post -------")
+                    print(">>> Post -------")
                     q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux), self.weight_mean(q_lat, snr_aux), gpmodels_temp, M, snr=snr_aux)
 
                     update_snr = True
@@ -1936,10 +1936,9 @@ class GPI_HDP():
         resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
         # Finally see if it is worthy to birth new cluster
         new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
-        print("Prev -------")
+        print(">>> Q_all_loop -------")
         q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_),
                                               self.weight_mean(q_lat_, snr_), gpmodels, self.M, snr=snr_)
-        print("Post -------")
         q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                     self.weight_mean(q_lat, snr_aux), gpmodels_temp, M, snr=snr_aux)
         update_snr = True
