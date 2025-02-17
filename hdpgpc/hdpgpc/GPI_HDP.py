@@ -788,27 +788,37 @@ class GPI_HDP():
         startStateCount = resp[0]
         transStateCount = torch.sum(respPair, axis=0)
         if prev:
-            if transStateCount[0, 0] == torch.sum(transStateCount):
-                M = resp.shape[1] - 1
-                rho_, omega_, transTheta_, startTheta_ = self.temp_reinit_global_params(1,
-                                                                                        torch.clone(
-                                                                                            transStateCount[:M, :M]),
-                                                                                        torch.clone(
-                                                                                            startStateCount[:M]))
-            else:
-                M = resp.shape[1] - 1
-                rho_, omega_, transTheta_, startTheta_ = self.temp_reinit_global_params(M - 1, torch.clone(
-                    transStateCount[:M, :M]),
-                                                                                        torch.clone(
-                                                                                            startStateCount[:M]))
-                for giter in range(4):
-                    transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount[:M, :M])),
-                                                                   self.cond_cuda(torch.clone(startStateCount[:M])), M,
-                                                                   rho=rho_)
-                    rho_, omega_ = self.find_optimum_rhoOmega(startTheta_, transTheta_, rho=rho_, omega=omega_, M=M)
+            M = resp.shape[1] - 1
+            # if transStateCount[0, 0] == torch.sum(transStateCount):
+            #     M = resp.shape[1] - 1
+            #     rho_, omega_, transTheta_, startTheta_ = self.temp_reinit_global_params(1,
+            #                                                                             torch.clone(
+            #                                                                                 transStateCount[:M, :M]),
+            #                                                                             torch.clone(
+            #                                                                                 startStateCount[:M]))
+            # else:
+            #     M = resp.shape[1] - 1
+            #     rho_, omega_, transTheta_, startTheta_ = self.temp_reinit_global_params(M - 1,
+            #                                                                             torch.clone(
+            #                                                                                 transStateCount[:M, :M]),
+            #                                                                             torch.clone(
+            #                                                                                 startStateCount[:M]))
+            #     for giter in range(4):
+            #         transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount[:M, :M])),
+            #                                                        self.cond_cuda(torch.clone(startStateCount[:M])), M,
+            #                                                        rho=rho_)
+            #         rho_, omega_ = self.find_optimum_rhoOmega(startTheta_, transTheta_, rho=rho_, omega=omega_, M=M)
 
-                transStateCount = transStateCount[:M, :M]
-                startStateCount = startStateCount[:M]
+            transStateCount = transStateCount[:M, :M]
+            startStateCount = startStateCount[:M]
+
+            rho_ = torch.clone(self.rho)
+            omega_ = torch.clone(self.omega)
+            for giter in range(2):
+                transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount)),
+                                                               self.cond_cuda(torch.clone(startStateCount)),
+                                                               rho=rho_)
+                rho_, omega_ = self.find_optimum_rhoOmega(startTheta_, transTheta_, rho=rho_, omega=omega_)
 
         else:
             rho_ = torch.clone(self.rho)
