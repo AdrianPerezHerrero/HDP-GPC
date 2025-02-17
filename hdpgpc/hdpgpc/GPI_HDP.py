@@ -1261,7 +1261,6 @@ class GPI_HDP():
                                                                                                                  transPi=transPi,
                                                                                                                  gpmodels=gpmodels_temp,
                                                                                                                  reparam=reparam)
-                        print("Current resp: " + str(torch.sum(resp_temp, axis=0)))
                         q_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                                 self.weight_mean(q_lat, snr_aux), gpmodels_temp, M, snr=snr_aux)
                         print("ELBO_reduction: " + str(((q_post + elbo_post) - (q_bas + elbo_bas)).item()))
@@ -1332,7 +1331,7 @@ class GPI_HDP():
 
         #elbo_bas = elbo_bas + elbo_latent
         #elbo_bas = 0
-        print("Sum resp_temp: " + str(torch.sum(resp, dim=0)))
+        print("Sum resp_temp: " + str(torch.sum(resp, dim=0).int()))
         print("Q_em: " + str(q_bas) + ", Q_lat: " + str(elbo_latent) + ", Elbo: " + str(
             elbo_bas + elbo_bas_LDS))
         elbo_bas = elbo_bas + elbo_bas_LDS + elbo_latent
