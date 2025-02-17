@@ -10,6 +10,7 @@ from hdpgpc.warping_system import Warping_system
 from hdpgpc.OptimizerRhoOmega import find_optimum_multiple_tries, kvec
 
 import numpy as np
+np.random.seed(42)
 from sklearn.gaussian_process.kernels import RBF, WhiteKernel, ConstantKernel
 from scipy.special._ufuncs import psi as digamma
 from scipy.special._ufuncs import gammaln
@@ -19,6 +20,7 @@ from tqdm import trange
 import pickle as plk
 import torch
 torch.set_default_dtype(torch.float64)
+torch.manual_seed(42)
 
 
 
