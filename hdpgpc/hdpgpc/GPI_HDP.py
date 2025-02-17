@@ -1068,10 +1068,10 @@ class GPI_HDP():
             new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
             print(">>> Prev -------")
             q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_), self.weight_mean(q_lat_, snr_),
-                                                  self.gpmodels, M, snr=snr_, prev=False)
+                                                  self.gpmodels, M, snr=snr_, prev=True)
             print(">>> Post -------")
             q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux), self.weight_mean(q_lat, snr_aux),
-                                                        gpmodels_temp, M, snr=snr_aux, prev=False)
+                                                        gpmodels_temp, M, snr=snr_aux, prev=True)
             update_snr = True
             if torch.all(torch.sum(resp_temp, dim=0)[:-1] >= 1.0):
                 if q_bas < q_bas_post:
