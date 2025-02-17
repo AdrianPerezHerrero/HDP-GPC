@@ -1329,12 +1329,13 @@ class GPI_HDP():
             frac = frac / torch.sum(frac) #* self.n_outputs# * self.M#
         for i in range(self.n_outputs):
             elbo_bas_LDS = elbo_bas_LDS + self.full_LDS_elbo(gpmodels[i], torch.sum(resp, dim=0), one_sample=one_sample) * frac[i]
-        elbo_bas = elbo_bas + elbo_bas_LDS + elbo_latent
+
         #elbo_bas = elbo_bas + elbo_latent
         #elbo_bas = 0
         print("Sum resp_temp: " + str(torch.sum(resp, dim=0)))
         print("Q_em: " + str(q_bas) + ", Q_lat: " + str(elbo_latent) + ", Elbo: " + str(
             elbo_bas + elbo_bas_LDS))
+        elbo_bas = elbo_bas + elbo_bas_LDS + elbo_latent
         return q_bas, elbo_bas
 
 
