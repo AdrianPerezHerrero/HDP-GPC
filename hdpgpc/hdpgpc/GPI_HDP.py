@@ -788,7 +788,10 @@ class GPI_HDP():
         startStateCount = resp[0]
         transStateCount = torch.sum(respPair, axis=0)
         if prev:
-            M = resp.shape[1] - 1
+            if transStateCount[0, 0] == torch.sum(transStateCount):
+                M = 1
+            else:
+                M = resp.shape[1] - 1
             # if transStateCount[0, 0] == torch.sum(transStateCount):
             #     M = resp.shape[1] - 1
             #     rho_, omega_, transTheta_, startTheta_ = self.temp_reinit_global_params(1,
