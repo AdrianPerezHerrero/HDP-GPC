@@ -714,7 +714,7 @@ class GPI_HDP():
             resp, respPair, q, q_lat, snr, y_trains_w, reallocate = self.variational_local_terms_batch(M, x_trains, y_trains, y_trains_w,
                                                                     self.transTheta, self.startTheta, resp, respPair, q, q_lat, snr, reallocate, reparam)
             resp, respPair = self.refill_resp(resp, respPair)
-            if resp.shape[0] > M:
+            if resp.shape[1] > M:
                 self.M = M + 1
                 M = self.M
                 #n_samples = self.T
