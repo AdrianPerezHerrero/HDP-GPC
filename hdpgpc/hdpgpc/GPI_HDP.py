@@ -672,8 +672,8 @@ class GPI_HDP():
         self : returns an instance of self.
         """
         # Redefine HDP hyperparams for batch inclusion
-        self.gamma = 0.05
-        self.transAlpha = 0.05
+        self.gamma = 0.1
+        self.transAlpha = 0.1
         self.startAlpha = 0.2
         self.kappa = 0.0
 
@@ -945,7 +945,12 @@ class GPI_HDP():
             resp, respPair, q, q_lat, snr, y_trains_w, reallocate = self.estimate_q_first(M, x_trains=x_trains, y_trains=y_trains,
                                          y_trains_w=y_trains_w, resp=resp, respPair=respPair, q_=q, q_lat_=q_lat, snr_=snr,
                                          startPi=startPi, transPi=transPi, reallocate_=reallocate, reparam=reparam)
-            q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat), self.gpmodels, self.M, snr='saved', post=True)
+            if resp.shape[1] > M:
+                q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat),
+                                                      self.gpmodels, self.M, snr='saved', post=True)
+            else:
+                q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat),
+                                                      self.gpmodels, self.M, snr='saved', post=False)
             i = i + 1
             print("First resp: "+str(torch.sum(resp, axis=0)))
         else:
@@ -958,7 +963,14 @@ class GPI_HDP():
                                                resp=resp, respPair=respPair, q_=q, q_lat_=q_lat, snr_=snr, startPi=startPi, transPi=transPi,
                                                reparam=reparam)
                 self.gpmodels = gpmodels
-                q_post, elbo_post = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat), self.gpmodels, self.M, snr='saved', post=True)
+                if resp.shape[1] > M:
+                    q_post, elbo_post = self.compute_q_elbo(resp, respPair, self.weight_mean(q),
+                                                            self.weight_mean(q_lat), self.gpmodels, self.M, snr='saved',
+                                                            post=True)
+                else:
+                    q_post, elbo_post = self.compute_q_elbo(resp, respPair, self.weight_mean(q),
+                                                            self.weight_mean(q_lat), self.gpmodels, self.M, snr='saved',
+                                                            post=False)
                 print("ELBO_reduction: "+str(((q_post + elbo_post) - (q_bas + elbo_bas)).item()))
                 if (torch.isclose(q_bas + elbo_bas, q_post + elbo_post, rtol=1e-5) and i > 0) or i==10:# or reparam:
                     if not reparam:
