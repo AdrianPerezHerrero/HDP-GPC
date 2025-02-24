@@ -722,8 +722,8 @@ class GPI_HDP():
                 #resp__[:, :-1] = torch.clone(resp)
                 #respPair__ = self.cond_cuda(torch.zeros((n_samples, M + 1, M + 1)))
                 #respPair__[:, :-1, :-1] = torch.clone(respPair)
-                resp__ = torch.clone(resp)
-                respPair__= torch.clone(respPair)
+            resp__ = torch.clone(resp)
+            respPair__= torch.clone(respPair)
             # Update HDP variational params.
             if self.hmm_switch:
                 startStateCount = self.cond_cuda(resp__[0])
