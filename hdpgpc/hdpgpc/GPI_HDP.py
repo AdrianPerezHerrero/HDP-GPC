@@ -945,7 +945,7 @@ class GPI_HDP():
             resp, respPair, q, q_lat, snr, y_trains_w, reallocate = self.estimate_q_first(M, x_trains=x_trains, y_trains=y_trains,
                                          y_trains_w=y_trains_w, resp=resp, respPair=respPair, q_=q, q_lat_=q_lat, snr_=snr,
                                          startPi=startPi, transPi=transPi, reallocate_=reallocate, reparam=reparam)
-            if resp.shape[1] > M:
+            if resp.shape[1] > self.M:
                 q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat),
                                                       self.gpmodels, self.M, snr='saved', post=True)
             else:
@@ -963,7 +963,7 @@ class GPI_HDP():
                                                resp=resp, respPair=respPair, q_=q, q_lat_=q_lat, snr_=snr, startPi=startPi, transPi=transPi,
                                                reparam=reparam)
                 self.gpmodels = gpmodels
-                if resp.shape[1] > M:
+                if resp.shape[1] > self.M:
                     q_post, elbo_post = self.compute_q_elbo(resp, respPair, self.weight_mean(q),
                                                             self.weight_mean(q_lat), self.gpmodels, self.M, snr='saved',
                                                             post=True)
