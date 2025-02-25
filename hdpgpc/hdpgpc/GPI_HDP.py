@@ -1448,7 +1448,7 @@ class GPI_HDP():
         # Good results using 0.012
         # Good results using 0.02
         # Good results using 0.01.
-        # Good results using 0.018
+        # Good results using 0.018.
         # ini_Sigma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.0
         # ini_Gamma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.0
         ini_Sigma = var_y_y * 0.030
