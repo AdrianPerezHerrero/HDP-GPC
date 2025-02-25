@@ -672,9 +672,9 @@ class GPI_HDP():
         self : returns an instance of self.
         """
         # Redefine HDP hyperparams for batch inclusion
-        self.gamma = 1.0
-        self.transAlpha = 1.0
-        self.startAlpha = 1.0
+        self.gamma = 2.0
+        self.transAlpha = 2.0
+        self.startAlpha = 2.0
         self.kappa = 0.0
         print("------ HDP Hyperparameters ------", flush=True)
         print("gamma: " + str(self.gamma))
@@ -958,7 +958,7 @@ class GPI_HDP():
                 q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat),
                                                       self.gpmodels, self.M, snr='saved', post=False)
             i = i + 1
-            print("First resp: "+str(torch.sum(resp, axis=0)))
+            print("First resp: " + str(torch.sum(resp, dim=0).int().numpy()))
         else:
             q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat), self.gpmodels, self.M, snr='saved', post=False)
             print("Not first estimated q.")
@@ -1348,10 +1348,7 @@ class GPI_HDP():
         q_bas = torch.sum(q[torch.where(resp.int() > 0.99)]) * self.static_factor
         elbo_latent = torch.sum(q_lat[torch.where(resp.int() > 0.99)]) * self.dynamic_factor# / q.shape[0]
         if post:
-            if torch.sum(resp, dim=0)[-1] < 1.0:
-                elbo_bas = self.elbo_Linears(resp, respPair)
-            else:
-                elbo_bas = self.elbo_Linears(resp, respPair, post=post)
+            elbo_bas = self.elbo_Linears(resp, respPair, post=post)
         else:
             elbo_bas = self.elbo_Linears(resp, respPair)
         elbo_bas_LDS = 0
@@ -1457,7 +1454,7 @@ class GPI_HDP():
         ini_Sigma = var_y_y * 0.005
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.0]), var_y_y * 2.5])) * 0.0021
         #ini_Gamma = torch.sqrt(self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.0])) * 0.5)
-        ini_Gamma = var_y_y * 0.008
+        ini_Gamma = var_y_y * 0.010
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.5])) * 2.0
         #ini_Gamma = var_y_y_ * 1.0
         #ini_Sigma = self.cond_to_torch(25.0)
