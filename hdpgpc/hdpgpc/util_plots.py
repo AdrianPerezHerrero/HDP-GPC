@@ -288,9 +288,9 @@ def print_results(sw_gp, labels, N_0, error=False, purity=False):
                 err[m] = err[m] + 1
         if purity:
             print('Model', (m + 1), ': Purity: ', 1 - err[m]/len(gp.indexes))
-    print(f"Classification error: {int(err.sum())} / {sw_gp.T} -- {(int(err.sum()) / sw_gp.T):5.f}")
+    print(f"Classification error: {int(err.sum())} / {sw_gp.T} -- {(int(err.sum()) / sw_gp.T):.5f}")
     if purity:
-        print(f"Classification purity: {sw_gp.T - int(err.sum())}/{sw_gp.T} -- {(1 - err.sum() / sw_gp.T):5.f}")
+        print(f"Classification purity: {sw_gp.T - int(err.sum())}/{sw_gp.T} -- {(1 - err.sum() / sw_gp.T):.5f}")
     if purity:
         return main_model, int(err.sum()), sw_gp.T - int(err.sum())
     if error:
