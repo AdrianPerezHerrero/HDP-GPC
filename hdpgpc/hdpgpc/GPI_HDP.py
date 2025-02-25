@@ -672,9 +672,9 @@ class GPI_HDP():
         self : returns an instance of self.
         """
         # Redefine HDP hyperparams for batch inclusion
-        self.gamma = 10.0
-        self.transAlpha = 10.0
-        self.startAlpha = 10.0
+        self.gamma = 1.0
+        self.transAlpha = 1.0
+        self.startAlpha = 1.0
         self.kappa = 0.0
         print("------ HDP Hyperparameters ------", flush=True)
         print("gamma: " + str(self.gamma))
@@ -1400,7 +1400,7 @@ class GPI_HDP():
         if one_sample:
             return elb# / M_
         else:
-            return elb# / M_ # / torch.sum(sum_resp)
+            return elb / M_ # / torch.sum(sum_resp)
 
     def redefine_default(self, x_trains, y_trains, resp):
         """ Method to compute Sigma and Gamma from a batch of examples and assign it to initial values.
@@ -1454,10 +1454,10 @@ class GPI_HDP():
         # Good results using 0.018
         # ini_Sigma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.0
         # ini_Gamma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.0
-        ini_Sigma = var_y_y * 0.02
+        ini_Sigma = var_y_y * 0.005
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.0]), var_y_y * 2.5])) * 0.0021
         #ini_Gamma = torch.sqrt(self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.0])) * 0.5)
-        ini_Gamma = var_y_y * 0.022
+        ini_Gamma = var_y_y * 0.008
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.5])) * 2.0
         #ini_Gamma = var_y_y_ * 1.0
         #ini_Sigma = self.cond_to_torch(25.0)
