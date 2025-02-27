@@ -236,7 +236,6 @@ class GPI_model():
                     C = self.C[-1]
                 else:
                     C = torch.eye(x_train.shape[0], device=self.device)
-
         #If first iteration we add the kernel noise.
         if first:
             #ini_noise = self.cond_to_cuda(self.cond_to_torch(self.gp.kernel.get_params()["k2__noise_level"])) * 1e-4
@@ -249,10 +248,14 @@ class GPI_model():
             #cov_f = 0.01 * cov_f + 0.99 * torch.diag(torch.diag(cov_f))
         exp_t_t_ = lat_cov + torch.matmul(lat_f, lat_f.T)
         #exp_t_t = lat_cov + torch.matmul(f_star, f_star.T)
-        Sigma_inv = torch.linalg.solve(cov_f, self.cond_to_cuda(torch.eye(t)))
-        err = -1 / 2 * torch.linalg.multi_dot([y.T, Sigma_inv, y])\
-              + torch.linalg.multi_dot([y.T, Sigma_inv, f_star]) \
-              - 1 / 2 * torch.trace(torch.linalg.multi_dot([C.T, Sigma_inv, C, exp_t_t_])) \
+        # Sigma_inv = torch.linalg.solve(cov_f, self.cond_to_cuda(torch.eye(t)))
+        # err = -1 / 2 * torch.linalg.multi_dot([y.T, Sigma_inv, y])\
+        #       + torch.linalg.multi_dot([y.T, Sigma_inv, f_star]) \
+        #       - 1 / 2 * torch.trace(torch.linalg.multi_dot([C.T, Sigma_inv, C, exp_t_t_])) \
+        err = - 1 / 2 * torch.linalg.multi_dot([y.T, y]) \
+              + torch.linalg.multi_dot([y.T, f_star]) \
+              - 1 / 2 * torch.trace(
+            torch.linalg.multi_dot([f_star, f_star.T]) + torch.linalg.multi_dot([C, lat_cov, C.T]) + cov_f)
               #- 1 / 2 * torch.trace(torch.linalg.multi_dot([Sigma_inv, exp_t_t]))
               # - 1 / 2 * torch.trace(cov_f)
         #Scale with dimension:
