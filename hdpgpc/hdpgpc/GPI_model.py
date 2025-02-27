@@ -246,16 +246,14 @@ class GPI_model():
         #if len(self.x_basis) / len(x_train) <= 0.5:
             #cov_f = 0.5 * torch.diag(torch.diag(cov_f))
             #cov_f = 0.01 * cov_f + 0.99 * torch.diag(torch.diag(cov_f))
-        exp_t_t_ = lat_cov + torch.matmul(lat_f, lat_f.T)
+        #exp_t_t_ = lat_cov + torch.matmul(lat_f, lat_f.T)
         #exp_t_t = lat_cov + torch.matmul(f_star, f_star.T)
-        # Sigma_inv = torch.linalg.solve(cov_f, self.cond_to_cuda(torch.eye(t)))
-        # err = -1 / 2 * torch.linalg.multi_dot([y.T, Sigma_inv, y])\
-        #       + torch.linalg.multi_dot([y.T, Sigma_inv, f_star]) \
-        #       - 1 / 2 * torch.trace(torch.linalg.multi_dot([C.T, Sigma_inv, C, exp_t_t_])) \
-        err = - 1 / 2 * torch.linalg.multi_dot([y.T, y]) \
-              + torch.linalg.multi_dot([y.T, f_star]) \
-              - 1 / 2 * torch.trace(
-            torch.linalg.multi_dot([f_star, f_star.T]) + torch.linalg.multi_dot([C, lat_cov, C.T]) + cov_f)
+        Sigma_inv = torch.linalg.solve(cov_f, self.cond_to_cuda(torch.eye(t)))
+        err = -1 / 2 * torch.linalg.multi_dot([y.T, Sigma_inv, y])\
+              + 1 / 2 * torch.linalg.multi_dot([y.T, Sigma_inv, f_star]) \
+              + 1 / 2 * torch.linalg.multi_dot([f_star.T, Sigma_inv, y]) \
+              - 1 / 2 * torch.linalg.multi_dot([f_star.T, Sigma_inv, f_star])
+              #- 1 / 2 * torch.trace(torch.linalg.multi_dot([C.T, Sigma_inv, C, exp_t_t_])) \
               #- 1 / 2 * torch.trace(torch.linalg.multi_dot([Sigma_inv, exp_t_t]))
               # - 1 / 2 * torch.trace(cov_f)
         #Scale with dimension:
@@ -557,25 +555,25 @@ class GPI_model():
             if len(self.indexes) == 0:
                 C = self.C[0]
                 Sigma = self.Sigma[0]
-                mean = torch.matmul(C, self.f_star[0])
+                mean = torch.matmul(C, self.f_star_sm[0])
             #Case when computing error with last (predict)
             elif len(self.indexes) <= t:
                 C = self.C[-1]
                 Sigma = self.Sigma[-1]
                 A = self.A[-1]
                 Gamma = self.Gamma[-1]
-                mean = torch.linalg.multi_dot([C, self.f_star[-1]])
+                mean = torch.linalg.multi_dot([C, self.f_star_sm[-1]])
             elif self.estimation_limit <= t:
                 C = self.C[-1]
                 Sigma = self.Sigma[-1]
                 if proj:
                     Sigma = Sigma + self.Gamma[-1]
-                mean = torch.matmul(C, self.f_star[t])
+                mean = torch.matmul(C, self.f_star_sm[t])
             else:
                 A, Gamma, C, Sigma = self.get_params(t)
                 if proj:
                     Sigma = Sigma + Gamma
-                mean = torch.matmul(C, self.f_star[t])
+                mean = torch.matmul(C, self.f_star_sm[t])
         else:
             mean = params[0]
             Sigma = params[3]
