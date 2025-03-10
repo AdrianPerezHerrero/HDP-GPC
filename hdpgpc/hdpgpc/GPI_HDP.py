@@ -672,9 +672,9 @@ class GPI_HDP():
         self : returns an instance of self.
         """
         # Redefine HDP hyperparams for batch inclusion
-        self.gamma = 2.0
-        self.transAlpha = 2.0
-        self.startAlpha = 2.0
+        self.gamma = 4.0
+        self.transAlpha = 4.0
+        self.startAlpha = 4.0
         self.kappa = 0.0
         print("------ HDP Hyperparameters ------", flush=True)
         print("gamma: " + str(self.gamma))
@@ -769,7 +769,7 @@ class GPI_HDP():
                 resp_group = torch.sum(resp, axis=0)
                 self.train_elbo.append(elbo_)
                 self.resp_assigned.append(torch.where(resp == 1.0)[1])
-                if ((np.isclose(elbo, elbo_, rtol=1e-5) and resp_group[-1] < 1.0) or
+                if ((np.isclose(elbo, elbo_, rtol=1e-5)) or
                         torch.where(resp_group==0.0)[0].shape[0] > 1.0 or
                         (len(self.resp_assigned) >1 and torch.all(self.resp_assigned[-2] == self.resp_assigned[-1]))):
                     if warp_computed or not warp:
@@ -1466,8 +1466,8 @@ class GPI_HDP():
         # var_y_y = torch.max(torch.diag(gp.Sigma[ind_]))
         samples = y_trains[:n_f][:, :, 0].T
         samples_ = y_trains[1:n_f+1][:, :, 0].T
-        var_y_y = torch.median(torch.diag(torch.linalg.multi_dot([(samples - torch.mean(samples, dim=1)[:,np.newaxis]), (samples - torch.mean(samples, dim=1)[:,np.newaxis]).T])) / n_f)# * 0.15
-        var_y_y_ = torch.median(torch.diag(torch.linalg.multi_dot([(samples_ - samples), (samples_ - samples).T])) / n_f)# * 0.15
+        var_y_y = torch.min(torch.diag(torch.linalg.multi_dot([(samples - torch.mean(samples, dim=1)[:,np.newaxis]), (samples - torch.mean(samples, dim=1)[:,np.newaxis]).T])) / n_f)# * 0.15
+        var_y_y_ = torch.min(torch.diag(torch.linalg.multi_dot([(samples_ - samples), (samples_ - samples).T])) / n_f)# * 0.15
         kernel, ini_sigma, ini_gamma, ini_outputscale, bound_sigma, bound_gamma, bound_noise_warp, annealing, method_compute_warp, \
             model_type, recursive_warp, warp_updating, inducing_points, estimation_limit, free_deg_MNIV = self.get_default_options()
         # Good results using 0.012
@@ -1476,14 +1476,14 @@ class GPI_HDP():
         # Good results using 0.018.
         # ini_Sigma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.0
         # ini_Gamma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.0
-        ini_Sigma = var_y_y * 0.025
-        #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.0]), var_y_y * 2.5])) * 0.0021
+        ini_Sigma = var_y_y * 0.1
+        ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.0]), var_y_y * 2.5])) * 0.15
         #ini_Gamma = torch.sqrt(self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.0])) * 0.5)
-        ini_Gamma = var_y_y * 0.050
+        #ini_Gamma = var_y_y * 0.012
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.5])) * 2.0
         #ini_Gamma = var_y_y_ * 1.0
-        #ini_Sigma = self.cond_to_torch(25.0)
-        #ini_Gamma = self.cond_to_torch(35.0)
+        #ini_Sigma = self.cond_to_torch(10.0)
+        #ini_Gamma = self.cond_to_torch(25.0)
         # if ini_Sigma > 200.0:
         #      ini_Sigma = ini_Sigma * 0.3
         #      ini_Gamma = ini_Gamma * 0.3
