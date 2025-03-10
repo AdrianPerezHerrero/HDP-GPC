@@ -1598,8 +1598,8 @@ class GPI_HDP():
             resp_prev, resp_prev_log, respPair_prev, respPair_prev_log = self.variational_local_terms(q_prev, self.transTheta, self.startTheta, liks)
             q_prev_post, elbo_prev_post = self.compute_q_elbo(resp_prev, respPair_prev, self.weight_mean(q_prev), self.weight_mean(q_lat_prev),
                                                   self.gpmodels, self.M, snr='saved', one_sample=True, post=True, verb=self.verbose)
-            #elbo_prev_post = elbo_prev_post - elbo#/ np.log(self.T + 1)
-            #q_prev_post = q_prev_post - q_all
+            elbo_prev_post = elbo_prev_post - elbo#/ np.log(self.T + 1)
+            q_prev_post = q_prev_post - q_all
             for ld in range(self.n_outputs):
                 self.gpmodels[ld].pop()
                 self.M = M
@@ -1621,8 +1621,8 @@ class GPI_HDP():
                     q_bas_post, elbo_bas_post = self.compute_q_elbo(resp_post[:,:-1], respPair_post[:,:-1,:-1], self.weight_mean(q_post)[:,:-1],
                                                           self.weight_mean(q_lat_post)[:,:-1],
                                                           self.gpmodels, self.M, snr='saved', post=False, one_sample=True, verb=self.verbose)
-                    #elbo_bas_post = elbo_bas_post - elbo#/ np.log(self.T + 1)
-                    #q_bas_post = q_bas_post - q_all
+                    elbo_bas_post = elbo_bas_post - elbo#/ np.log(self.T + 1)
+                    q_bas_post = q_bas_post - q_all
 
                     if q_bas_post + elbo_bas_post > q_prev_post + elbo_prev_post:
                         resp, resplog, respPair, respPairlog = self.variational_local_terms(q_post, self.transTheta, self.startTheta, liks)
