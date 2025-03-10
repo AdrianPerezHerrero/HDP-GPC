@@ -239,7 +239,7 @@ class GPI_model():
         #If first iteration we add the kernel noise.
         if first:
             #ini_noise = self.cond_to_cuda(self.cond_to_torch(self.gp.kernel.get_params()["k2__noise_level"])) * 1e-4
-            ini_noise = torch.mean(torch.diag(self.Sigma[0])) * 1e-1
+            ini_noise = torch.mean(torch.diag(self.Sigma[0])) * 1e-0
             cov_f = cov_f + torch.mul(ini_noise, torch.eye(len(x_train), device=ini_noise.device))
         # If we have a projection we have to add an extra noise because of the smooth conditions of the
         # interpolation. We assume this condition if we have as basis points less than a third of the training.
