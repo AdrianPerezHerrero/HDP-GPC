@@ -255,9 +255,9 @@ class GPI_HDP():
         # self.transAlpha = 200.0
         # self.startAlpha = 200.0
         # self.kappa = 0.0
-        self.gamma = 0.1
-        self.transAlpha = 0.1
-        self.startAlpha = 0.1
+        self.gamma = 0.4
+        self.transAlpha = 0.4
+        self.startAlpha = 0.4
         self.kappa = 0.0
 
         # Model associated with each state
@@ -1572,6 +1572,7 @@ class GPI_HDP():
             for m, gp in enumerate(self.gpmodels[ld]):
                 q_lat[:, m, ld] = gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)), h_ini=1.0)
                 q_aux[-1, m, ld] = gp.log_sq_error(torch.from_numpy(np.array(self.x_train[-1])), y_mod[m][-1], i=-1)
+                #q_aux[[-1], m, ld] = self.estimate_new(t, gp, self.x_train[-1], y_mod[m][-1], h=1.0)
         if t > 0:
             resp, resp_log, respPair, respPair_log = self.variational_local_terms(q_aux, self.transTheta, self.startTheta)
             q_all, elbo = self.compute_q_elbo(resp[:-1,:-1], respPair[:-1,:-1,:-1], self.weight_mean(q_aux)[:-1,:-1],
@@ -1581,8 +1582,8 @@ class GPI_HDP():
         if t > 0:
             # Define order
             q_ord = torch.argsort(self.weight_mean(q_aux)[-1,:-1], descending=True)
-            m = q_ord[-1].item()
-            #m = q_ord[0].item()
+            #m = q_ord[-1].item()
+            m = q_ord[0].item()
             q_prev = torch.clone(q_aux)
             q_lat_prev = torch.clone(q_lat)
             # Compute first birth cost
