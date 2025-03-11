@@ -672,9 +672,9 @@ class GPI_HDP():
         self : returns an instance of self.
         """
         # Redefine HDP hyperparams for batch inclusion
-        self.gamma = 20.0
-        self.transAlpha = 1.0
-        self.startAlpha = 1.0
+        self.gamma = 4.0
+        self.transAlpha = 4.0
+        self.startAlpha = 4.0
         self.kappa = 0.0
         print("------ HDP Hyperparameters ------", flush=True)
         print("gamma: " + str(self.gamma))
