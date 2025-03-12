@@ -165,10 +165,10 @@ class GPI_HDP():
         # Define some characteristics of the model with an initial M decided
         self.ini_lengthscale = ini_lengthscale
         self.bound_lengthscale = bound_lengthscale
-        self.static_factor = ini_sigma[0] / (ini_sigma[0] + ini_gamma[0])
-        self.dynamic_factor = ini_gamma[0] / (ini_sigma[0] + ini_gamma[0])
-        #self.static_factor = ini_sigma[0] / ini_sigma[0]
-        #self.dynamic_factor = ini_gamma[0] / ini_gamma[0]
+        #self.static_factor = ini_sigma[0] / (ini_sigma[0] + ini_gamma[0])
+        #self.dynamic_factor = ini_gamma[0] / (ini_sigma[0] + ini_gamma[0])
+        self.static_factor = ini_sigma[0] / ini_sigma[0]
+        self.dynamic_factor = ini_gamma[0] / ini_gamma[0]
         self.bound_sigma = bound_sigma
         self.bound_gamma = bound_gamma
         self.bound_sigma_warp = bound_noise_warp
