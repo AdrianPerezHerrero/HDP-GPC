@@ -165,10 +165,10 @@ class GPI_HDP():
         # Define some characteristics of the model with an initial M decided
         self.ini_lengthscale = ini_lengthscale
         self.bound_lengthscale = bound_lengthscale
-        #self.static_factor = ini_sigma[0] / (ini_sigma[0] + ini_gamma[0])
-        #self.dynamic_factor = ini_gamma[0] / (ini_sigma[0] + ini_gamma[0])
-        self.static_factor = ini_sigma[0] / ini_sigma[0]
-        self.dynamic_factor = ini_gamma[0] / ini_gamma[0]
+        self.static_factor = ini_sigma[0] / (ini_sigma[0] + ini_gamma[0])
+        self.dynamic_factor = ini_gamma[0] / (ini_sigma[0] + ini_gamma[0])
+        #self.static_factor = ini_sigma[0] / ini_sigma[0]
+        #self.dynamic_factor = ini_gamma[0] / ini_gamma[0]
         self.bound_sigma = bound_sigma
         self.bound_gamma = bound_gamma
         self.bound_sigma_warp = bound_noise_warp
@@ -1416,13 +1416,13 @@ class GPI_HDP():
                     if one_sample:
                         elb = elb + gp.return_LDS_param_likelihood(first=False) * frac[i] * 1.0
                     else:
-                        elb = elb + gp.return_LDS_param_likelihood(first=False) * frac[i] * 1.0
+                        elb = elb + gp.return_LDS_param_likelihood(first=True) * frac[i] * 1.0
                 else:
                     elb = elb + gp.return_LDS_param_likelihood() * frac[i]
         if one_sample:
             return elb / M_
         else:
-            return elb / np.min([M_, self.M]) # / torch.sum(sum_resp)
+            return elb# / np.min([M_, self.M]) # / torch.sum(sum_resp)
 
     def redefine_default(self, x_trains, y_trains, resp):
         """ Method to compute Sigma and Gamma from a batch of examples and assign it to initial values.
