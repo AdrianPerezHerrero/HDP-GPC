@@ -742,7 +742,7 @@ class GPI_HDP():
             for giter in range(nIters):
                 self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
                                                                        self.cond_cuda(startStateCount), M + 1)
-                self.rho, self.omega = self.find_optimum_rhoOmega()
+                #self.rho, self.omega = self.find_optimum_rhoOmega()
 
             #Update transition matrix
             digammaSumTransTheta = torch.log(
@@ -1435,7 +1435,7 @@ class GPI_HDP():
         if one_sample:
             return elb / M_
         else:
-            return elb / np.min([M_, self.M]) # / torch.sum(sum_resp)
+            return elb #/ np.min([M_, self.M]) # / torch.sum(sum_resp)
 
     def redefine_default(self, x_trains, y_trains, resp):
         """ Method to compute Sigma and Gamma from a batch of examples and assign it to initial values.
