@@ -672,9 +672,9 @@ class GPI_HDP():
         self : returns an instance of self.
         """
         # Redefine HDP hyperparams for batch inclusion
-        self.gamma = 0.5
-        self.transAlpha = 0.5
-        self.startAlpha = 0.5
+        self.gamma = 0.1
+        self.transAlpha = 0.1
+        self.startAlpha = 0.1
         self.kappa = 0.0
         print("------ HDP Hyperparameters ------", flush=True)
         print("gamma: " + str(self.gamma))
@@ -737,14 +737,12 @@ class GPI_HDP():
                 transStateCount = self.cond_cuda(torch.ones((M + 1, M + 1)))  # Cause we are in independent observations
                 startStateCount = self.cond_cuda(torch.ones(M + 1))
 
-            if M > 2:
-                self.reinit_global_params(M - 1, transStateCount, startStateCount)
-            if M >= 2:
-                nIters = 4
-                for giter in range(nIters):
-                    self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
-                                                                           self.cond_cuda(startStateCount), M)
-                    self.rho, self.omega = self.find_optimum_rhoOmega()
+            self.reinit_global_params(M, transStateCount, startStateCount)
+            nIters = 1
+            for giter in range(nIters):
+                self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
+                                                                       self.cond_cuda(startStateCount), M + 1)
+                self.rho, self.omega = self.find_optimum_rhoOmega()
 
             #Update transition matrix
             digammaSumTransTheta = torch.log(
@@ -820,31 +818,46 @@ class GPI_HDP():
         startStateCount = resp[0]
         transStateCount = torch.sum(respPair, axis=0)
         M = resp.shape[1]
-        if not post:
-            # if M > 1:
-            #     M = M - 1
-            rho_ = torch.clone(self.rho)
-            omega_ = torch.clone(self.omega)
-            transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount)),
-                                                            self.cond_cuda(torch.clone(startStateCount)),
-                                                            rho=rho_, M=M)
-            # for giter in range(2):
-            #     rho_, omega_ = self.find_optimum_rhoOmega(startTheta_, transTheta_, rho=rho_, omega=omega_)
-        else:
-            if M > 2:
-                rho_, omega_, transTheta_, startTheta_ = self.temp_reinit_global_params(M-1, torch.clone(transStateCount),
-                                                                                        torch.clone(startStateCount))
-                # nIters = 4
-                # for giter in range(nIters):
-                transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount)),
-                                                            self.cond_cuda(torch.clone(startStateCount)), M, rho=rho_)
-                    # rho_, omega_ = self.find_optimum_rhoOmega(startTheta=startTheta_,
-                    #                                           transTheta=transTheta_, rho=rho_, omega=omega_, M=M)
-            else:
-                rho_ = torch.clone(self.rho)
-                omega_ = torch.clone(self.omega)
-                transTheta_, startTheta_ = self._calcThetaPost(self.cond_cuda(torch.clone(transStateCount)),
-                                                            self.cond_cuda(torch.clone(startStateCount)), M)
+
+        # Augment suff stats to be sure have 0 in final column,
+        # which represents inactive states.
+        if startStateCount.shape[0] == M:
+            startStateCount = torch.hstack([startStateCount, torch.zeros(1)])
+        if transStateCount.shape[-1] == M:
+            transStateCount = torch.hstack([transStateCount, torch.zeros((M, 1))])
+            transStateCount = torch.vstack([transStateCount, torch.zeros((1, M + 1))])
+
+        rho_, omega_, transTheta_, startTheta_ = self.temp_reinit_global_params(M, torch.clone(transStateCount),
+                                                                                torch.clone(startStateCount))
+        # nIters = 4
+        # for giter in range(nIters):
+        transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount)),
+                                                       self.cond_cuda(torch.clone(startStateCount)), M + 1, rho=rho_)
+        # if not post:
+        #     # if M > 1:
+        #     #     M = M - 1
+        #     rho_ = torch.clone(self.rho)
+        #     omega_ = torch.clone(self.omega)
+        #     transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount)),
+        #                                                     self.cond_cuda(torch.clone(startStateCount)),
+        #                                                     rho=rho_, M=M)
+        #     # for giter in range(2):
+        #     #     rho_, omega_ = self.find_optimum_rhoOmega(startTheta_, transTheta_, rho=rho_, omega=omega_)
+        # else:
+        #     if M > 2:
+        #         rho_, omega_, transTheta_, startTheta_ = self.temp_reinit_global_params(M, torch.clone(transStateCount),
+        #                                                                                 torch.clone(startStateCount))
+        #         # nIters = 4
+        #         # for giter in range(nIters):
+        #         transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount)),
+        #                                                     self.cond_cuda(torch.clone(startStateCount)), M, rho=rho_)
+        #             # rho_, omega_ = self.find_optimum_rhoOmega(startTheta=startTheta_,
+        #             #                                           transTheta=transTheta_, rho=rho_, omega=omega_, M=M)
+        #     else:
+        #         rho_ = torch.clone(self.rho)
+        #         omega_ = torch.clone(self.omega)
+        #         transTheta_, startTheta_ = self._calcThetaPost(self.cond_cuda(torch.clone(transStateCount)),
+        #                                                     self.cond_cuda(torch.clone(startStateCount)), M)
 
 
         return self.calcELBO_LinearTerms(rho=self.cond_to_numpy(self.cond_cpu(rho_)),
@@ -1422,7 +1435,7 @@ class GPI_HDP():
         if one_sample:
             return elb / M_
         else:
-            return elb / M_ # / torch.sum(sum_resp)
+            return elb / np.min([M_, self.M]) # / torch.sum(sum_resp)
 
     def redefine_default(self, x_trains, y_trains, resp):
         """ Method to compute Sigma and Gamma from a batch of examples and assign it to initial values.
