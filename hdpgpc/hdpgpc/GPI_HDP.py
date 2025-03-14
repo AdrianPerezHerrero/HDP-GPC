@@ -322,17 +322,18 @@ class GPI_HDP():
         return self.cond_cuda(self.cond_to_torch(rho))
 
     def _calcThetaPost(self, transStateCount, startStateCount, M):
+        transStateCount_ = transStateCount
         Ebeta = self.rho2beta(self.cond_cpu(self.rho), returnSize='K+1')
         alphaEbeta = self.transAlpha * Ebeta
 
         transTheta = self.cond_cuda(torch.zeros((M, M)))
         transTheta += alphaEbeta[np.newaxis, :]
-        if not len(transStateCount.shape) == 0 and not transStateCount.shape == (1, 1):
+        if not len(transStateCount_.shape) == 0 and not transStateCount_.shape == (1, 1):
             kp_ = self.cond_cuda(torch.zeros((M, M)))
             kp_[:-1, :-1] = self.kappa * self.cond_cuda(torch.eye(M-1))
-            transTheta[:M, :M] += transStateCount + kp_
+            transTheta[:M, :M] += transStateCount_ + kp_
         else:
-            transTheta[:M, :M] += transStateCount + self.kappa * self.cond_cuda(torch.eye(M))
+            transTheta[:M, :M] += transStateCount_ + self.kappa * self.cond_cuda(torch.eye(M))
 
         startTheta = self.startAlpha * Ebeta
         startTheta[:M] += startStateCount
@@ -340,6 +341,7 @@ class GPI_HDP():
         return transTheta, startTheta
 
     def _calcThetaFull(self, transStateCount, startStateCount, M=None, rho=None, kappa=None):
+        transStateCount_ = transStateCount
         if M is None:
             M = self.M + 1
         if rho is None:
@@ -354,7 +356,7 @@ class GPI_HDP():
 
         transTheta = self.cond_cuda(torch.zeros((M, M)))
         transTheta += alphaEbeta[np.newaxis, :]
-        transTheta[:M-1, :M-1] += transStateCount[:M-1,:M-1] + kappa * self.cond_cuda(torch.eye(M-1))
+        transTheta[:M-1, :M-1] += transStateCount_[:M-1,:M-1] + kappa * self.cond_cuda(torch.eye(M-1))
 
         startTheta = self.startAlpha * Ebeta
         startTheta[:M-1] += startStateCount[:M-1]
@@ -738,11 +740,11 @@ class GPI_HDP():
                 startStateCount = self.cond_cuda(torch.ones(M + 1))
 
             self.reinit_global_params(M, transStateCount, startStateCount)
-            nIters = 1
+            nIters = 2
             for giter in range(nIters):
                 self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
                                                                        self.cond_cuda(startStateCount), M + 1)
-                #self.rho, self.omega = self.find_optimum_rhoOmega()
+                self.rho, self.omega = self.find_optimum_rhoOmega()
 
             #Update transition matrix
             digammaSumTransTheta = torch.log(
@@ -1809,9 +1811,10 @@ class GPI_HDP():
                              transStateCount):
         """ Method to compute HPD linear terms.
         """
+        transStateCount_ = transStateCount
         Ltop = self.L_top(rho=rho, omega=omega, alpha=alpha, startAlpha=startAlpha, kappa=kappa, gamma=gamma)
         LdiffcDir = - self.c_Dir(transTheta) - self.c_Dir(startTheta)
-        K = transStateCount.shape[0]
+        K = transStateCount_.shape[0]
         if startTheta.shape[0] == rho.size:
             Ebeta = self.cond_to_numpy(self.cond_cpu(self.rho2beta(rho, returnSize='K')))
         else:
@@ -1823,9 +1826,9 @@ class GPI_HDP():
         alphaEbetaPlusKappa = alpha * np.tile(Ebeta, (K, 1))
         alphaEbetaPlusKappa[:, :K] += kappa * np.eye(K)
         digammaSum = np.log(np.sum(np.exp(digamma(transTheta)), axis=1))
-        transStateCount[:K, :] = transStateCount[:K, :] + alphaEbetaPlusKappa
+        transStateCount_[:K, :] = transStateCount_[:K, :] + alphaEbetaPlusKappa
         LtransSlack = np.sum(
-            (transStateCount - transTheta) *
+            (transStateCount_ - transTheta) *
             (digamma(transTheta) - digammaSum[:, np.newaxis])
         )
         return Ltop + LdiffcDir + LstartSlack + LtransSlack
