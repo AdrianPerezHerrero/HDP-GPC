@@ -1387,8 +1387,9 @@ class GPI_HDP():
                        one_sample=False, verb=True):
         """ Method to compute ELBO terms.
         """
-        q_bas = torch.sum(q[torch.where(resp.int() > 0.99)]) * self.static_factor / q.shape[0]
-        elbo_latent = torch.sum(q_lat[torch.where(resp.int() > 0.99)]) * self.dynamic_factor / q.shape[0]
+        n_points = self.x_basis.shape[0]
+        q_bas = torch.sum(q[torch.where(resp.int() > 0.99)]) * self.static_factor / n_points
+        elbo_latent = torch.sum(q_lat[torch.where(resp.int() > 0.99)]) * self.dynamic_factor / n_points
         if post:
             elbo_bas = self.elbo_Linears(resp, respPair, post=post)
         else:
@@ -1403,7 +1404,7 @@ class GPI_HDP():
             frac = torch.sum(torch.softmax(torch.max(snr, dim=1)[0], dim=1), dim=0)
             frac = frac / torch.sum(frac) #* self.n_outputs# * self.M#
         for i in range(self.n_outputs):
-            elbo_bas_LDS = elbo_bas_LDS + self.full_LDS_elbo(gpmodels[i], torch.sum(resp, dim=0), one_sample=one_sample) * frac[i]
+            elbo_bas_LDS = elbo_bas_LDS + self.full_LDS_elbo(gpmodels[i], torch.sum(resp, dim=0), one_sample=one_sample) * frac[i] / n_points
 
         #elbo_bas = elbo_bas + elbo_latent
         #elbo_bas = 0
@@ -1440,7 +1441,7 @@ class GPI_HDP():
         if one_sample:
             return elb / M_
         else:
-            return elb / torch.sum(sum_resp)#/ np.min([M_, self.M]) #
+            return elb #/ np.min([M_, self.M]) #
 
     def redefine_default(self, x_trains, y_trains, resp):
         """ Method to compute Sigma and Gamma from a batch of examples and assign it to initial values.
