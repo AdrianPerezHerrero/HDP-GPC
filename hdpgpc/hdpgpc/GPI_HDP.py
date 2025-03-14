@@ -709,13 +709,21 @@ class GPI_HDP():
         # Initial estimation of full group and conditioning the covariance matrices.
         if self.reestimate_initial_params:
             self.redefine_default(x_trains, y_trains, resp)
-
         startStateCount = None
         transStateCount = None
         reallocate = False
         while True:
             resp, respPair, q, q_lat, snr, end = self.refill(resp, respPair, startStateCount, transStateCount, q, q_lat, snr)
             M = self.M
+            if resp.shape[1] == 1:
+                startStateCount = self.cond_cuda(resp[0])
+                transStateCount = self.cond_cuda(torch.sum(respPair, axis=0))
+                self.reinit_global_params(M, transStateCount, startStateCount)
+                nIters = 2
+                for giter in range(nIters):
+                    self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
+                                                                           self.cond_cuda(startStateCount), M + 1)
+                    self.rho, self.omega = self.find_optimum_rhoOmega()
             if end:
                 break
             resp, respPair, q, q_lat, snr, y_trains_w, reallocate = self.variational_local_terms_batch(M, x_trains, y_trains, y_trains_w,
