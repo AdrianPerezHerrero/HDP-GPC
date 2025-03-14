@@ -827,8 +827,12 @@ class GPI_HDP():
             transStateCount = torch.hstack([transStateCount, torch.zeros((M, 1))])
             transStateCount = torch.vstack([transStateCount, torch.zeros((1, M + 1))])
 
-        rho_, omega_, transTheta_, startTheta_ = self.temp_reinit_global_params(M, torch.clone(transStateCount),
-                                                                                torch.clone(startStateCount))
+        if self.rho.shape[0] == M:
+            rho_ = torch.clone(self.rho)
+            omega_ = torch.clone(self.omega)
+        else:
+            rho_, omega_, transTheta_, startTheta_ = self.temp_reinit_global_params(M, torch.clone(transStateCount),
+                                                                                    torch.clone(startStateCount))
         # nIters = 4
         # for giter in range(nIters):
         transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount)),
@@ -836,6 +840,7 @@ class GPI_HDP():
         # if not post:
         #     # if M > 1:
         #     #     M = M - 1
+
         #     rho_ = torch.clone(self.rho)
         #     omega_ = torch.clone(self.omega)
         #     transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount)),
@@ -1382,8 +1387,8 @@ class GPI_HDP():
                        one_sample=False, verb=True):
         """ Method to compute ELBO terms.
         """
-        q_bas = torch.sum(q[torch.where(resp.int() > 0.99)]) * self.static_factor
-        elbo_latent = torch.sum(q_lat[torch.where(resp.int() > 0.99)]) * self.dynamic_factor# / q.shape[0]
+        q_bas = torch.sum(q[torch.where(resp.int() > 0.99)]) * self.static_factor / q.shape[0]
+        elbo_latent = torch.sum(q_lat[torch.where(resp.int() > 0.99)]) * self.dynamic_factor / q.shape[0]
         if post:
             elbo_bas = self.elbo_Linears(resp, respPair, post=post)
         else:
@@ -1435,7 +1440,7 @@ class GPI_HDP():
         if one_sample:
             return elb / M_
         else:
-            return elb #/ np.min([M_, self.M]) # / torch.sum(sum_resp)
+            return elb / torch.sum(sum_resp)#/ np.min([M_, self.M]) #
 
     def redefine_default(self, x_trains, y_trains, resp):
         """ Method to compute Sigma and Gamma from a batch of examples and assign it to initial values.
