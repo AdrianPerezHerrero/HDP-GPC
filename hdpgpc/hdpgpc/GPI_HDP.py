@@ -1388,12 +1388,12 @@ class GPI_HDP():
         """ Method to compute ELBO terms.
         """
         n_points = self.x_basis[0].shape[0]
-        q_bas = torch.sum(q[torch.where(resp.int() > 0.99)]) * self.static_factor / n_points
-        elbo_latent = torch.sum(q_lat[torch.where(resp.int() > 0.99)]) * self.dynamic_factor / n_points
+        q_bas = torch.sum(q[torch.where(resp.int() > 0.99)]) * self.static_factor
+        elbo_latent = torch.sum(q_lat[torch.where(resp.int() > 0.99)]) * self.dynamic_factor
         if post:
-            elbo_bas = self.elbo_Linears(resp, respPair, post=post)
+            elbo_bas = self.elbo_Linears(resp, respPair, post=post) * n_points
         else:
-            elbo_bas = self.elbo_Linears(resp, respPair)
+            elbo_bas = self.elbo_Linears(resp, respPair) * n_points
         elbo_bas_LDS = 0
         if snr is None:
             frac = torch.ones(self.n_outputs, device=resp.device()) / self.n_outputs#  / self.M
@@ -1404,7 +1404,7 @@ class GPI_HDP():
             frac = torch.sum(torch.softmax(torch.max(snr, dim=1)[0], dim=1), dim=0)
             frac = frac / torch.sum(frac) #* self.n_outputs# * self.M#
         for i in range(self.n_outputs):
-            elbo_bas_LDS = elbo_bas_LDS + self.full_LDS_elbo(gpmodels[i], torch.sum(resp, dim=0), one_sample=one_sample) * frac[i] / n_points
+            elbo_bas_LDS = elbo_bas_LDS + self.full_LDS_elbo(gpmodels[i], torch.sum(resp, dim=0), one_sample=one_sample) * frac[i]
 
         #elbo_bas = elbo_bas + elbo_latent
         #elbo_bas = 0
