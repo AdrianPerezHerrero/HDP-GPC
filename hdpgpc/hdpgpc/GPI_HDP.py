@@ -848,7 +848,7 @@ class GPI_HDP():
             nIters = 1
             for giter in range(nIters):
                 transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount)),
-                                                        self.cond_cuda(torch.clone(startStateCount)), M, rho=rho_)
+                                                        self.cond_cuda(torch.clone(startStateCount)), M + 1, rho=rho_)
                 rho_, omega_ = self.find_optimum_rhoOmega(startTheta=startTheta_,
                                                           transTheta=transTheta_, rho=rho_, omega=omega_, M=M)
         else:
