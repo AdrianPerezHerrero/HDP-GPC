@@ -674,9 +674,9 @@ class GPI_HDP():
         self : returns an instance of self.
         """
         # Redefine HDP hyperparams for batch inclusion
-        self.gamma = 10.0
-        self.transAlpha = 10.0
-        self.startAlpha = 1.0
+        self.gamma = 0.1
+        self.transAlpha = 0.1
+        self.startAlpha = 0.1
         self.kappa = 0.0
         print("------ HDP Hyperparameters ------", flush=True)
         print("gamma: " + str(self.gamma))
@@ -844,8 +844,16 @@ class GPI_HDP():
                                                                                     torch.clone(startStateCount))
         # nIters = 4
         # for giter in range(nIters):
-        transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount)),
-                                                       self.cond_cuda(torch.clone(startStateCount)), M + 1, rho=rho_)
+        if post:
+            nIters = 1
+            for giter in range(nIters):
+                transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount)),
+                                                        self.cond_cuda(torch.clone(startStateCount)), M, rho=rho_)
+                rho_, omega_ = self.find_optimum_rhoOmega(startTheta=startTheta_,
+                                                          transTheta=transTheta_, rho=rho_, omega=omega_, M=M)
+        else:
+            transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount)),
+                                                        self.cond_cuda(torch.clone(startStateCount)), M + 1, rho=rho_)
         # if not post:
         #     # if M > 1:
         #     #     M = M - 1
