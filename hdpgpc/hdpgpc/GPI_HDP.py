@@ -1458,7 +1458,7 @@ class GPI_HDP():
         if one_sample:
             return elb / M_
         else:
-            return elb #/ np.min([M_, self.M]) #
+            return elb / np.min([M_, self.M]) #
 
     def redefine_default(self, x_trains, y_trains, resp):
         """ Method to compute Sigma and Gamma from a batch of examples and assign it to initial values.
