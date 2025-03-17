@@ -728,7 +728,7 @@ class GPI_HDP():
                 break
             resp, respPair, q, q_lat, snr, y_trains_w, reallocate = self.variational_local_terms_batch(M, x_trains, y_trains, y_trains_w,
                                                                     self.transTheta, self.startTheta, resp, respPair, q, q_lat, snr, reallocate, reparam)
-            resp, respPair = self.refill_resp(resp, respPair)
+            #resp, respPair = self.refill_resp(resp, respPair)
             if resp.shape[1] > M:
                 self.M = M + 1
                 M = self.M
@@ -1098,7 +1098,7 @@ class GPI_HDP():
             respPairlog_temp, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
             resp_temp = torch.exp(resplog_temp)
             respPair_temp = torch.exp(respPairlog_temp)
-            resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
+            #resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
 
             resp_per_group_temp = torch.sum(resp_temp, axis=0)
             reorder = torch.argsort(resp_per_group_temp, descending=True)
@@ -1135,7 +1135,7 @@ class GPI_HDP():
             respPairlog_temp, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
             resp_temp = torch.exp(resplog_temp)
             respPair_temp = torch.exp(respPairlog_temp)
-            resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
+            #resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
 
             new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
             print(">>> Prev -------")
@@ -1282,7 +1282,7 @@ class GPI_HDP():
                         self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
                     resp_temp = torch.exp(resplog_temp)
                     respPair_temp = torch.exp(respPairlog_temp)
-                    resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
+                    #resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
 
                     # Reallocating resp to preserve order.
                     resp_per_group_temp = torch.sum(resp_temp, axis=0)
@@ -1337,7 +1337,7 @@ class GPI_HDP():
                         self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
                     resp_temp = torch.exp(resplog_temp)
                     respPair_temp = torch.exp(respPairlog_temp)
-                    resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
+                    #resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
                     q_bas, elbo_bas = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                             self.weight_mean(q_lat, snr_aux), gpmodels_temp, M,
                                                             snr=snr_aux, post=True)
@@ -2074,7 +2074,7 @@ class GPI_HDP():
         logrespPair, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
         resp_temp = torch.exp(logresp)
         respPair_temp = torch.exp(logrespPair)
-        resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
+        #resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
         # Finally see if it is worthy to birth new cluster
         #new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
         print(">>> Q_all_loop -------")
