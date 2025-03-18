@@ -1462,7 +1462,7 @@ class GPI_HDP():
         if one_sample:
             return elb #/ M_
         else:
-            return elb / np.min([M_, self.M]) #
+            return elb #/ np.min([M_, self.M]) #
 
     def redefine_default(self, x_trains, y_trains, resp):
         """ Method to compute Sigma and Gamma from a batch of examples and assign it to initial values.
@@ -1631,11 +1631,11 @@ class GPI_HDP():
                 prov_gp = self.gpmodel_deepcopy(self.gpmodels[ld][m])
                 prov_gp.reinit_GP(save_last=False)
                 prov_gp.reinit_LDS(save_last=False)
-                q_prev[[-1], -1, ld] = self.estimate_new(t, prov_gp, self.x_train[-1], y_mod[-1][-1], h=0.1)
+                q_prev[[-1], -1, ld] = self.estimate_new(t, prov_gp, self.x_train[-1], y_mod[-1][-1], h=1.0)
                 prov_gp.include_weighted_sample(t, self.x_train[-1], self.x_train[-1], y_mod[-1][-1], 1.0)
                 self.gpmodels[ld].append(prov_gp)
                 #self.M = M + 1
-                q_lat_prev[:, -1, ld] = prov_gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)), h_ini=0.1)
+                q_lat_prev[:, -1, ld] = prov_gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)), h_ini=1.0)
             resp_prev, resp_prev_log, respPair_prev, respPair_prev_log = self.variational_local_terms(q_prev, self.transTheta, self.startTheta, liks)
             q_prev_post, elbo_prev_post = self.compute_q_elbo(resp_prev, respPair_prev, self.weight_mean(q_prev), self.weight_mean(q_lat_prev),
                                                   self.gpmodels, self.M, snr='saved', one_sample=True, post=True, verb=self.verbose)
@@ -1808,10 +1808,10 @@ class GPI_HDP():
         self.compute_q_elbo(resp[:,:M], respPair[:,:M,:M], self.weight_mean(q_chos)[:,:M],
                             self.weight_mean(q_lat_chos)[:,:M],
                             self.gpmodels, self.M, snr='saved', post=False, one_sample=True)
-        q_ = torch.zeros((self.T, self.M, self.n_outputs))
-        for ld in range(self.n_outputs):
-            q_[:,:,ld] = self.compute_q(y=y_mod, gpmodels=self.gpmodels[ld], ld=ld)
-        self.q.append(q_)
+        # q_ = torch.zeros((self.T, self.M, self.n_outputs))
+        # for ld in range(self.n_outputs):
+        #     q_[:,:,ld] = self.compute_q(y=y_mod, gpmodels=self.gpmodels[ld], ld=ld)
+        self.q.append(q_chos)
         for ld in range(self.n_outputs):
             if len(self.gpmodels[ld][model].indexes) > 1 and self.warp_updating[model] and with_warp:
                 self.wp_sys[ld][model].update_warp(x_train, self.x_w[-1][model])
