@@ -236,23 +236,24 @@ class GPI_model():
                     C = self.C[-1]
                 else:
                     C = torch.eye(x_train.shape[0], device=self.device)
-
         #If first iteration we add the kernel noise.
         if first:
             #ini_noise = self.cond_to_cuda(self.cond_to_torch(self.gp.kernel.get_params()["k2__noise_level"])) * 1e-4
-            ini_noise = torch.mean(torch.diag(self.Sigma[0])) * 1e-1
+            ini_noise = torch.mean(torch.diag(self.Sigma[0])) * 1e-0
             cov_f = cov_f + torch.mul(ini_noise, torch.eye(len(x_train), device=ini_noise.device))
         # If we have a projection we have to add an extra noise because of the smooth conditions of the
         # interpolation. We assume this condition if we have as basis points less than a third of the training.
         #if len(self.x_basis) / len(x_train) <= 0.5:
             #cov_f = 0.5 * torch.diag(torch.diag(cov_f))
             #cov_f = 0.01 * cov_f + 0.99 * torch.diag(torch.diag(cov_f))
-        exp_t_t_ = lat_cov + torch.matmul(lat_f, lat_f.T)
+        #exp_t_t_ = lat_cov + torch.matmul(lat_f, lat_f.T)
         #exp_t_t = lat_cov + torch.matmul(f_star, f_star.T)
         Sigma_inv = torch.linalg.solve(cov_f, self.cond_to_cuda(torch.eye(t)))
         err = -1 / 2 * torch.linalg.multi_dot([y.T, Sigma_inv, y])\
-              + torch.linalg.multi_dot([y.T, Sigma_inv, f_star]) \
-              - 1 / 2 * torch.trace(torch.linalg.multi_dot([C.T, Sigma_inv, C, exp_t_t_])) \
+              + 1 / 2 * torch.linalg.multi_dot([y.T, Sigma_inv, f_star]) \
+              + 1 / 2 * torch.linalg.multi_dot([f_star.T, Sigma_inv, y]) \
+              - 1 / 2 * torch.linalg.multi_dot([f_star.T, Sigma_inv, f_star])
+              #- 1 / 2 * torch.trace(torch.linalg.multi_dot([C.T, Sigma_inv, C, exp_t_t_])) \
               #- 1 / 2 * torch.trace(torch.linalg.multi_dot([Sigma_inv, exp_t_t]))
               # - 1 / 2 * torch.trace(cov_f)
         #Scale with dimension:
@@ -262,7 +263,6 @@ class GPI_model():
     def log_lat_error(self, i, h_ini):
         """Compute the log-squared-error of the latent process.
         """
-        err = 0.0
         if i == 0:
             cov_f_ = self.cov_f_sm[i + 1]
             lat_f_ = self.f_star_sm[i + 1]
@@ -278,17 +278,18 @@ class GPI_model():
                 Gamma_inv = torch.linalg.solve(self.Gamma[-1], self.cond_to_cuda(torch.eye(self.Gamma[-1].shape[0])))
                 A = self.A[-1]
         #cov_f = self.cov_f_sm[i + 1]
-        lat_f = self.f_star_sm[i + 1]
+        lat_f = self.f_star_sm[i + 1]#
         #Gamma = self.Gamma[i]
 
         #t = Gamma.shape[0]
         exp_t_t_ = cov_f_ + torch.matmul(lat_f_, lat_f_.T)
-        #xp_t_t = cov_f + torch.matmul(lat_f, lat_f.T)
+        #exp_t_t = cov_f + torch.matmul(lat_f, lat_f.T)
         #A = self.A[i + 1]
         #Gamma_inv = torch.linalg.solve(Gamma, self.cond_to_cuda(torch.eye(Gamma.shape[0])))
         err = -1 / 2 * torch.linalg.multi_dot([lat_f.T, Gamma_inv, lat_f]) \
               + torch.linalg.multi_dot([lat_f.T, Gamma_inv, A, lat_f_]) \
               - 1 / 2 * torch.trace(torch.linalg.multi_dot([A.T, Gamma_inv, A, exp_t_t_])) \
+              #- 1 / 2 * torch.trace(torch.linalg.multi_dot([lat_f_.T, A.T, Gamma_inv, A, lat_f_])) \
               #- 1 / 2 * torch.trace(torch.linalg.multi_dot([Gamma_inv, exp_t_t]))
               # - 1 / 2 * torch.trace(Gamma)
         return err# / 2.0
@@ -432,10 +433,10 @@ class GPI_model():
         ini_A, ini_Gamma, ini_C, ini_Sigma, n0 = self.A_def, self.Gamma_def, self.C_def, self.Sigma_def, self.internal_params.n0
         if first:
             #ini_noise = self.cond_to_cuda(self.cond_to_torch(self.gp.kernel.get_params()["k2__noise_level"]))
-            ini_noise = torch.mean(torch.diag(self.Sigma[-1])) #* 1e-1
-            ini_noise_ = torch.mean(torch.diag(self.Gamma[-1])) #* 1e-1
+            ini_noise = torch.mean(torch.diag(self.Sigma[-1])) * 2e-0
+            ini_noise_ = torch.mean(torch.diag(self.Gamma[-1])) * 2e-0
             A_, Gam_, C_, Sig_ = (self.A[-1],
-                                  self.Gamma[-1] + torch.mul(ini_noise_, torch.eye(self.Sigma[-1].shape[0],
+                                  self.Gamma[-1] + torch.mul(ini_noise_, torch.eye(self.Gamma[-1].shape[0],
                                                                                   device=ini_noise.device)),
                                   self.C[-1],
                                   self.Sigma[-1] + torch.mul(ini_noise, torch.eye(self.Sigma[-1].shape[0],
@@ -447,7 +448,7 @@ class GPI_model():
         int_params = matrix_normal_inv_wishart(ini_A, torch.eye(ini_A.shape[0], device=self.device), self.free_deg_MNIV, ini_Gamma)
         obs_params = matrix_normal_inv_wishart(ini_C, torch.eye(ini_C.shape[0], device=self.device), self.free_deg_MNIV, ini_Sigma)
         elb_LDS = elb_LDS + int_params.log_likelihood_MNIW(A_, Gam_, n0) + obs_params.log_likelihood_MNIW(C_, Sig_, n0)
-        return elb_LDS #/ len(self.A)
+        return elb_LDS# / len(self.A)
 
     def compute_sq_err_all(self, x_trains, y_trains, no_first=False):
         """ Method to compute the squared error over all provided examples y_trains.
@@ -554,25 +555,25 @@ class GPI_model():
             if len(self.indexes) == 0:
                 C = self.C[0]
                 Sigma = self.Sigma[0]
-                mean = torch.matmul(C, self.f_star[0])
+                mean = torch.matmul(C, self.f_star_sm[0])
             #Case when computing error with last (predict)
             elif len(self.indexes) <= t:
                 C = self.C[-1]
                 Sigma = self.Sigma[-1]
                 A = self.A[-1]
                 Gamma = self.Gamma[-1]
-                mean = torch.linalg.multi_dot([C, self.f_star[-1]])
+                mean = torch.linalg.multi_dot([C, self.f_star_sm[-1]])
             elif self.estimation_limit <= t:
                 C = self.C[-1]
                 Sigma = self.Sigma[-1]
                 if proj:
                     Sigma = Sigma + self.Gamma[-1]
-                mean = torch.matmul(C, self.f_star[t])
+                mean = torch.matmul(C, self.f_star_sm[t])
             else:
                 A, Gamma, C, Sigma = self.get_params(t)
                 if proj:
                     Sigma = Sigma + Gamma
-                mean = torch.matmul(C, self.f_star[t])
+                mean = torch.matmul(C, self.f_star_sm[t])
         else:
             mean = params[0]
             Sigma = params[3]
@@ -1266,13 +1267,12 @@ class matrix_normal_inv_wishart():
                    # - d * 0.5 * torch.logdet(self.m_r_cov)\
                    # - self.n0 * 0.5 * torch.logdet(self.scale)\
                    # - self.n0 * d * 0.5 * torch.log(torch.tensor(2.0 * torch.pi, device=self.scale.device))
-        # scale_lik = - (self.n0 + 1) * 0.5 * torch.logdet(Sigma) \
-        #             - 0.5 * torch.trace(torch.matmul(sig_inv, self.scale)) \
-        #             - n0 * 0.5 * torch.logdet(self.scale) \
-        #             - n0 * d * 0.5 * torch.log(torch.tensor(2.0, device=self.scale.device))\
-        #             - torch.special.multigammaln(torch.tensor((n0 + d)*0.5, device=self.scale.device), d) \
-        #             - 0.5 * torch.trace(Sigma)
-        scale_lik = - 0.5 * torch.trace(torch.matmul(sig_inv, self.scale))
+        scale_lik = - 0.5 * torch.trace(torch.matmul(sig_inv, self.scale)) #\
+                    # - (self.n0 + 1) * 0.5 * torch.logdet(Sigma) #\
+                    #- n0 * 0.5 * torch.logdet(self.scale)
+                    #- n0 * d * 0.5 * torch.log(torch.tensor(2.0, device=self.scale.device))\
+                    #- torch.special.multigammaln(torch.tensor((n0 + d)*0.5, device=self.scale.device), d)
+                    # - 0.5 * torch.trace(Sigma)
         #Scale with dimension:
         #scale_lik = scale_lik / self.scale.shape[0]
         #return scale_lik# / d

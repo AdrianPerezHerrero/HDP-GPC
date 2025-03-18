@@ -10,6 +10,7 @@ from hdpgpc.warping_system import Warping_system
 from hdpgpc.OptimizerRhoOmega import find_optimum_multiple_tries, kvec
 
 import numpy as np
+np.random.seed(42)
 from sklearn.gaussian_process.kernels import RBF, WhiteKernel, ConstantKernel
 from scipy.special._ufuncs import psi as digamma
 from scipy.special._ufuncs import gammaln
@@ -19,6 +20,8 @@ from tqdm import trange
 import pickle as plk
 import torch
 torch.set_default_dtype(torch.float64)
+torch.manual_seed(42)
+torch.use_deterministic_algorithms(True)
 
 
 
@@ -100,8 +103,8 @@ class GPI_HDP():
                  check_var=False, bayesian_params=True, cuda=False, inducing_points=False, estimation_limit=None, reestimate_initial_params=False,
                  n_explore_steps=10, free_deg_MNIV=5):
         if M is None:
-            M = 2
-        self.M = M - 1
+            M = 1
+        self.M = M
         self.verbose = verbose
         self.actual_state = 0
         self.cuda = cuda
@@ -160,6 +163,12 @@ class GPI_HDP():
                                  annealing[0], method_compute_warp, model_type[0], recursive_warp[0], warp_updating[0], inducing_points[0],
                                  estimation_limit[0], free_deg_MNIV)
         # Define some characteristics of the model with an initial M decided
+        self.ini_lengthscale = ini_lengthscale
+        self.bound_lengthscale = bound_lengthscale
+        #self.static_factor = ini_sigma[0] / (ini_sigma[0] + ini_gamma[0])
+        #self.dynamic_factor = ini_gamma[0] / (ini_sigma[0] + ini_gamma[0])
+        self.static_factor = ini_sigma[0] / ini_sigma[0]
+        self.dynamic_factor = ini_gamma[0] / ini_gamma[0]
         self.bound_sigma = bound_sigma
         self.bound_gamma = bound_gamma
         #self.static_factor = ini_sigma[0] / (ini_sigma[0] + ini_gamma[0])
@@ -185,7 +194,7 @@ class GPI_HDP():
         self.free_deg_MNIV = free_deg_MNIV
         self.train_elbo = []
         self.resp_assigned = []
-        self.f_ind_old = torch.zeros(M-1, device= self.device).long()
+        self.f_ind_old = torch.zeros(M, device= self.device).long()
         # Define reestimation conditions
         self.min_samples = reest_conditions[0]
         self.max_samples = reest_conditions[1]
@@ -242,18 +251,16 @@ class GPI_HDP():
         # transAlpha represent a factor of prior probability of state-state transition
         # startAlpha represent a factor of prior probability of starting state
         # kappa represent the sticky factor of self transition
+
+        # self.gamma = 700.0
+        # self.transAlpha = 1400.0
+        # self.startAlpha = 1400.0
+        # self.kappa = 0.0
+
         self.gamma = 0.5
         self.transAlpha = 0.5
         self.startAlpha = 0.5
         self.kappa = 0.0
-        # self.gamma = 100.0
-        # self.transAlpha = 200.0
-        # self.startAlpha = 200.0
-        # self.kappa = 0.0
-        # self.gamma = 1.0
-        # self.transAlpha = 2.0
-        # self.startAlpha = 2.0
-        # self.kappa = 0.0
 
         # Model associated with each state
         # Default hyperparameters of GP defining the model.
@@ -296,11 +303,17 @@ class GPI_HDP():
     def reinit_global_params(self, M, transStateCount_, startStateCount_):
         self.rho = self.create_initrho(M)
         self.omega = (1.0 + self.gamma) * torch.ones(M)
-        self.transTheta, self.startTheta = self._calcThetaFull(transStateCount_, startStateCount_)
+        self.transTheta, self.startTheta = self._calcThetaFull(transStateCount_, startStateCount_, M=M)
 
-    def temp_reinit_global_params(self, M, transStateCount_, startStateCount_):
+    def temp_reinit_global_params(self, M, transStateCount_, startStateCount_, rho=None, omega=None):
+        if rho is None:
+            rho = self.rho
+        if omega is None:
+            omega = self.omega
         rho_ = self.create_initrho(M)
+        rho_[:rho.shape[0]] = rho
         omega_ = (1.0 + self.gamma) * torch.ones(M)
+        omega_[:omega.shape[0]] = omega
         transTheta_, startTheta_ = self._calcThetaFull(transStateCount_, startStateCount_, M + 1, rho_)
         return rho_, omega_, transTheta_, startTheta_
 
@@ -310,38 +323,42 @@ class GPI_HDP():
         rho = (1 - remMass) / (M + delta)
         return self.cond_cuda(self.cond_to_torch(rho))
 
-    def _calcThetaPre(self, transStateCount, startStateCount):
-        M = self.M
-        Ebeta = self.rho2beta(self.cond_cpu(self.rho))
+    def _calcThetaPost(self, transStateCount, startStateCount, M):
+        transStateCount_ = transStateCount
+        Ebeta = self.rho2beta(self.cond_cpu(self.rho), returnSize='K+1')
         alphaEbeta = self.transAlpha * Ebeta
 
-        transTheta = self.cond_cuda(torch.zeros((M + 1, M + 1)))
+        transTheta = self.cond_cuda(torch.zeros((M, M)))
         transTheta += alphaEbeta[np.newaxis, :]
-        if not len(transStateCount.shape) == 0 and not transStateCount.shape == (1, 1):
-            kp_ = self.cond_cuda(torch.zeros((M + 1, M + 1)))
-            kp_[:-1, :-1] = self.kappa * self.cond_cuda(torch.eye(M))
-            transTheta[:M + 1, :M + 1] += transStateCount + kp_
+        if not len(transStateCount_.shape) == 0 and not transStateCount_.shape == (1, 1):
+            kp_ = self.cond_cuda(torch.zeros((M, M)))
+            kp_[:-1, :-1] = self.kappa * self.cond_cuda(torch.eye(M-1))
+            transTheta[:M, :M] += transStateCount_ + kp_
         else:
-            transTheta[:M, :M] += transStateCount + self.kappa * self.cond_cuda(torch.eye(M))
+            transTheta[:M, :M] += transStateCount_ + self.kappa * self.cond_cuda(torch.eye(M))
 
         startTheta = self.startAlpha * Ebeta
-        startTheta[:M + 1] += startStateCount
+        startTheta[:M] += startStateCount
 
         return transTheta, startTheta
 
     def _calcThetaFull(self, transStateCount, startStateCount, M=None, rho=None, kappa=None):
+        transStateCount_ = transStateCount
         if M is None:
             M = self.M + 1
         if rho is None:
             rho = self.rho
         if kappa is None:
             kappa = self.kappa
-        Ebeta = self.rho2beta(self.cond_cpu(rho))
+        if M == rho.shape[0]:
+            Ebeta = self.rho2beta(self.cond_cpu(rho), returnSize='K')
+        else:
+            Ebeta = self.rho2beta(self.cond_cpu(rho), returnSize='K+1')
         alphaEbeta = self.transAlpha * Ebeta
 
         transTheta = self.cond_cuda(torch.zeros((M, M)))
         transTheta += alphaEbeta[np.newaxis, :]
-        transTheta[:M-1, :M-1] += transStateCount[:M-1,:M-1] + kappa * self.cond_cuda(torch.eye(M-1))
+        transTheta[:M-1, :M-1] += transStateCount_[:M-1,:M-1] + kappa * self.cond_cuda(torch.eye(M-1))
 
         startTheta = self.startAlpha * Ebeta
         startTheta[:M-1] += startStateCount[:M-1]
@@ -629,11 +646,15 @@ class GPI_HDP():
                 y_trains[:, :, ld]])
         self.snr_norm = torch.softmax(snr, dim=1)
 
-    def compute_snr(self, y_trains, mean):
+    def compute_snr(self, y_trains, gp):
         """ Iterative computation of snr
         """
+        snr = torch.zeros(y_trains.shape[0])
         snr_comp = SignalNoiseRatio()
-        snr = torch.tensor([snr_comp(y, mean) for y in y_trains])
+        for t in range(y_trains.shape[0]):
+            j = np.min([np.max([gp.find_closest_lower(t), 1]), len(gp.f_star_sm) - 1])
+            snr[t] = snr_comp(y_trains[t], gp.f_star_sm[j].T[0])
+        #snr = torch.tensor([0.5] * y_trains.shape[0])
         return snr
 
     def normalize_snr(self, snr):
@@ -654,12 +675,17 @@ class GPI_HDP():
         -------
         self : returns an instance of self.
         """
-        #Redefine HDP hyperparams for batch inclusion
-        self.gamma = 2.0
-        self.transAlpha = 2.0
-        self.startAlpha = 2.0
+        # # Redefine HDP hyperparams for batch inclusion
+        self.gamma = 0.8
+        self.transAlpha = 0.8
+        self.startAlpha = 0.8
         self.kappa = 0.0
-
+        print("------ HDP Hyperparameters ------", flush=True)
+        print("gamma: " + str(self.gamma))
+        print("transAlpha: " + str(self.transAlpha))
+        print("startAlpha: " + str(self.startAlpha))
+        print("kappa: " + str(self.kappa))
+        print("---------------------------------", flush=True)
         n_samples = np.array(y_trains).shape[0]
         n_outputs = np.array(y_trains).shape[2]
         t = self.T
@@ -673,11 +699,11 @@ class GPI_HDP():
         reparam = True
         #Start loop of EM
         elbo = -np.inf
-        resp = self.cond_cuda(torch.zeros((n_samples, M + 1)))
-        respPair = self.cond_cuda(torch.zeros((n_samples, M + 1, M + 1)))
+        resp = self.cond_cuda(torch.zeros((n_samples, M)))
+        respPair = self.cond_cuda(torch.zeros((n_samples, M, M)))
         respPair[:,0,0] = respPair[:,0,0] + 1.0
-        q = self.cond_cuda(torch.zeros((n_samples, M + 1, n_outputs)))
-        q_lat = self.cond_cuda(torch.zeros((n_samples, M + 1, n_outputs)))
+        q = self.cond_cuda(torch.zeros((n_samples, M, n_outputs)))
+        q_lat = self.cond_cuda(torch.zeros((n_samples, M, n_outputs)))
         snr = self.snr_norm
         resp[:, 0] = resp[:, 0] + 1.0
         y_trains_w = torch.clone(y_trains)
@@ -685,42 +711,67 @@ class GPI_HDP():
         # Initial estimation of full group and conditioning the covariance matrices.
         if self.reestimate_initial_params:
             self.redefine_default(x_trains, y_trains, resp)
-
         startStateCount = None
         transStateCount = None
         reallocate = False
         while True:
-            resp, respPair, q, q_lat, snr, end = self.new_model_or_refill(resp, respPair, startStateCount, transStateCount, q, q_lat, snr)
+            resp, respPair, q, q_lat, snr, end = self.refill(resp, respPair, startStateCount, transStateCount, q, q_lat, snr)
             M = self.M
-            if end:
-                break
-            resp, respPair, q, q_lat, snr, y_trains_w, reallocate = self.variational_local_terms_batch(M + 1, x_trains, y_trains, y_trains_w,
-                                                                    self.transTheta, self.startTheta, resp, respPair, q, q_lat, snr, reallocate, reparam)
-            resp, respPair = self.refill_resp(resp, respPair)
-            if self.hmm_switch:
+            if resp.shape[1] == 1:
                 startStateCount = self.cond_cuda(resp[0])
                 transStateCount = self.cond_cuda(torch.sum(respPair, axis=0))
+                self.reinit_global_params(M, transStateCount, startStateCount)
+                nIters = 2
+                for giter in range(nIters):
+                    self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
+                                                                           self.cond_cuda(startStateCount), M + 1)
+                    self.rho, self.omega = self.find_optimum_rhoOmega()
+            if end:
+                break
+            resp, respPair, q, q_lat, snr, y_trains_w, reallocate = self.variational_local_terms_batch(M, x_trains, y_trains, y_trains_w,
+                                                                    self.transTheta, self.startTheta, resp, respPair, q, q_lat, snr, reallocate, reparam)
+            #resp, respPair = self.refill_resp(resp, respPair)
+            if resp.shape[1] > M:
+                self.M = M + 1
+                M = self.M
+                #n_samples = self.T
+                #resp__ = self.cond_cuda(torch.zeros((n_samples, M + 1)))
+                #resp__[:, :-1] = torch.clone(resp)
+                #respPair__ = self.cond_cuda(torch.zeros((n_samples, M + 1, M + 1)))
+                #respPair__[:, :-1, :-1] = torch.clone(respPair)
+            resp__ = torch.clone(resp)
+            respPair__= torch.clone(respPair)
+            # Update HDP variational params.
+            if self.hmm_switch:
+                startStateCount = self.cond_cuda(resp__[0])
+                transStateCount = self.cond_cuda(torch.sum(respPair__, axis=0))
             else:
                 transStateCount = self.cond_cuda(torch.ones((M + 1, M + 1)))  # Cause we are in independent observations
                 startStateCount = self.cond_cuda(torch.ones(M + 1))
 
-            nIters = 4
+            self.reinit_global_params(M, transStateCount, startStateCount)
+            nIters = 2
             for giter in range(nIters):
-                self.rho, self.omega = self.find_optimum_rhoOmega()
                 self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
-                                                                      self.cond_cuda(startStateCount))
+                                                                       self.cond_cuda(startStateCount), M + 1)
+                self.rho, self.omega = self.find_optimum_rhoOmega()
+
+            #Update transition matrix
+            digammaSumTransTheta = torch.log(
+                torch.sum(torch.exp(digamma(self.cond_cpu(self.transTheta[:M, :M + 1]))), axis=1))
+            transPi = digamma(self.cond_cpu(self.transTheta[:M, :M])) - digammaSumTransTheta[:, np.newaxis]
+            self.trans_A = transPi
             # Compute ELBO and start steps of EM
             # TODO: adapt this option to full cuda implementation.
             if self.T > 1:
                 elbo_ = self.calcELBO_NonlinearTerms(resp=self.cond_to_numpy(self.cond_cpu(resp)),
                                                              respPair=self.cond_to_numpy(self.cond_cpu(respPair)))
-
-                q_obs, elbo_lin = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat), self.gpmodels, self.M, snr='saved', prev=False)
+                print('\n-------End Lower Bound Iteration ' + str(iteration) + '-------')
+                q_obs, elbo_lin = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat), self.gpmodels, self.M, snr='saved', post=False)
                 elbo_ = elbo_ + elbo_lin + q_obs
-                print("Mean_sq: "+str(q_obs))
-                print("ELBO: "+ str(elbo_))
+                print("ELBO + Nonlinear: "+ str(elbo_))
                 iteration = iteration + 1
-                print('\n-------Lower Bound Iteration '+str(iteration)+'-------')
+                print('\n-------Start lower Bound Iteration '+str(iteration)+'-------')
                 if it_limit is not None and iteration >= it_limit:
                     self.train_elbo.append(elbo_)
                     self.resp_assigned.append(torch.where(resp == 1.0)[1])
@@ -728,8 +779,8 @@ class GPI_HDP():
                 resp_group = torch.sum(resp, axis=0)
                 self.train_elbo.append(elbo_)
                 self.resp_assigned.append(torch.where(resp == 1.0)[1])
-                if ((np.isclose(elbo, elbo_, rtol=1e-5) and resp_group[-1] < 1.0) or
-                        torch.where(resp_group==0.0)[0].shape[0] > 1.0):
+                if (torch.where(resp_group==0.0)[0].shape[0] > 1.0 or
+                        (len(self.resp_assigned) >1 and torch.all(self.resp_assigned[-2] == self.resp_assigned[-1]))):
                     if warp_computed or not warp:
                         if not warp:
                             self.y_train = y_trains
@@ -772,87 +823,135 @@ class GPI_HDP():
         self.y_train = y_trains_w
         return q, q_lat, warp_computed
 
-
-    def elbo_Linears(self, resp, respPair, prev=False):
+    def elbo_Linears(self, resp, respPair, post=False, one_sample=False):
         """ Compute ELBO for linear terms. HDP.
         """
         startStateCount = resp[0]
         transStateCount = torch.sum(respPair, axis=0)
-        if prev:
-            if transStateCount[0,0] == torch.sum(transStateCount):
-                M = resp.shape[1] - 1
-                rho_, omega_, transTheta_, startTheta_ = self.temp_reinit_global_params(1,
-                                                                                        torch.clone(transStateCount[:M, :M]),
-                                                                                        torch.clone(startStateCount[:M]))
-            else:
-                M = resp.shape[1]-1
-                rho_, omega_, transTheta_, startTheta_ = self.temp_reinit_global_params(M-1, torch.clone(transStateCount[:M,:M]),
-                                                                                       torch.clone(startStateCount[:M]))
-                for giter in range(4):
-                    transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount[:M,:M])),
-                                                                   self.cond_cuda(torch.clone(startStateCount[:M])), M, rho=rho_)
-                    rho_, omega_ = self.find_optimum_rhoOmega(startTheta_, transTheta_, rho=rho_, omega=omega_, M=M)
+        M = resp.shape[1]
 
-                transStateCount = transStateCount[:M ,:M]
-                startStateCount = startStateCount[:M]
+        # Augment suff stats to be sure have 0 in final column,
+        # which represents inactive states.
+        if startStateCount.shape[0] == M:
+            startStateCount = torch.hstack([startStateCount, torch.zeros(1)])
+        if transStateCount.shape[-1] == M:
+            transStateCount = torch.hstack([transStateCount, torch.zeros((M, 1))])
+            transStateCount = torch.vstack([transStateCount, torch.zeros((1, M + 1))])
 
-        else:
+        if self.rho.shape[0] == M:
             rho_ = torch.clone(self.rho)
             omega_ = torch.clone(self.omega)
-            for giter in range(2):
+        else:
+            rho_, omega_, transTheta_, startTheta_ = self.temp_reinit_global_params(M, torch.clone(transStateCount),
+                                                                                    torch.clone(startStateCount))
+        # nIters = 4
+        # for giter in range(nIters):
+        if post:
+            nIters = 1
+            for giter in range(nIters):
                 transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount)),
-                                                               self.cond_cuda(torch.clone(startStateCount)), rho=rho_)
-                rho_, omega_ = self.find_optimum_rhoOmega(startTheta_, transTheta_, rho=rho_, omega=omega_)
+                                                        self.cond_cuda(torch.clone(startStateCount)), M + 1, rho=rho_)
+                if not one_sample:
+                    rho_, omega_ = self.find_optimum_rhoOmega(startTheta=startTheta_,
+                                                              transTheta=transTheta_, rho=rho_, omega=omega_, M=M)
+        else:
+            transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount)),
+                                                        self.cond_cuda(torch.clone(startStateCount)), M + 1, rho=rho_)
+        # if not post:
+        #     # if M > 1:
+        #     #     M = M - 1
+
+        #     rho_ = torch.clone(self.rho)
+        #     omega_ = torch.clone(self.omega)
+        #     transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount)),
+        #                                                     self.cond_cuda(torch.clone(startStateCount)),
+        #                                                     rho=rho_, M=M)
+        #     # for giter in range(2):
+        #     #     rho_, omega_ = self.find_optimum_rhoOmega(startTheta_, transTheta_, rho=rho_, omega=omega_)
+        # else:
+        #     if M > 2:
+        #         rho_, omega_, transTheta_, startTheta_ = self.temp_reinit_global_params(M, torch.clone(transStateCount),
+        #                                                                                 torch.clone(startStateCount))
+        #         # nIters = 4
+        #         # for giter in range(nIters):
+        #         transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount)),
+        #                                                     self.cond_cuda(torch.clone(startStateCount)), M, rho=rho_)
+        #             # rho_, omega_ = self.find_optimum_rhoOmega(startTheta=startTheta_,
+        #             #                                           transTheta=transTheta_, rho=rho_, omega=omega_, M=M)
+        #     else:
+        #         rho_ = torch.clone(self.rho)
+        #         omega_ = torch.clone(self.omega)
+        #         transTheta_, startTheta_ = self._calcThetaPost(self.cond_cuda(torch.clone(transStateCount)),
+        #                                                     self.cond_cuda(torch.clone(startStateCount)), M)
+
+
         return self.calcELBO_LinearTerms(rho=self.cond_to_numpy(self.cond_cpu(rho_)),
-                                  omega=self.cond_to_numpy(self.cond_cpu(omega_)),
-                                  alpha=self.transAlpha,
-                                  startAlpha=self.startAlpha,
-                                  kappa=self.kappa, gamma=self.gamma,
-                                  transTheta=self.cond_to_numpy(self.cond_cpu(transTheta_)),
-                                  startTheta=self.cond_to_numpy(self.cond_cpu(startTheta_)),
-                                  startStateCount=self.cond_to_numpy(self.cond_cpu(startStateCount)),
-                                  transStateCount=self.cond_to_numpy(torch.clone(self.cond_cpu(transStateCount))))
+                                         omega=self.cond_to_numpy(self.cond_cpu(omega_)),
+                                         alpha=self.transAlpha,
+                                         startAlpha=self.startAlpha,
+                                         kappa=self.kappa, gamma=self.gamma,
+                                         transTheta=self.cond_to_numpy(self.cond_cpu(transTheta_)),
+                                         startTheta=self.cond_to_numpy(self.cond_cpu(startTheta_)),
+                                         startStateCount=self.cond_to_numpy(self.cond_cpu(startStateCount)),
+                                         transStateCount=self.cond_to_numpy(
+                                             torch.clone(self.cond_cpu(transStateCount))))
 
 
-    def new_model_or_refill(self, resp, respPair, startStateCount, transStateCount, q, q_lat, snr):
+    def refill(self, resp, respPair, startStateCount, transStateCount, q, q_lat, snr):
         """ Redistribute the responsibility for not letting empty clusters and generate a new model if needed.
         """
         resp_per_group = torch.sum(resp, axis=0)
-        n_samples = self.T
-        print("Group responsability estimated: "+str(resp_per_group.detach().cpu().numpy().astype(np.int64)))
-        if not torch.any(resp_per_group[:-1] < 1.0):
-            if resp_per_group[-1] >= 1.0:
-                self.M = self.M + 1
-                M = self.M
-                resp_ = self.cond_cuda(torch.zeros((n_samples, M + 1)))
-                resp_[:,:-1] = resp
-                resp = resp_
-                respPair_ = self.cond_cuda(torch.zeros((n_samples, M + 1, M + 1)))
-                respPair_[:,:-1,:-1] = respPair
-                respPair = respPair_
-                q_ = self.cond_cuda(torch.zeros((n_samples, M + 1, self.n_outputs)))
-                q_[:,:-1,:] = q
-                q = q_
-                q_lat_ = self.cond_cuda(torch.zeros((n_samples, M + 1, self.n_outputs)))
-                q_lat_[:, :-1, :] = q_lat
-                q_lat = q_lat_
-                snr_ = self.cond_cuda(torch.zeros((n_samples, M + 1, self.n_outputs)) - np.abs(torch.min(snr, dim=1)[0])[:,np.newaxis] * 2.0)
-                snr_[:,:-1,:] = snr
-                snr = snr_
-                self.reinit_global_params(M, transStateCount, startStateCount)
-                nIters = 4
-                for giter in range(nIters):
-                    self.rho, self.omega = self.find_optimum_rhoOmega()
-                    self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
-                                                                           self.cond_cuda(startStateCount))
-        else:
-            #Case where last is filled and exists an empty group
+        print("Group responsability estimated: "+str(resp_per_group.detach().cpu().numpy().astype(np.int64)), flush=True)
+        if torch.any(resp_per_group[:-1] < 1.0):
+            # Case where last is filled and exists an empty group
             if resp_per_group[-1] >= 1.0:
                 resp, respPair = self.refill_resp(resp, respPair)
             else:
                 print("Empty group detected, new iteration.\n")
                 return resp, respPair, q, q_lat, snr, True
         return resp, respPair, q, q_lat, snr, False
+
+    def reorder(self, resp, respPair, q, q_lat):
+        """ Reorder the responsibility to have a sorted assignation.
+        """
+        resp_per_group = torch.sum(resp, axis=0)
+        reorder = torch.argsort(resp_per_group, descending=True)
+        resp = resp[:, reorder]
+        respPair = respPair[:, reorder, :]
+        respPair = respPair[:, :, reorder]
+        q = q[:, reorder]
+        q_lat = q_lat[:, reorder]
+        M = self.M
+        gpmodels_temp = [[] * M] * self.n_outputs
+        wp_sys = [] * M
+        for ld in range(self.n_outputs):
+            for i in range(M):
+                gpmodels_temp[ld].append(self.gpmodels[ld][reorder[i]])
+                wp_sys.append(self.wp_sys[reorder[i]])
+        self.gpmodels = gpmodels_temp
+        self.wp_sys = wp_sys
+        return resp, respPair, q, q_lat
+
+    def new_group(self, resp, respPair, q, q_lat, snr):
+        M = resp.shape[1]
+        n_samples = self.T
+        resp_ = self.cond_cuda(torch.zeros((n_samples, M + 1)))
+        resp_[:, :-1] = resp
+        resp = resp_
+        respPair_ = self.cond_cuda(torch.zeros((n_samples, M + 1, M + 1)))
+        respPair_[:, :-1, :-1] = respPair
+        respPair = respPair_
+        q_ = self.cond_cuda(torch.zeros((n_samples, M + 1, self.n_outputs)))
+        q_[:, :-1, :] = q
+        q = q_
+        q_lat_ = self.cond_cuda(torch.zeros((n_samples, M + 1, self.n_outputs)))
+        q_lat_[:, :-1, :] = q_lat
+        q_lat = q_lat_
+        snr_ = self.cond_cuda(
+            torch.zeros((n_samples, M + 1, self.n_outputs)) - np.abs(torch.min(snr, dim=1)[0])[:, np.newaxis] * 2.0)
+        snr_[:, :-1, :] = snr
+        snr = snr_
+        return resp, respPair, q, q_lat, snr
 
     def refill_resp(self, resp, respPair=None):
         """ Refill HDP parameters if a model is reasignated.
@@ -909,24 +1008,36 @@ class GPI_HDP():
         i = 0
         reparam = True
         resp_per_group = torch.sum(resp, axis=0)
-        if resp_per_group[-2] >= 1.0 or not self.gpmodels[0][0].fitted:
+        if resp_per_group.shape[0] == 1.0 or resp_per_group[-2] >= 1.0 or not self.gpmodels[0][0].fitted:
             resp, respPair, q, q_lat, snr, y_trains_w, reallocate = self.estimate_q_first(M, x_trains=x_trains, y_trains=y_trains,
                                          y_trains_w=y_trains_w, resp=resp, respPair=respPair, q_=q, q_lat_=q_lat, snr_=snr,
                                          startPi=startPi, transPi=transPi, reallocate_=reallocate, reparam=reparam)
-            q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat), self.gpmodels, self.M, snr='saved')
+            if resp.shape[1] > self.M:
+                q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat),
+                                                      self.gpmodels, self.M, snr='saved', post=True)
+            else:
+                q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat),
+                                                      self.gpmodels, self.M, snr='saved', post=False)
             i = i + 1
-            print("First resp: "+str(torch.sum(resp, axis=0)))
+            print("First resp: " + str(torch.sum(resp, dim=0).int().numpy()))
         else:
-            q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat), self.gpmodels, self.M, snr='saved')
+            q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat), self.gpmodels, self.M, snr='saved', post=False)
             print("Not first estimated q.")
         if not reallocate:
             while True:
+                M = resp.shape[1]
                 resp, respPair, q, q_lat, snr, y_trains_w, gpmodels = self.estimate_q_all( M, x_trains=x_trains, y_trains=y_trains, y_trains_w=y_trains_w,
                                                resp=resp, respPair=respPair, q_=q, q_lat_=q_lat, snr_=snr, startPi=startPi, transPi=transPi,
                                                reparam=reparam)
                 self.gpmodels = gpmodels
-                print("Current resp: "+str(torch.sum(resp, axis=0)))
-                q_post, elbo_post = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat), self.gpmodels, self.M, snr='saved')
+                if resp.shape[1] > self.M:
+                    q_post, elbo_post = self.compute_q_elbo(resp, respPair, self.weight_mean(q),
+                                                            self.weight_mean(q_lat), self.gpmodels, self.M, snr='saved',
+                                                            post=True)
+                else:
+                    q_post, elbo_post = self.compute_q_elbo(resp, respPair, self.weight_mean(q),
+                                                            self.weight_mean(q_lat), self.gpmodels, self.M, snr='saved',
+                                                            post=False)
                 print("ELBO_reduction: "+str(((q_post + elbo_post) - (q_bas + elbo_bas)).item()))
                 if (torch.isclose(q_bas + elbo_bas, q_post + elbo_post, rtol=1e-5) and i > 0) or i==10:# or reparam:
                     if not reparam:
@@ -950,25 +1061,24 @@ class GPI_HDP():
                 gp = self.create_gp_default()
                 q_[:, 0, ld], q_lat_[:, 0, ld]= gp.full_pass_weighted(x_trains, y_trains[:, :, [ld]], resp[:, 0],
                                                      snr=self.snr_norm[:, ld])
-                snr_[:, 0, ld] = self.compute_snr(y_trains[:, :, ld], gp.f_star[-1].T[0])
+                snr_[:, 0, ld] = self.compute_snr(y_trains[:, :, ld], gp)
                 self.gpmodels[ld][0] = gp
         reallocate = False
 
         q_simple = torch.clone(q_)
 
         indexes_ = []
-        for m in range(M-1):
+        for m in range(M):
             indexes_.append(torch.tensor(self.gpmodels[0][m].indexes).long())
             if indexes_[m].shape[0] == 0:
                 indexes_[m] = torch.where(resp[:, m] == self.cond_cuda(torch.tensor(1.0)))[0].long()
-        f_ind_old = torch.zeros(M, device=resp.device).long()
-        f_ind_old[:self.f_ind_old.shape[0]] = torch.clone(self.f_ind_old)
+        f_ind_old = torch.clone(self.f_ind_old)
 
         # Compute q with best index of the old model.
         snr_temp = torch.zeros(y_trains.shape[0], M, self.n_outputs)
         for ld in range(self.n_outputs):
             print("\n-----------Lead " + str(ld + 1) + "-----------")
-            for m in range(M-1):
+            for m in range(M):
                 gp = self.gpmodel_deepcopy(self.gpmodels[ld][m])
                 if gp.fitted:
                     gp.reinit_LDS(save_last=False)
@@ -976,9 +1086,9 @@ class GPI_HDP():
                 if len(indexes_[m]) > 0:
                     gp.include_weighted_sample(0, x_trains[f_ind_old[m]], x_trains[f_ind_old[m]], y_trains_w[f_ind_old[m],:,[ld]], h=1.0)
                 q_simple[:, m, ld] = gp.compute_sq_err_all(x_trains, y_trains_w[:,:, [ld]])
-                snr_temp[:, m, ld] = self.compute_snr(y_trains[:,:,ld], gp.f_star[-1].T[0])
+                snr_temp[:, m, ld] = self.compute_snr(y_trains[:,:,ld], gp)
 
-        if M > 2:
+        if M > 1:
             q_aux = torch.clone(q_simple)
             snr_aux = torch.clone(snr_)
             if torch.sum(resp, dim=0)[-1] == 0:
@@ -991,7 +1101,7 @@ class GPI_HDP():
             respPairlog_temp, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
             resp_temp = torch.exp(resplog_temp)
             respPair_temp = torch.exp(respPairlog_temp)
-            resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
+            #resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
 
             resp_per_group_temp = torch.sum(resp_temp, axis=0)
             reorder = torch.argsort(resp_per_group_temp, descending=True)
@@ -1005,24 +1115,19 @@ class GPI_HDP():
                 print("\n-----------Lead " + str(ld + 1) + "-----------")
                 for m in range(M):
                     print("\n   -----------Model " + str(m + 1) + "-----------")
-                    if reorder[m] == M - 1:
-                        gp = self.create_gp_default(i=m)
-                        q[:, m, ld] = torch.zeros(q[:, -1, ld].shape) + torch.min(q[:,:,ld]) * 2.0
-                        snr_aux[:, m, ld] = torch.zeros(snr_aux[:, -1, ld].shape) + torch.min(snr_aux[:,:,ld]) * 2.0
+                    gp = self.gpmodel_deepcopy(self.gpmodels[ld][reorder[m]])
+                    if not torch.equal(resp[:, reorder[m]].long(), resp_temp[:, m].long()):
+                        if gp.fitted:
+                            gp.reinit_LDS(save_last=False)
+                            gp.reinit_GP(save_last=False)
+                        q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains_w[:,:,[ld]],
+                                                            resp_temp[:, m], q=q[:,reorder[m], ld],
+                                                            q_lat=q_lat[:, reorder[m], ld],
+                                                            snr=self.snr_norm[:,ld])
+                        snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp)
                     else:
-                        gp = self.gpmodel_deepcopy(self.gpmodels[ld][reorder[m]])
-                        if not torch.equal(resp[:, reorder[m]].long(), resp_temp[:, m].long()):
-                            if gp.fitted:
-                                gp.reinit_LDS(save_last=False)
-                                gp.reinit_GP(save_last=False)
-                            q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains_w[:,:,[ld]],
-                                                                resp_temp[:, m], q=q[:,reorder[m], ld],
-                                                                q_lat=q_lat[:, reorder[m], ld],
-                                                                snr=self.snr_norm[:,ld])
-                            snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp.f_star[-1].T[0])
-                        else:
-                            q[:, m, ld] = torch.clone(q_[:, reorder[m], ld])
-                            snr_aux[:, m, ld] = torch.clone(snr_[:, reorder[m], ld])
+                        q[:, m, ld] = torch.clone(q_[:, reorder[m], ld])
+                        snr_aux[:, m, ld] = torch.clone(snr_[:, reorder[m], ld])
                     gpmodels_temp[ld].append(gp)
 
             # Recompute resp
@@ -1033,21 +1138,16 @@ class GPI_HDP():
             respPairlog_temp, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
             resp_temp = torch.exp(resplog_temp)
             respPair_temp = torch.exp(respPairlog_temp)
-            resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
+            #resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
 
             new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
+            print(">>> Prev -------")
             q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_), self.weight_mean(q_lat_, snr_),
-                                                  self.gpmodels, M, snr=snr_, prev=False)
+                                                  self.gpmodels, M, snr=snr_, post=False)
+            print(">>> Post -------")
             q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux), self.weight_mean(q_lat, snr_aux),
-                                                        gpmodels_temp, M, snr=snr_aux, prev=False)
+                                                        gpmodels_temp, M, snr=snr_aux, post=False)
             update_snr = True
-            print("Sum resp_temp: " + str(torch.sum(resp_temp, dim=0)))
-            print("Q_bas: " + str(q_bas) + ", Q_lat: " + str(
-                torch.sum(self.weight_mean(q_lat_, snr_)[torch.where(resp.int() > 0.99)])* self.dynamic_factor) + ", Elbo_bas: " + str(
-                elbo_bas))
-            print("Q_bas_post: " + str(q_bas_post) + ", Q_lat: " + str(torch.sum(
-                self.weight_mean(q_lat, snr_aux)[torch.where(resp_temp.int() > 0.99)])* self.dynamic_factor) + ", Elbo_post: " + str(
-                elbo_post))
             if torch.all(torch.sum(resp_temp, dim=0)[:-1] >= 1.0):
                 if q_bas < q_bas_post:
                     if not q_bas + elbo_bas < q_bas_post + elbo_post:
@@ -1127,13 +1227,23 @@ class GPI_HDP():
                         f_ind_new_potential_def[j_] = f_ind_new
                         j_ = j_ + 1
                         break
-        # ord_ = torch.argsort(potential_q[f_ind_new_potential_def[:n_steps]])#, descending=True)
-        # f_ind_new_potential_def[:n_steps] = f_ind_new_potential_def[ord_]
+        #ord_ = torch.argsort(potential_q[f_ind_new_potential_def[:n_steps]])#, descending=True)
+        #f_ind_new_potential_def[:n_steps] = f_ind_new_potential_def[ord_]
         # Adding 5 possible potential indexes not by q.
-        # f_ind_new_potential_def = torch.concatenate([f_ind_new_potential_def,f_ind_new_q_def])
-        # n_steps = n_steps + 5
+        #f_ind_new_potential_def = torch.concatenate([f_ind_new_potential_def,f_ind_new_q_def])
+        #n_steps = n_steps + 5
         step = 0
         last_indexes = torch.tensor([-1])
+        q = torch.clone(q_aux)
+        q_lat = torch.clone(q_lat_)
+        snr_aux = torch.clone(snr_temp)
+        resp_, respPair_, q_def, q_lat_def, snr_aux_def = self.new_group(resp, respPair, torch.clone(q),
+                                                                         torch.clone(q_lat), torch.clone(snr_aux))
+        _, _, q__def, q_lat__def, snr__def = self.new_group(resp, respPair, torch.clone(q_),
+                                                                        torch.clone(q_lat_), torch.clone(snr_))
+        M = M + 1
+        f_ind_old = torch.zeros(M, device=resp.device).long()
+        f_ind_old[:self.f_ind_old.shape[0]] = torch.clone(self.f_ind_old)
         for j, f_ind_new in enumerate(f_ind_new_potential_def):
             if step == n_steps:
                 break
@@ -1144,9 +1254,6 @@ class GPI_HDP():
                     break
             if m_chosen == -1:
                 m_chosen = torch.argmax(resp[f_ind_new])
-            q = torch.clone(q_aux)
-            q_lat = torch.clone(q_lat_)
-            snr_aux = torch.clone(snr_temp)
             f_ind_old_chosen = f_ind_old[m_chosen]
             ld_belong = torch.argmax(self.snr_norm[f_ind_new])
             if f_ind_new != f_ind_old_chosen:
@@ -1155,6 +1262,8 @@ class GPI_HDP():
                     if not l_ in potential_ind[f_ind_new.item()]:
                         some_new_index = True
                 if some_new_index:
+                    q, q_lat, snr_aux = torch.clone(q_def), torch.clone(q_lat_def), torch.clone(snr_aux_def)
+                    q__, q_lat__, snr__ = torch.clone(q__def), torch.clone(q_lat__def), torch.clone(snr__def)
                     last_indexes = potential_ind[f_ind_new.item()]
                     print("Step "+str(step+1)+"/"+str(n_steps)+ "- Trying to divide: " + str(m_chosen) + " with beat " + str(f_ind_new.item()))
                     step = step + 1
@@ -1165,107 +1274,110 @@ class GPI_HDP():
                             gp.reinit_GP(save_last=False)
                         gp.include_weighted_sample(0, x_trains[f_ind_new], x_trains[f_ind_new], y_trains_w[f_ind_new,:,[ld]], h=1.0)
                         q[:, -1, ld] = gp.compute_sq_err_all(x_trains, y_trains_w[:,:,[ld]])
-                        snr_aux[:, -1, ld] = self.compute_snr(y_trains_w[:, :, ld], gp.f_star[-1].T[0])
-                    #Compute resp
+                        snr_aux[:, -1, ld] = self.compute_snr(y_trains_w[:, :, ld], gp)
+                    # Compute resp
                     q_mean = self.weight_mean(q, snr_aux)
                     q_norm, _ = self.LogLik(q_mean)
                     alpha, margprob = self.forward(startPi, transPi, q_norm)
                     beta = self.backward(transPi, q_norm, margprob)
                     resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
-                    respPairlog_temp, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
+                    respPairlog_temp, _ = self.LogLik(
+                        self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
                     resp_temp = torch.exp(resplog_temp)
                     respPair_temp = torch.exp(respPairlog_temp)
-                    resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
+                    #resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
 
-
-                    #Reallocating resp to preserve order.
+                    # Reallocating resp to preserve order.
                     resp_per_group_temp = torch.sum(resp_temp, axis=0)
                     reorder = torch.argsort(resp_per_group_temp, descending=True)
-                    resp_temp = resp_temp[:,reorder]
+                    resp_temp = resp_temp[:, reorder]
 
-                    #Compute chosen model conditioned on new resp
-                    #Update all models conditioned on new resp if it has changed
+                    # Compute chosen model conditioned on new resp
+                    # Update all models conditioned on new resp if it has changed
                     gpmodels_temp = [[] for _ in range(self.n_outputs)]
                     for ld in range(self.n_outputs):
                         for m in range(M):
-                            if reorder[m] == M-1:
-                                #gp = self.gpmodel_deepcopy(self.gpmodels[ld][m_chosen])
+                            if reorder[m] == M - 1:
+                                # gp = self.gpmodel_deepcopy(self.gpmodels[ld][m_chosen])
                                 # If uncommented then new GP is used for a new model, more expensive but official model.
-                                gp = self.create_gp_default(i=reorder[m])
+                                gp = self.create_gp_default()
                                 if gp.fitted:
                                     gp.reinit_LDS(save_last=False)
                                     gp.reinit_GP(save_last=False)
-                                q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains_w[:,:,[ld]],
-                                                                    resp_temp[:, m], q=q_[:,reorder[m], ld],
-                                                                    q_lat=q_lat[:, reorder[m], ld],
-                                                                    snr=self.snr_norm[:,ld])
-                                snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp.f_star[-1].T[0])
+                                q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains,
+                                                                                     y_trains_w[:, :, [ld]],
+                                                                                     resp_temp[:, m],
+                                                                                     q=q__[:, reorder[m], ld],
+                                                                                     q_lat=q_lat__[:, reorder[m], ld],
+                                                                                     snr=self.snr_norm[:, ld])
+                                snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp)
                             else:
                                 gp = self.gpmodel_deepcopy(self.gpmodels[ld][reorder[m]])
                                 if not torch.equal(resp[:, reorder[m]].long(), resp_temp[:, m].long()):
                                     if gp.fitted:
                                         gp.reinit_LDS(save_last=False)
                                         gp.reinit_GP(save_last=False)
-                                    q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains_w[:,:,[ld]],
-                                                                        resp_temp[:, m], q=q_[:,reorder[m], ld],
-                                                                        q_lat=q_lat[:, reorder[m], ld],
-                                                                        snr=self.snr_norm[:,ld])
-                                    snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp.f_star[-1].T[0])
+                                    q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains,
+                                                                                         y_trains_w[:, :, [ld]],
+                                                                                         resp_temp[:, m],
+                                                                                         q=q__[:, reorder[m], ld],
+                                                                                         q_lat=q_lat__[:, reorder[m], ld],
+                                                                                         snr=self.snr_norm[:, ld])
+                                    snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp)
                                 else:
-                                    q[:, m, ld] = torch.clone(q_[:, reorder[m], ld])
-                                    q_lat[:, m, ld] = torch.clone(q_lat_[:, reorder[m], ld])
-                                    snr_aux[:, m, ld] = torch.clone(snr_[:, reorder[m], ld])
+                                    q[:, m, ld] = torch.clone(q__[:, reorder[m], ld])
+                                    q_lat[:, m, ld] = torch.clone(q_lat__[:, reorder[m], ld])
+                                    snr_aux[:, m, ld] = torch.clone(snr__[:, reorder[m], ld])
                             gpmodels_temp[ld].append(gp)
 
-                    #Recompute resp
+                    # Recompute resp
                     q_mean = self.weight_mean(q, snr_aux)
                     q_norm, _ = self.LogLik(q_mean)
                     alpha, margprob = self.forward(startPi, transPi, q_norm)
                     beta = self.backward(transPi, q_norm, margprob)
                     resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
-                    respPairlog_temp, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
+                    respPairlog_temp, _ = self.LogLik(
+                        self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
                     resp_temp = torch.exp(resplog_temp)
                     respPair_temp = torch.exp(respPairlog_temp)
-                    resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
+                    #resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
                     q_bas, elbo_bas = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
-                                                          self.weight_mean(q_lat, snr_aux), gpmodels_temp, M,
-                                                          snr=snr_aux)
+                                                            self.weight_mean(q_lat, snr_aux), gpmodels_temp, M,
+                                                            snr=snr_aux, post=True)
                     i__ = 0
                     while True:
                         resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, gpmodels_temp = self.estimate_q_all(M,
-                                                                                                                     x_trains=x_trains,
-                                                                                                                     y_trains=y_trains,
-                                                                                                                     y_trains_w=y_trains_w,
-                                                                                                                     resp=resp_temp,
-                                                                                                                     respPair=respPair_temp,
-                                                                                                                     q_=q,
-                                                                                                                     q_lat_=q_lat,
-                                                                                                                     snr_=snr_aux,
-                                                                                                                     startPi=startPi,
-                                                                                                                     transPi=transPi,
-                                                                                                                     gpmodels=gpmodels_temp,
-                                                                                                                     reparam=reparam)
-                        print("Current resp: " + str(torch.sum(resp_temp, axis=0)))
+                                                                                                                 x_trains=x_trains,
+                                                                                                                 y_trains=y_trains,
+                                                                                                                 y_trains_w=y_trains_w,
+                                                                                                                 resp=resp_temp,
+                                                                                                                 respPair=respPair_temp,
+                                                                                                                 q_=q,
+                                                                                                                 q_lat_=q_lat,
+                                                                                                                 snr_=snr_aux,
+                                                                                                                 startPi=startPi,
+                                                                                                                 transPi=transPi,
+                                                                                                                 gpmodels=gpmodels_temp,
+                                                                                                                 reparam=reparam)
                         q_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
-                                                                self.weight_mean(q_lat, snr_aux), gpmodels_temp, M,
-                                                                snr=snr_aux)
+                                                                self.weight_mean(q_lat, snr_aux), gpmodels_temp, M, snr=snr_aux, post=True)
                         print("ELBO_reduction: " + str(((q_post + elbo_post) - (q_bas + elbo_bas)).item()))
                         if (torch.isclose(q_bas + elbo_bas, q_post + elbo_post,
                                           rtol=1e-5) and i__ > 0) or i__ == 10:  # or reparam:
-                            break
+                                break
                         q_bas = q_post
                         elbo_bas = elbo_post
                         i__ = i__ + 1
 
-                    new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
-                    q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_), self.weight_mean(q_lat_, snr_), self.gpmodels, self.M, snr=snr_, prev=False)
-                    q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux), self.weight_mean(q_lat, snr_aux), gpmodels_temp, M, snr=snr_aux)
+
+                    #new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
+                    print(">>> Prev -------")
+                    q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_), self.weight_mean(q_lat_, snr_), self.gpmodels, self.M, snr=snr_, post=False)
+                    print(">>> Post -------")
+                    q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux), self.weight_mean(q_lat, snr_aux), gpmodels_temp, M, snr=snr_aux, post=True)
 
                     update_snr = True
 
-                    print("Sum resp_temp: "+str(torch.sum(resp_temp,dim=0)))
-                    print("Q_bas: " + str(q_bas) + ", Q_lat: " + str(torch.sum(self.weight_mean(q_lat_, snr_)[torch.where(resp.int() > 0.99)]) * self.dynamic_factor) + ", Elbo_bas: " + str(elbo_bas))
-                    print("Q_bas_post: " + str(q_bas_post) + ", Q_lat: " + str(torch.sum(self.weight_mean(q_lat, snr_aux)[torch.where(resp_temp.int() > 0.99)]) * self.dynamic_factor)+ ", Elbo_post: " + str(elbo_post))
                     if torch.all(torch.sum(resp_temp, dim=0) >= 1.0):
                         if q_bas < q_bas_post:
                             if not q_bas + elbo_bas < q_bas_post + elbo_post:
@@ -1291,18 +1403,20 @@ class GPI_HDP():
         return resp, respPair, q_, q_lat_, snr_, y_trains_w_, reallocate
 
 
-    def compute_q_elbo(self, resp, respPair, q, q_lat, gpmodels, M, new_indexes=None, snr=None, prev=False, one_sample=False):
+    def compute_q_elbo(self, resp, respPair, q, q_lat, gpmodels, M, new_indexes=None, snr=None, post=False,
+                       one_sample=False, verb=True):
         """ Method to compute ELBO terms.
         """
-        q_bas = torch.sum(q[torch.where(resp.int() > 0.99)]) * self.static_factor
-        elbo_latent = torch.sum(q_lat[torch.where(resp.int() > 0.99)]) * self.dynamic_factor# / q.shape[0]
-        if prev:
-            if torch.sum(resp, dim=0)[-1] < 1.0:
-                elbo_bas = self.elbo_Linears(resp, respPair, prev=prev)
-            else:
-                elbo_bas = self.elbo_Linears(resp, respPair)
+        if one_sample:
+            n_points = 1
         else:
-            elbo_bas = self.elbo_Linears(resp, respPair)
+            n_points = self.x_basis[0].shape[0]
+        q_bas = torch.sum(q[torch.where(resp.int() > 0.99)]) * self.static_factor
+        elbo_latent = torch.sum(q_lat[torch.where(resp.int() > 0.99)]) * self.dynamic_factor
+        if post:
+            elbo_bas = self.elbo_Linears(resp, respPair, post=post, one_sample=one_sample) * n_points
+        else:
+            elbo_bas = self.elbo_Linears(resp, respPair, one_sample=one_sample) * n_points
         elbo_bas_LDS = 0
         if snr is None:
             frac = torch.ones(self.n_outputs, device=resp.device()) / self.n_outputs#  / self.M
@@ -1314,9 +1428,13 @@ class GPI_HDP():
             frac = frac / torch.sum(frac) #* self.n_outputs# * self.M#
         for i in range(self.n_outputs):
             elbo_bas_LDS = elbo_bas_LDS + self.full_LDS_elbo(gpmodels[i], torch.sum(resp, dim=0), one_sample=one_sample) * frac[i]
-        elbo_bas = elbo_bas + elbo_bas_LDS + elbo_latent
+
         #elbo_bas = elbo_bas + elbo_latent
         #elbo_bas = 0
+        if verb:
+            print("Sum resp_temp: " + str(torch.sum(resp, dim=0).int().numpy()))
+            print(f"Q_em: {q_bas.item():.2f}, Q_lat: {elbo_latent.item():.2f}, Elbo_linear: {elbo_bas:.2f}, Elbo_LDS: {elbo_bas_LDS.item():.2f}")
+        elbo_bas = elbo_bas + elbo_bas_LDS + elbo_latent
         return q_bas, elbo_bas
 
 
@@ -1335,62 +1453,79 @@ class GPI_HDP():
         gp_temp = gpmodels if one_sample else gpmodels
         for i, gp in enumerate(gp_temp):
             if sum_resp[i] > 0:
-                if sum_resp[i] < 2.0:
+                if sum_resp[i] < self.free_deg_MNIV:
                     #elb = elb + gp.return_LDS_param_likelihood(first=True)
                     if one_sample:
                         elb = elb + gp.return_LDS_param_likelihood(first=False) * frac[i] * 1.0
                     else:
-                        elb = elb + gp.return_LDS_param_likelihood(first=False) * frac[i] * 1.0
+                        elb = elb + gp.return_LDS_param_likelihood(first=True) * frac[i] * 1.0
                 else:
                     elb = elb + gp.return_LDS_param_likelihood() * frac[i]
         if one_sample:
-            return elb# / M_
+            return elb #/ M_
         else:
-            return elb / M_
+            return elb #/ np.min([M_, self.M]) #
 
     def redefine_default(self, x_trains, y_trains, resp):
         """ Method to compute Sigma and Gamma from a batch of examples and assign it to initial values.
         """
+        #if self.estimation_limit_def is None:
+        #    n_f = y_trains.shape[0] - 1
+        #else:
+        #    n_f = min(self.estimation_limit_def, y_trains.shape[0] - 1) if (
+        #        self.estimation_limit != np.PINF) else y_trains.shape[0] - 1
+        #samples = y_trains[:n_f][:, :, 0].T
+        #samples_ = y_trains[1:n_f+1][:, :, 0].T
+        #var_y_y = torch.mean(torch.diag(torch.linalg.multi_dot([(samples - torch.mean(samples, dim=1)[:,np.newaxis]), (samples - torch.mean(samples, dim=1)[:,np.newaxis]).T])) / n_f)# * 0.15
+        #var_y_y_ = torch.mean(torch.diag(torch.linalg.multi_dot([(samples_ - samples), (samples_ - samples).T])) / n_f)# * 0.15
+        #kernel, ini_sigma, ini_gamma, ini_outputscale, bound_sigma, bound_gamma, bound_noise_warp, annealing, method_compute_warp, \
+        #    model_type, recursive_warp, warp_updating, inducing_points, estimation_limit, free_deg_MNIV = self.get_default_options()
         print("Redefining default LDS priors.")
         if self.estimation_limit_def is None:
             n_f = y_trains.shape[0] - 1
         else:
             n_f = min(self.estimation_limit_def, y_trains.shape[0] - 1) if (
                 self.estimation_limit != np.PINF) else y_trains.shape[0] - 1
-        gp = self.gpmodels[0][0]
-        q__ = gp.full_pass_weighted(x_trains, y_trains[:, :, [0]], resp[:, 0], snr=self.snr_norm[:, 0])
-        f_ind = torch.argmax(q__)
-        gp = self.create_gp_default()
-        gp.include_weighted_sample(0, x_trains[f_ind], x_trains[f_ind], y_trains[f_ind, :, [0]], h=1.0)
-        q__ = gp.compute_sq_err_all(x_trains, y_trains[:, :, [0]])
-        n_samp = int(y_trains.shape[0]*0.4)
-        selected_beats = torch.argsort(q__, descending=True)[:n_samp]
-        resp_red = torch.zeros(resp.shape)
-        resp_red[selected_beats,0] = torch.ones(n_samp)
-        gp = self.create_gp_default()
-        gp.full_pass_weighted(x_trains, y_trains[:, :, [0]], resp_red[:, 0], snr=self.snr_norm[:, 0])
-        ind_ = -1
-        #noise = (torch.mean(torch.diag(gp.Sigma[ind_])) + torch.mean(torch.diag(gp.Gamma[ind_]))) / 2.0
-        var_y_y_ = torch.mean(torch.diag(gp.Gamma[ind_]))
-        var_y_y = torch.mean(torch.diag(gp.Sigma[ind_]))
-        # samples = y_trains[:n_f][:, :, 0].T
-        # samples_ = y_trains[1:n_f+1][:, :, 0].T
-        # var_y_y = torch.mean(torch.diag(torch.linalg.multi_dot([(samples - torch.mean(samples, dim=1)[:,np.newaxis]), (samples - torch.mean(samples, dim=1)[:,np.newaxis]).T])) / n_f)# * 0.15
-        # var_y_y_ = torch.mean(torch.diag(torch.linalg.multi_dot([(samples_ - samples), (samples_ - samples).T])) / n_f)# * 0.15
+        # gp = self.gpmodels[0][0]
+        # q__ = torch.zeros(y_trains.shape[0])
+        # for j, y in enumerate(y_trains[:,:,[0]]):
+        #      q__[j] = gp.log_sq_error(x_trains[j], y)
+        # #q__, q_lat__= gp.full_pass_weighted(x_trains, y_trains[:, :, [0]], resp[:, 0], snr=self.snr_norm[:, 0])
+        # f_ind = torch.where(q__ == torch.median(q__))[0].item()
+        # #f_ind = 0
+        # gp = self.create_gp_default()
+        # gp.include_weighted_sample(0, x_trains[f_ind], x_trains[f_ind], y_trains[f_ind, :, [0]], h=1.0)
+        # q__ = gp.compute_sq_err_all(x_trains, y_trains[:, :, [0]])
+        # n_samp = 200
+        # selected_beats = torch.argsort(q__, descending=True)[:n_samp]
+        # resp_red = torch.zeros(resp.shape)
+        # resp_red[selected_beats,0] = torch.ones(n_samp)
+        # gp = self.create_gp_default()
+        # gp.full_pass_weighted(x_trains, y_trains[:, :, [0]], resp_red[:, 0], snr=self.snr_norm[:, 0])
+        # ind_ = -1
+        # #noise = (torch.mean(torch.diag(gp.Sigma[ind_])) + torch.mean(torch.diag(gp.Gamma[ind_]))) / 2.0
+        # var_y_y_ = torch.max(torch.diag(gp.Gamma[ind_]))
+        # var_y_y = torch.max(torch.diag(gp.Sigma[ind_]))
+        samples = y_trains[:n_f][:, :, 0].T
+        samples_ = y_trains[1:n_f+1][:, :, 0].T
+        var_y_y = torch.median(torch.diag(torch.linalg.multi_dot([(samples - torch.mean(samples, dim=1)[:,np.newaxis]), (samples - torch.mean(samples, dim=1)[:,np.newaxis]).T])) / n_f)# * 0.15
+        var_y_y_ = torch.median(torch.diag(torch.linalg.multi_dot([(samples_ - samples), (samples_ - samples).T])) / n_f)# * 0.15
         kernel, ini_sigma, ini_gamma, ini_outputscale, bound_sigma, bound_gamma, bound_noise_warp, annealing, method_compute_warp, \
             model_type, recursive_warp, warp_updating, inducing_points, estimation_limit, free_deg_MNIV = self.get_default_options()
         # Good results using 0.012
         # Good results using 0.02
         # Good results using 0.01.
-        # Good results using 0.018
-        ini_Sigma = var_y_y * 1.0
-        ini_Gamma = var_y_y_ * 1.0
-        #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 0.9]), var_y_y * 1.8])) * 0.012
-        #ini_Sigma = var_y_y * 2.0
+        # Good results using 0.018.
+        # ini_Sigma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.0
+        # ini_Gamma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.0
+        ini_Sigma = var_y_y * 0.050
+        ini_Gamma = var_y_y * 0.085
+        #ini_Gamma = torch.sqrt(self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.0])) * 0.5)
+        #ini_Gamma = var_y_y * 0.012
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.5])) * 2.0
         #ini_Gamma = var_y_y_ * 1.0
-        #ini_Sigma = 50.0
-        #ini_Gamma = 100.0
+        #ini_Sigma = self.cond_to_torch(10.0)
+        #ini_Gamma = self.cond_to_torch(25.0)
         # if ini_Sigma > 200.0:
         #      ini_Sigma = ini_Sigma * 0.3
         #      ini_Gamma = ini_Gamma * 0.3
@@ -1398,14 +1533,16 @@ class GPI_HDP():
         # ini_Gamma = self.cond_to_torch(np.max(([ini_Gamma, 12.0])))
         #ini_Gamma = self.cond_to_torch(np.max([var_y_y_, var_y_y * 1.5]))
         #ini_Gamma = var_y_y_ * 1.5
-        #bound_sigma = (ini_Sigma * 1e-3, ini_Sigma * 1.0)
-        #bound_gamma = (ini_Gamma * 1e-3, ini_Gamma * 1.0)
-        bound_sigma = (0.1, 20.0)
-        bound_gamma = (0.1, 20.0)
+        bound_sigma = (ini_Sigma.item() * 1e-7, 1.0)
+        bound_gamma = (ini_Gamma.item() * 1e-7, 1.0)
+        #bound_sigma = (0.1, 20.0)
+        #bound_gamma = (0.1, 20.0)
         print("-----------Reestimated ------------", flush=True)
         print("Sigma: ", ini_Sigma)
         print("Gamma: ", ini_Gamma)
         print("-----------------------------", flush=True)
+        kernel = (ConstantKernel(ini_outputscale, (ini_outputscale, ini_outputscale*5.0)) *
+                  RBF(self.ini_lengthscale[0], self.bound_lengthscale[0]) + WhiteKernel(bound_sigma[0], bound_sigma))
         self.set_default_options(kernel, ini_Sigma, ini_Gamma, ini_outputscale, bound_sigma, bound_gamma,
                                  bound_noise_warp, annealing, method_compute_warp,
                                  model_type, recursive_warp, warp_updating, inducing_points, estimation_limit, free_deg_MNIV)
@@ -1467,7 +1604,6 @@ class GPI_HDP():
         else:
             for m in range(M + 1):
                 y_mod[m].append(self.cond_cuda(y))
-
         elbo = 0.0
         q_all = 0.0
         q_aux = torch.zeros(self.T, self.M+1, self.n_outputs) - np.inf
@@ -1475,14 +1611,16 @@ class GPI_HDP():
         if t > 0:
             q_aux[:-1, :self.q[-1].shape[1], :] = torch.clone(self.q[-1])
         for ld in range(self.n_outputs):
-            for m, gp in enumerate(self.gpmodels[ld][:-1]):
+            for m, gp in enumerate(self.gpmodels[ld]):
                 q_lat[:, m, ld] = gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)), h_ini=1.0)
                 q_aux[-1, m, ld] = gp.log_sq_error(torch.from_numpy(np.array(self.x_train[-1])), y_mod[m][-1], i=-1)
+                #q_aux[[-1], m, ld] = self.estimate_new(t, gp, self.x_train[-1], y_mod[m][-1], h=1.0)
         if t > 0:
             resp, resp_log, respPair, respPair_log = self.variational_local_terms(q_aux, self.transTheta, self.startTheta)
-            q_all, elbo = self.compute_q_elbo(resp[:-1], respPair[:-1], self.weight_mean(q_aux)[:-1],
-                                                              self.weight_mean(q_lat)[:-1],
-                                                              self.gpmodels, self.M, prev=False, snr='saved', one_sample=True)
+            q_all, elbo = self.compute_q_elbo(resp[:-1,:-1], respPair[:-1,:-1,:-1], self.weight_mean(q_aux)[:-1,:-1],
+                                                              self.weight_mean(q_lat)[:-1,:-1],
+                                                              self.gpmodels, self.M, snr='saved', post=False,
+                                                              one_sample=True, verb=self.verbose)
         if t > 0:
             # Define order
             q_ord = torch.argsort(self.weight_mean(q_aux)[-1,:-1], descending=True)
@@ -1498,15 +1636,17 @@ class GPI_HDP():
                 prov_gp.reinit_LDS(save_last=False)
                 q_prev[[-1], -1, ld] = self.estimate_new(t, prov_gp, self.x_train[-1], y_mod[-1][-1], h=1.0)
                 prov_gp.include_weighted_sample(t, self.x_train[-1], self.x_train[-1], y_mod[-1][-1], 1.0)
-                self.gpmodels[ld][-1] = prov_gp
-                q_lat_prev[:, -1, ld] = prov_gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)), h_ini=0.1)
+                self.gpmodels[ld].append(prov_gp)
+                #self.M = M + 1
+                q_lat_prev[:, -1, ld] = prov_gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)), h_ini=1.0)
             resp_prev, resp_prev_log, respPair_prev, respPair_prev_log = self.variational_local_terms(q_prev, self.transTheta, self.startTheta, liks)
             q_prev_post, elbo_prev_post = self.compute_q_elbo(resp_prev, respPair_prev, self.weight_mean(q_prev), self.weight_mean(q_lat_prev),
-                                                  self.gpmodels, self.M, snr='saved', one_sample=True)
+                                                  self.gpmodels, self.M, snr='saved', one_sample=True, post=True, verb=self.verbose)
             elbo_prev_post = elbo_prev_post - elbo#/ np.log(self.T + 1)
             q_prev_post = q_prev_post - q_all
             for ld in range(self.n_outputs):
-                self.gpmodels[ld][-1] = self.create_gp_default()
+                self.gpmodels[ld].pop()
+                self.M = M
             if torch.argmax(q_prev[-1]) == self.M:
                 q_post = torch.clone(q_aux)
                 q_lat_post = torch.clone(q_lat)
@@ -1519,20 +1659,19 @@ class GPI_HDP():
                         self.gpmodels[ld][m] = post_gp
                         post_gp.backwards_pair(1.0)
                         post_gp.bayesian_new_params(1.0)
-                        q_lat_post[:, m, ld] = post_gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)), h_ini=0.1)
+                        q_lat_post[:, m, ld] = post_gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)), h_ini=1.0)
                         #q_post[[-1], m, ld] = self.estimate_new(t, post_gp, self.x_train[-1], y_mod[m][-1], h=1.0)
                     resp_post, resp_post_log, respPair_post, respPair_post_log = self.variational_local_terms(q_post, self.transTheta, self.startTheta, liks)
-                    q_bas_post, elbo_bas_post = self.compute_q_elbo(resp_post, respPair_post, self.weight_mean(q_post),
-                                                          self.weight_mean(q_lat_post),
-                                                          self.gpmodels, self.M, snr='saved', prev=False, one_sample=True)
+                    q_bas_post, elbo_bas_post = self.compute_q_elbo(resp_post[:,:-1], respPair_post[:,:-1,:-1], self.weight_mean(q_post)[:,:-1],
+                                                          self.weight_mean(q_lat_post)[:,:-1],
+                                                          self.gpmodels, self.M, snr='saved', post=False, one_sample=True, verb=self.verbose)
                     elbo_bas_post = elbo_bas_post - elbo#/ np.log(self.T + 1)
                     q_bas_post = q_bas_post - q_all
-                    if self.verbose:
-                        print("Q_prev: " + str(q_prev_post) + ", Elbo_prev: " + str(elbo_prev_post))
-                        print("Q_bas_post: " + str(q_bas_post) + ", Elbo_post: " + str(elbo_bas_post))
+
                     if q_bas_post + elbo_bas_post > q_prev_post + elbo_prev_post:
                         resp, resplog, respPair, respPairlog = self.variational_local_terms(q_post, self.transTheta, self.startTheta, liks)
                         q_chos = q_post
+                        q_lat_chos = q_lat_post
                         for ld in range(self.n_outputs):
                             self.gpmodels[ld][m] = saved_gps[ld]
                         break
@@ -1540,11 +1679,15 @@ class GPI_HDP():
                         for ld in range(self.n_outputs):
                             self.gpmodels[ld][m] = saved_gps[ld]
                         q_chos = q_prev
+                        q_lat_chos = q_lat_prev
                         resp, resplog, respPair, respPairlog = resp_prev, resp_prev_log, respPair_prev, respPair_prev_log
             else:
                 q_chos = q_aux
+                q_lat_chos = q_lat
                 resp, resplog, respPair, respPairlog = self.variational_local_terms(q_chos, self.transTheta, self.startTheta, liks)
         else:
+            q_chos = q_aux
+            q_lat_chos = q_lat
             resp, resplog, respPair, respPairlog = self.variational_local_terms(q_aux, self.transTheta, self.startTheta, liks)
 
         if len(resp.shape) == 1:
@@ -1582,37 +1725,70 @@ class GPI_HDP():
         if birth:
             print("Birth of new model: ", self.M + 1)
             self.M = self.M + 1
-            M = M + 1
+            M = self.M
             y_mod.append(self.y.copy())
             for ld in range(self.n_outputs):
                 self.gpmodels[ld].append(self.create_gp_default())
             self.x_basis.append(self.x_basis_ini)
+            resp, respPair, q_chos, q_lat_chos = self.reorder(resp, respPair, q_chos, q_lat_chos)
             startStateCount = resp[0]
             transStateCount = torch.sum(respPair, axis=0)
-            self.reinit_global_params(self.M, transStateCount, startStateCount)
-            self.rho, self.omega = self.find_optimum_rhoOmega()
-            self.transTheta, self.startTheta = self._calcThetaFull(transStateCount[:M, :M], startStateCount[:M])
-            liks = np.append(liks, liks[-1] - 100.0)
-            q_aux = torch.zeros(self.T, self.M + 1, self.n_outputs)
-            q_aux[:,:-1,:] = q_chos
-            resp, resplog, respPair, respPairlog = self.variational_local_terms(q_aux, self.transTheta,
-                                                                                self.startTheta, liks)
-            resp[-1][:] = 0.0
-            resp[-1][-2] = 1.0
-            respPair[-1,:,:] = 0.0
-            respPair[-1,-2, :] = 1/M
-            if self.hmm_switch:
-                startStateCount = self.cond_cuda(resp[0])
-                transStateCount = self.cond_cuda(torch.sum(respPair, axis=0))
-                self.transTheta, self.startTheta = self._calcThetaFull(transStateCount[:M, :M], startStateCount[:M])
+            if M > 2:
+                self.reinit_global_params(M - 1, transStateCount, startStateCount)
+            if M >= 2:
                 nIters = 4
                 for giter in range(nIters):
+                    self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
+                                                                           self.cond_cuda(startStateCount), M)
                     self.rho, self.omega = self.find_optimum_rhoOmega()
-                    self.transTheta, self.startTheta = self._calcThetaFull(transStateCount[:M, :M], startStateCount[:M])
 
+            # Update transition matrix
+            digammaSumTransTheta = torch.log(
+                torch.sum(torch.exp(digamma(self.cond_cpu(self.transTheta[:M, :M + 1]))), axis=1))
+            transPi = digamma(self.cond_cpu(self.transTheta[:M, :M])) - digammaSumTransTheta[:, np.newaxis]
+            self.trans_A = transPi
+        else:
+            resp, respPair, q_chos, q_lat_chos = self.reorder(resp, respPair, q_chos, q_lat_chos)
+            startStateCount = resp[0,:M]
+            transStateCount = torch.sum(respPair[:,:M,:M], axis=0)
+            if M > 2:
+                self.reinit_global_params(M - 1, transStateCount, startStateCount)
+            if M >= 2:
+                nIters = 4
+                for giter in range(nIters):
+                    self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
+                                                                           self.cond_cuda(startStateCount), M)
+                    self.rho, self.omega = self.find_optimum_rhoOmega()
+
+            # Update transition matrix
+            digammaSumTransTheta = torch.log(
+                torch.sum(torch.exp(digamma(self.cond_cpu(self.transTheta[:M, :M + 1]))), axis=1))
+            transPi = digamma(self.cond_cpu(self.transTheta[:M, :M])) - digammaSumTransTheta[:, np.newaxis]
+            self.trans_A = transPi
+
+        if len(resp.shape) == 1:
+            resp_mod = self.cond_to_numpy(self.cond_cpu(resp))
+            resp_modlog = self.cond_to_numpy(self.cond_cpu(resplog))
+        else:
             resp_mod = self.cond_to_numpy(self.cond_cpu(resp[-1]))
+            resp_modlog = self.cond_to_numpy(self.cond_cpu(resplog[-1]))
+
+        # Normalize when responsability is equally shared
+        if sum(np.isclose(resp_mod, max(resp_mod), rtol=1e-2)) > 1:
+            h_argmax = np.nanargmax(resp_mod)
             resp_mod[:] = 0.0
-            resp_mod[-2] = 1.0
+            resp_mod[h_argmax] = 1.0
+
+        model = np.argmax(resp_mod)
+        if self.max_models is not None and model >= self.max_models:
+            force_model = np.argmax(resp_modlog[:-1])
+            model = force_model
+
+        # When converged apply all transformations to real models.
+        if not force_model is None:
+            resp_mod[:] = 0.0
+            resp_mod[force_model] = 1.0
+            model = np.argmax(resp_mod)
 
         # Assign and update GP model
         self.actual_state = model
@@ -1620,7 +1796,7 @@ class GPI_HDP():
         if minibatch == 0:
             minibatch = None
         for ld in range(self.n_outputs):
-            for m in range(M + 1):
+            for m in range(M):
                 new_x_basis = self.gpmodels[ld][m].include_weighted_sample(t, self.x_train[-1], self.x_train[-1], y_mod[m][-1], resp_mod[m])
                 #self.gpmodels[ld][m].backwards(resp_mod[m])
                 self.x_basis[m] = self.cond_cuda(self.cond_to_torch(new_x_basis.detach()))
@@ -1633,10 +1809,13 @@ class GPI_HDP():
                                                          max_samples=self.max_samples,
                                                          div_samples=self.div_samples, verbose=False,
                                                          model_type=self.model_type[m], check_var=self.check_var)
-        q_ = torch.zeros((self.T, self.M+1, self.n_outputs))
-        for ld in range(self.n_outputs):
-            q_[:,:,ld] = self.compute_q(y=y_mod, gpmodels=self.gpmodels[ld], ld=ld)
-        self.q.append(q_)
+        self.compute_q_elbo(resp[:,:M], respPair[:,:M,:M], self.weight_mean(q_chos)[:,:M],
+                            self.weight_mean(q_lat_chos)[:,:M],
+                            self.gpmodels, self.M, snr='saved', post=False, one_sample=True)
+        # q_ = torch.zeros((self.T, self.M, self.n_outputs))
+        # for ld in range(self.n_outputs):
+        #     q_[:,:,ld] = self.compute_q(y=y_mod, gpmodels=self.gpmodels[ld], ld=ld)
+        self.q.append(q_chos)
         for ld in range(self.n_outputs):
             if len(self.gpmodels[ld][model].indexes) > 1 and self.warp_updating[model] and with_warp:
                 self.wp_sys[ld][model].update_warp(x_train, self.x_w[-1][model])
@@ -1655,10 +1834,14 @@ class GPI_HDP():
                              transStateCount):
         """ Method to compute HPD linear terms.
         """
+        transStateCount_ = transStateCount
         Ltop = self.L_top(rho=rho, omega=omega, alpha=alpha, startAlpha=startAlpha, kappa=kappa, gamma=gamma)
         LdiffcDir = - self.c_Dir(transTheta) - self.c_Dir(startTheta)
-        K = rho.size
-        Ebeta = self.cond_to_numpy(self.cond_cpu(self.rho2beta(rho, returnSize='K+1')))
+        K = transStateCount_.shape[0]
+        if startTheta.shape[0] == rho.size:
+            Ebeta = self.cond_to_numpy(self.cond_cpu(self.rho2beta(rho, returnSize='K')))
+        else:
+            Ebeta = self.cond_to_numpy(self.cond_cpu(self.rho2beta(rho, returnSize='K + 1')))
         LstartSlack = np.inner(
             startStateCount + startAlpha * Ebeta - startTheta,
             digamma(startTheta) - np.log(np.sum(np.exp(digamma(startTheta))))
@@ -1666,9 +1849,9 @@ class GPI_HDP():
         alphaEbetaPlusKappa = alpha * np.tile(Ebeta, (K, 1))
         alphaEbetaPlusKappa[:, :K] += kappa * np.eye(K)
         digammaSum = np.log(np.sum(np.exp(digamma(transTheta)), axis=1))
-        transStateCount[:K, :] = transStateCount[:K, :] + alphaEbetaPlusKappa
+        transStateCount_[:K, :] = transStateCount_[:K, :] + alphaEbetaPlusKappa
         LtransSlack = np.sum(
-            (transStateCount - transTheta) *
+            (transStateCount_ - transTheta) *
             (digamma(transTheta) - digammaSum[:, np.newaxis])
         )
         return Ltop + LdiffcDir + LstartSlack + LtransSlack
@@ -1833,13 +2016,14 @@ class GPI_HDP():
             q_new = gpmodel.log_sq_error(x_train, y, mean=mean_[-1], cov=cov_[-1], C=C_[-1], Sigma=Sigma_[-1], i=-1)#, first=True)
         return q_new
 
-    def estimate_q_all(self, M, x_trains, y_trains, y_trains_w, resp, respPair, q_, q_lat_, snr_, startPi, transPi, gpmodels=None, reparam=False):
+    def estimate_q_all(self, M, x_trains, y_trains, y_trains_w, resp, respPair, q_, q_lat_, snr_, startPi, transPi,
+                       gpmodels=None, reparam=False):
         """ Internal method to converge the ELBO using the most recent assignation of the examples.
         """
         if gpmodels is None:
             gpmodels = self.gpmodels
         q = torch.zeros((len(x_trains), M, self.n_outputs), device=self.device) + torch.min(q_) * 2.0
-        q_lat = torch.zeros((len(x_trains), M, self.n_outputs), device=self.device)# + torch.min(q_lat_) * 2.0
+        q_lat = torch.zeros((len(x_trains), M, self.n_outputs), device=self.device)  # + torch.min(q_lat_) * 2.0
         snr_aux = torch.clone(snr_)
         resp_per_group_temp = torch.sum(resp, axis=0)
         reorder = torch.argsort(resp_per_group_temp, descending=True)
@@ -1864,13 +2048,14 @@ class GPI_HDP():
                                 gp.reinit_LDS(save_last=True)
                                 gp.reinit_GP(save_last=False)
                         else:
-                            #No added indexes so createtemp
+                            # No added indexes so createtemp
                             gp = self.create_gp_default(i=reorder[m])
-                        q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains_w[:,:,[ld]], resp_temp[:, m],
-                                                                          q=q_[:, reorder[m], ld],
-                                                                          q_lat=q_lat[:, reorder[m], ld],
-                                                                          snr=self.snr_norm[:,ld])
-                        snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp.f_star[-1].T[0])
+                        q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains_w[:, :, [ld]],
+                                                                             resp_temp[:, m],
+                                                                             q=q_[:, reorder[m], ld],
+                                                                             q_lat=q_lat[:, reorder[m], ld],
+                                                                             snr=self.snr_norm[:, ld])
+                        snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp)
                     else:
                         q[:, m, ld] = q_[:, reorder[m], ld]
                         q_lat[:, m, ld] = q_lat_[:, reorder[m], ld]
@@ -1879,11 +2064,12 @@ class GPI_HDP():
                     # New GP to add
                     gp = self.create_gp_default(i=reorder[m])
                     if len(indexes_[ld][m]) > 0.0:
-                        q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains_w[:,:,[ld]], resp_temp[:, m],
-                                                                        q=q_[:,reorder[m], ld],
-                                                                        q_lat=q_lat[:, reorder[m], ld],
-                                                                        snr=self.snr_norm[:,ld])
-                        snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp.f_star[-1].T[0])
+                        q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains_w[:, :, [ld]],
+                                                                             resp_temp[:, m],
+                                                                             q=q_[:, reorder[m], ld],
+                                                                             q_lat=q_lat[:, reorder[m], ld],
+                                                                             snr=self.snr_norm[:, ld])
+                        snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp)
                     else:
                         q[:, m, ld] = q_[:, m, ld]
                         q_lat[:, m, ld] = q_lat_[:, m, ld]
@@ -1896,15 +2082,18 @@ class GPI_HDP():
         logrespPair, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
         resp_temp = torch.exp(logresp)
         respPair_temp = torch.exp(logrespPair)
-        resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
+        #resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
         # Finally see if it is worthy to birth new cluster
-        new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
-        q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_), self.weight_mean(q_lat_, snr_), gpmodels, self.M, snr=snr_)
-        q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux), self.weight_mean(q_lat, snr_aux), gpmodels_temp, M, snr=snr_aux)
+        #new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
+        print(">>> Q_all_loop -------")
+        q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_),
+                                              self.weight_mean(q_lat_, snr_), gpmodels, self.M, snr=snr_, post=True)
+        q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
+                                                    self.weight_mean(q_lat, snr_aux), gpmodels_temp, M, snr=snr_aux, post=True)
         update_snr = True
         if torch.all(torch.sum(resp_temp, dim=0) >= 1.0):
             if q_bas + elbo_bas < q_bas_post + elbo_post:
-                #self.gpmodels = gpmodels_temp
+                # self.gpmodels = gpmodels_temp
                 if reorder.shape[0] == self.f_ind_old.shape[0]:
                     self.f_ind_old = self.f_ind_old[reorder]
                 if update_snr:
@@ -2075,6 +2264,25 @@ class GPI_HDP():
             print('Only two strategies implemented: standard and greedy')
         return y_w, x_w, liks
 
+    def compute_trans_A(self, M):
+        digammaSumTransTheta = torch.log(
+            torch.sum(torch.exp(digamma(self.cond_cpu(self.transTheta[:M, :M + 1]))), axis=1))
+        transPi = digamma(self.cond_cpu(self.transTheta[:M, :M])) - digammaSumTransTheta[:, np.newaxis]
+        if transPi.shape[0] == M:
+            return transPi
+        else:
+            transPi_ = torch.zeros(M,M) - np.inf
+            transPi_[:M-1,:M-1] = transPi
+            return transPi_
+
+    def compute_trans_pi(self, M, pi):
+        if pi.shape[0] == M:
+            return pi
+        else:
+            pi_ = torch.zeros(M) - np.inf
+            pi_[:M-1] = pi
+            return pi_
+
     # Now methods to compute the forward and backward iterations for the state-space model of the switching variable.
     def forward(self, pi=None, trans_A=None, q=None):
         """
@@ -2101,10 +2309,12 @@ class GPI_HDP():
             q = self.q[-1]
         M = self.M
         T = q.shape[0]
-        K = M + 1
+        K = q.shape[1]
         fmsg = torch.zeros((T, K), device=self.device)
         margPrObs = torch.zeros(T, device=self.device)
-        pi_ = torch.exp(pi)
+        pi_ = self.compute_trans_pi(K, pi)
+        pi_ = torch.exp(pi_)
+        trans_A = self.compute_trans_A(K)
         PiTMat = torch.exp(trans_A.T)
         q_ = q
         def safe_exp(x):
@@ -2157,10 +2367,11 @@ class GPI_HDP():
             trans_A = self.trans_A
         if q is None:
             q = self.q[-1]
-        M = self.M + 1
+        M = q.shape[1]
         q_ = q
         def safe_exp(x):
             return torch.exp(torch.sub(x, torch.atleast_2d(torch.max(x, axis=1)[0]).T))
+        trans_A = self.compute_trans_A(M)
         PiMat = self.cond_cuda(torch.exp(trans_A))
         q_ = safe_exp(q_)
         T = q.shape[0]
@@ -2202,18 +2413,14 @@ class GPI_HDP():
             trans_A = self.trans_A
         if q is None:
             q = self.q[-1]
-
+        def safe_exp(x):
+            return torch.exp(torch.sub(x, torch.atleast_2d(torch.max(x, axis=1)[0]).T))
         alpha = self.cond_cuda(self.cond_to_torch(alpha))
         beta = self.cond_cuda(self.cond_to_torch(beta))
-        trans_A = self.cond_cuda(self.cond_to_torch(trans_A))
         q = self.cond_cuda(self.cond_to_torch(q))
 
-        T = alpha.shape[0]
-        M = self.M + 1
-
-        bmsgSoftEv = torch.exp(q)  # alias
+        bmsgSoftEv = safe_exp(q)
         bmsgSoftEv *= beta
-        respPair = self.cond_cuda(self.cond_to_torch(np.zeros((T, M, M))))
         # respPair[1:] = alpha[:-1][:, :, np.newaxis] * \
         #               bmsgSoftEv[1:][:, np.newaxis, :]
         respPair = alpha[:, :, np.newaxis] * \
@@ -2282,7 +2489,7 @@ class GPI_HDP():
         q : array of shape m with q
         """
 
-        M = self.M + 1
+        M = self.M
         if x_train is None:
             x_train = self.x_train[-1]
         if y is None:
