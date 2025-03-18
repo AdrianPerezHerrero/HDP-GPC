@@ -674,9 +674,9 @@ class GPI_HDP():
         self : returns an instance of self.
         """
         # # Redefine HDP hyperparams for batch inclusion
-        self.gamma = 2.0
-        self.transAlpha = 2.0
-        self.startAlpha = 2.0
+        self.gamma = 0.8
+        self.transAlpha = 0.8
+        self.startAlpha = 0.8
         self.kappa = 0.0
         print("------ HDP Hyperparameters ------", flush=True)
         print("gamma: " + str(self.gamma))
@@ -1458,7 +1458,7 @@ class GPI_HDP():
         if one_sample:
             return elb / M_
         else:
-            return elb / M_#/ np.min([M_, self.M]) #
+            return elb / np.min([M_, self.M]) #
 
     def redefine_default(self, x_trains, y_trains, resp):
         """ Method to compute Sigma and Gamma from a batch of examples and assign it to initial values.
