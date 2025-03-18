@@ -1404,7 +1404,10 @@ class GPI_HDP():
                        one_sample=False, verb=True):
         """ Method to compute ELBO terms.
         """
-        n_points = self.x_basis[0].shape[0]
+        if one_sample:
+            n_points = 1
+        else:
+            n_points = self.x_basis[0].shape[0]
         q_bas = torch.sum(q[torch.where(resp.int() > 0.99)]) * self.static_factor
         elbo_latent = torch.sum(q_lat[torch.where(resp.int() > 0.99)]) * self.dynamic_factor
         if post:
