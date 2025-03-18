@@ -171,6 +171,10 @@ class GPI_HDP():
         self.dynamic_factor = ini_gamma[0] / ini_gamma[0]
         self.bound_sigma = bound_sigma
         self.bound_gamma = bound_gamma
+        #self.static_factor = ini_sigma[0] / (ini_sigma[0] + ini_gamma[0])
+        #self.dynamic_factor = ini_gamma[0] / (ini_sigma[0] + ini_gamma[0])
+        self.static_factor = ini_sigma[0] / ini_sigma[0]
+        self.dynamic_factor = ini_gamma[0] / ini_gamma[0]
         self.bound_sigma_warp = bound_noise_warp
         self.annealing = annealing
         self.hmm_switch = hmm_switch
@@ -247,14 +251,12 @@ class GPI_HDP():
         # transAlpha represent a factor of prior probability of state-state transition
         # startAlpha represent a factor of prior probability of starting state
         # kappa represent the sticky factor of self transition
+
         # self.gamma = 700.0
         # self.transAlpha = 1400.0
         # self.startAlpha = 1400.0
         # self.kappa = 0.0
-        # self.gamma = 100.0
-        # self.transAlpha = 200.0
-        # self.startAlpha = 200.0
-        # self.kappa = 0.0
+
         self.gamma = 0.5
         self.transAlpha = 0.5
         self.startAlpha = 0.5
@@ -1442,7 +1444,7 @@ class GPI_HDP():
         elb = torch.zeros(1)
         M_ = 0
         if one_sample:
-            frac = sum_resp / torch.sum(sum_resp)
+            frac = sum_resp / sum_resp
         else:
             frac = sum_resp / sum_resp
         for i in sum_resp:
@@ -1622,8 +1624,9 @@ class GPI_HDP():
         if t > 0:
             # Define order
             q_ord = torch.argsort(self.weight_mean(q_aux)[-1,:-1], descending=True)
-            m = q_ord[-1].item()
+            #m = q_ord[-1].item()
             #m = q_ord[0].item()
+            m = 0
             q_prev = torch.clone(q_aux)
             q_lat_prev = torch.clone(q_lat)
             # Compute first birth cost
@@ -1795,6 +1798,7 @@ class GPI_HDP():
         for ld in range(self.n_outputs):
             for m in range(M):
                 new_x_basis = self.gpmodels[ld][m].include_weighted_sample(t, self.x_train[-1], self.x_train[-1], y_mod[m][-1], resp_mod[m])
+                #self.gpmodels[ld][m].backwards(resp_mod[m])
                 self.x_basis[m] = self.cond_cuda(self.cond_to_torch(new_x_basis.detach()))
                 if resp_mod[m] > 0.9:
                     self.y_train = torch.concatenate([self.y_train, torch.atleast_2d(y_mod[m][-1]).T[:, :, np.newaxis]])

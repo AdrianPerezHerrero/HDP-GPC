@@ -474,7 +474,6 @@ class GPI_model():
         sq_err = torch.zeros(x_trains.shape[0], device=x_trains[0].device)
         if self.N == 0:
             return sq_err
-        self.gamma_inv = torch.linalg.solve(self.Gamma[-1], self.cond_to_cuda(torch.eye(self.Gamma[-1].shape[0])))
         for j, index in enumerate(self.indexes):
             sq_err[index] = self.log_lat_error(j, h_ini)
         return sq_err

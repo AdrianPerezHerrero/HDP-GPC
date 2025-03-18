@@ -722,12 +722,12 @@ def plot_MDS_plotly(sw_gp, main_model, labels, N_0, lead=0, save=None):
         plt.show()
 
 
-def plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, N_0, save=None, lead=0, step=0.1, plot_latent=False, ticks=False):
+def plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, N_0, title=None, save=None, lead=0, step=0.1, plot_latent=False, ticks=False, yscale=False):
     num_models = len(selected_gpmodels)
     num_cols = int(np.ceil(np.sqrt(num_models)))
     num_rows = int(np.ceil(num_models / num_cols))
 
-    fig, axes = plt.subplots(num_rows, num_cols, figsize=(15, 10), squeeze=False)
+    fig, axes = plt.subplots(num_rows, num_cols, figsize=(25, 20), squeeze=False)
     axes = axes.flatten()
 
     def col_fun(lab):
@@ -736,6 +736,7 @@ def plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, N_0, save=N
         else:
             return to_hex(color.get(labels_trans.get(lab, 0), 'b'))
 
+    y_max = 0.0
     for i, m in enumerate(selected_gpmodels):
         ax = axes[i]
         gp = sw_gp.gpmodels[lead][m]
@@ -745,6 +746,8 @@ def plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, N_0, save=N
             j = gp.indexes[j_]
             x_t = gp.x_train[j_].T[0]
             d = sw_gp.y_train[j,:,[lead]]
+            if y_max < np.max(d.numpy()):
+                y_max = np.max(d.numpy())
             if isinstance(d, torch.Tensor):
                 d = d.detach().cpu()
                 x_t = x_t.cpu()
@@ -753,30 +756,44 @@ def plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, N_0, save=N
 
         # Mean and variance
         x_b = gp.x_basis.T[0]
-        x_ = torch.arange(min(x_b), max(x_b), step, dtype=torch.float64).cpu()
+        if (x_b[1] - x_b[0]) == step:
+            x_ = torch.clone(x_b)
+        else:
+            x_ = torch.arange(min(x_b), max(x_b), step, dtype=torch.float64).cpu()
 
         mean_, Sig_ = gp.observe_last(torch.atleast_2d(x_).T)
         #mean_l, Sig_l = gp.step_forward_last(torch.atleast_2d(x_).T)
 
         noise_ob = np.sqrt(np.diag(Sig_.cpu()))
         mean = mean_.cpu().T[0]
-
+        neg_lim = mean - 1.9 * noise_ob
+        neg_lim[neg_lim < 0.0] = 0.0
         ax.plot(x_, mean, color='black', linewidth=2, label=f'Emission GP mean [{m + 1}]')
-        ax.fill_between(x_, mean - 1.9 * noise_ob, mean + 1.9 * noise_ob, color=col_fun(main_model[i]), alpha=0.3)
+        ax.fill_between(x_, neg_lim, mean + 1.9 * noise_ob, color=col_fun(main_model[i]), alpha=0.3)
 
         # Latent mean
         mean_latent = gp.f_star_sm[-1].cpu().T[0]
         noise_lat = 1.9 * np.sqrt(np.diag(gp.Gamma[-1].cpu()))
-
+        neg_lim = mean_latent - noise_lat
+        neg_lim[neg_lim < 0.0] = 0.0
         # ax.plot(x_b.cpu(), mean_latent, color='grey', linewidth=1.5, label=f'Latent GP Mean [{m + 1}]')
-        ax.fill_between(x_b.cpu(), mean_latent-noise_lat, mean_latent+noise_lat, color=col_fun(main_model[i]), alpha=0.22)
+        ax.fill_between(x_b.cpu(), neg_lim, mean_latent+noise_lat, color=col_fun(main_model[i]), alpha=0.22)
 
-        ax.set_title(f"ECG CLUSTER {m + 1} ({main_model[m]})")
+        #Experimental mean
+        mean = np.mean(np.array(gp.y_train), axis=0)
+        ax.plot(x_b.cpu(), mean, color='black', linewidth=2, label=f'Experimental mean [{m + 1}]', linestyle='--')
+
+        if title is None:
+            ax.set_title(f"ECG CLUSTER {m + 1} ({main_model[m]})")
+        else:
+            ax.set_title(title)
         #ax.grid(True)
-
+    if yscale:
+        for ax in fig.get_axes():
+            ax.set_ylim(np.min(sw_gp.y_train.numpy())-0.5, y_max + 0.5)
+            ax.set_xticks(np.arange(0.0,0.5,0.1))
     if not ticks:
         for ax in fig.get_axes():
-        #     ax.set_ylim(-390,320)
         #     ax.label_outer()
         #     ax.set_yticklabels([])
             ax.set_xticklabels([])
@@ -792,3 +809,149 @@ def plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, N_0, save=N
         plt.savefig(save)
     else:
         plt.show()
+
+import matplotlib.animation as animation
+
+class FunctionEvolutionVisualizer:
+    def __init__(self, gp, initial_step, num_steps):
+        """
+        Initialize the visualizer with required parameters.
+
+        Parameters:
+        - gp: GP_model.
+        - initial_step: Initial time step for animation.
+        - num_steps: Number of time steps to simulate.
+        """
+        self.gp = gp
+        self.num_steps = num_steps
+        self.initial_step = initial_step
+
+        # Initialize figure and lines for animation
+        self.fig, self.ax = plt.subplots(figsize=(8, 6))
+        self.lines = {
+            "prediction": self.ax.plot([], [], label="Predicted Mean", color="red")[0],
+            "observation": self.ax.plot([], [], label="Observation", color="blue")[0],
+            "correction": self.ax.plot([], [], label="Corrected Mean", color="green")[0],
+        }
+
+        # Add fill_between for variance band (initially empty)
+        self.variance_band = None
+
+        # Set plot properties
+        self.ax.legend()
+        self.ax.set_xlim(0.0, 0.5)
+        self.ax.set_ylim(0.0, 7.0)
+        self.ax.set_xlabel("Frequency (Hz)")
+        self.ax.set_ylabel("Energy")
+        self.ax.set_title("Function Evolution Over Time")
+
+    def init_animation(self):
+        """Initialize the animation by clearing all lines."""
+        for line in self.lines.values():
+            line.set_data([], [])
+
+        # Clear the variance band if it exists
+        if self.variance_band is not None:
+            self.variance_band.remove()
+            self.variance_band = None
+
+        return list(self.lines.values())
+
+    def animate(self, i):
+        """
+        Animation function for each frame.
+
+        Parameters:
+        - i: Current frame index.
+
+        Steps:
+        1. Show prediction.
+        2. Show observation.
+        3. Show correction.
+
+        Each step is shown with a delay of half a second (500 ms).
+        """
+        # Determine which logical step (sub-frame) we are in
+        step = i % 4  # Cycle through 0 (prediction), 1 (observation), 2 (correction)
+        j = self.initial_step + i // 4  # Determine the actual time step
+
+        if j >= len(self.gp.x_train):  # Stop if we exceed available data
+            return list(self.lines.values())
+
+        x_ = self.gp.x_train[j].T[0]
+
+        if step == 0:  # First correction step
+            if i == 0:
+                # Initialize the current function for new animation
+                self.current_function = self.gp.f_star[j].T[0].numpy().copy()
+                self.lines["correction"].set_data(x_, self.current_function)
+            # Update the title dynamically with the current time step
+            self.ax.set_title(f"Function Evolution Over Time - Time Step: {j}")
+
+            # Clear observation and correction temporarily
+            self.lines["observation"].set_data([], [])
+            self.lines["prediction"].set_data([], [])
+            # Clear observation and prediction temporarily
+            if self.variance_band is not None:
+                self.variance_band.remove()
+                self.variance_band = None
+
+        elif step == 1:  # Prediction step
+
+            predicted_f = np.linalg.matrix_power(self.gp.A[j].numpy(),20) @ self.current_function
+            self.lines["prediction"].set_data(x_, predicted_f)
+
+            variance = np.sqrt(torch.diag(self.gp.Gamma[j]).numpy()) * 1.96
+            # Update variance band dynamically
+            if self.variance_band is not None:
+                self.variance_band.remove()  # Remove the old band
+            lower_bound = predicted_f - variance
+            upper_bound = predicted_f + variance
+            self.variance_band = self.ax.fill_between(x_, lower_bound, upper_bound, color="red", alpha=0.2)
+
+        elif step == 2:  # Observation step
+
+            observed_f = self.gp.y_train[j].T[0].numpy()
+            self.lines["observation"].set_data(x_, observed_f)
+
+        elif step == 3:
+
+            corrected_f = self.gp.f_star[j + 1].T[0].numpy().copy()
+            self.lines["correction"].set_data(x_, corrected_f)
+
+            # Update current function for the next iteration
+            self.current_function = corrected_f
+
+        return list(self.lines.values())
+
+    def create_animation(self, output_filename="function_evolution.gif"):
+        """
+        Create and save the animation as a GIF.
+
+        Parameters:
+          - output_filename: Name of the output GIF file.
+
+        Returns:
+          None
+          (The GIF will be saved to disk.)
+        """
+
+        ani = animation.FuncAnimation(
+            self.fig,
+            func=self.animate,
+            init_func=self.init_animation,
+            frames=self.num_steps,
+            interval=400,
+            blit=False,
+            repeat=False,
+        )
+
+        ani.save(output_filename, writer="pillow")
+
+
+
+
+
+
+
+
