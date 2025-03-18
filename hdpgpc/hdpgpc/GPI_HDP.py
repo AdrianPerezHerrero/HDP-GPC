@@ -255,9 +255,9 @@ class GPI_HDP():
         # self.transAlpha = 200.0
         # self.startAlpha = 200.0
         # self.kappa = 0.0
-        self.gamma = 0.4
-        self.transAlpha = 0.4
-        self.startAlpha = 0.4
+        self.gamma = 0.5
+        self.transAlpha = 0.5
+        self.startAlpha = 0.5
         self.kappa = 0.0
 
         # Model associated with each state
@@ -821,7 +821,7 @@ class GPI_HDP():
         self.y_train = y_trains_w
         return q, q_lat, warp_computed
 
-    def elbo_Linears(self, resp, respPair, post=False):
+    def elbo_Linears(self, resp, respPair, post=False, one_sample=False):
         """ Compute ELBO for linear terms. HDP.
         """
         startStateCount = resp[0]
@@ -849,8 +849,9 @@ class GPI_HDP():
             for giter in range(nIters):
                 transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount)),
                                                         self.cond_cuda(torch.clone(startStateCount)), M + 1, rho=rho_)
-                rho_, omega_ = self.find_optimum_rhoOmega(startTheta=startTheta_,
-                                                          transTheta=transTheta_, rho=rho_, omega=omega_, M=M)
+                if not one_sample:
+                    rho_, omega_ = self.find_optimum_rhoOmega(startTheta=startTheta_,
+                                                              transTheta=transTheta_, rho=rho_, omega=omega_, M=M)
         else:
             transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount)),
                                                         self.cond_cuda(torch.clone(startStateCount)), M + 1, rho=rho_)
@@ -1411,9 +1412,9 @@ class GPI_HDP():
         q_bas = torch.sum(q[torch.where(resp.int() > 0.99)]) * self.static_factor
         elbo_latent = torch.sum(q_lat[torch.where(resp.int() > 0.99)]) * self.dynamic_factor
         if post:
-            elbo_bas = self.elbo_Linears(resp, respPair, post=post) * n_points
+            elbo_bas = self.elbo_Linears(resp, respPair, post=post, one_sample=one_sample) * n_points
         else:
-            elbo_bas = self.elbo_Linears(resp, respPair) * n_points
+            elbo_bas = self.elbo_Linears(resp, respPair, one_sample=one_sample) * n_points
         elbo_bas_LDS = 0
         if snr is None:
             frac = torch.ones(self.n_outputs, device=resp.device()) / self.n_outputs#  / self.M
@@ -1459,7 +1460,7 @@ class GPI_HDP():
                 else:
                     elb = elb + gp.return_LDS_param_likelihood() * frac[i]
         if one_sample:
-            return elb / M_
+            return elb #/ M_
         else:
             return elb / np.min([M_, self.M]) #
 
@@ -1621,8 +1622,8 @@ class GPI_HDP():
         if t > 0:
             # Define order
             q_ord = torch.argsort(self.weight_mean(q_aux)[-1,:-1], descending=True)
-            #m = q_ord[-1].item()
-            m = q_ord[0].item()
+            m = q_ord[-1].item()
+            #m = q_ord[0].item()
             q_prev = torch.clone(q_aux)
             q_lat_prev = torch.clone(q_lat)
             # Compute first birth cost
@@ -1630,11 +1631,11 @@ class GPI_HDP():
                 prov_gp = self.gpmodel_deepcopy(self.gpmodels[ld][m])
                 prov_gp.reinit_GP(save_last=False)
                 prov_gp.reinit_LDS(save_last=False)
-                q_prev[[-1], -1, ld] = self.estimate_new(t, prov_gp, self.x_train[-1], y_mod[-1][-1], h=1.0)
+                q_prev[[-1], -1, ld] = self.estimate_new(t, prov_gp, self.x_train[-1], y_mod[-1][-1], h=0.05)
                 prov_gp.include_weighted_sample(t, self.x_train[-1], self.x_train[-1], y_mod[-1][-1], 1.0)
                 self.gpmodels[ld].append(prov_gp)
                 #self.M = M + 1
-                q_lat_prev[:, -1, ld] = prov_gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)), h_ini=1.0)
+                q_lat_prev[:, -1, ld] = prov_gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)), h_ini=0.05)
             resp_prev, resp_prev_log, respPair_prev, respPair_prev_log = self.variational_local_terms(q_prev, self.transTheta, self.startTheta, liks)
             q_prev_post, elbo_prev_post = self.compute_q_elbo(resp_prev, respPair_prev, self.weight_mean(q_prev), self.weight_mean(q_lat_prev),
                                                   self.gpmodels, self.M, snr='saved', one_sample=True, post=True, verb=self.verbose)
