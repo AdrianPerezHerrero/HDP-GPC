@@ -338,7 +338,9 @@ class GPI_HDP():
         startTheta = self.startAlpha * Ebeta
         startTheta[:M] += startStateCount
 
-        return transTheta, startTheta
+        return transTheta / torch.sum(transTheta), startTheta / torch.sum(startTheta)
+        # return transTheta, startTheta
+
 
     def _calcThetaFull(self, transStateCount, startStateCount, M=None, rho=None, kappa=None):
         transStateCount_ = transStateCount
@@ -361,7 +363,8 @@ class GPI_HDP():
         startTheta = self.startAlpha * Ebeta
         startTheta[:M-1] += startStateCount[:M-1]
 
-        return transTheta, startTheta
+        return transTheta / torch.sum(transTheta), startTheta / torch.sum(startTheta)
+        #return transTheta, startTheta
         
     def compute_Pi(self):
         """ Compute transition matrix
@@ -1518,8 +1521,8 @@ class GPI_HDP():
         # ini_Sigma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.0
         # ini_Gamma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.0
         ini_Sigma = var_y_y * 0.050
-        #ini_Gamma = var_y_y * 0.085
-        ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.0])) * 0.050
+        ini_Gamma = var_y_y * 0.075
+        #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.0])) * 0.050
         #ini_Gamma = var_y_y * 0.012
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.5])) * 2.0
         #ini_Gamma = var_y_y_ * 1.0
