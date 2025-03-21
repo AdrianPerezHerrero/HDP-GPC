@@ -321,25 +321,21 @@ class GPI_HDP():
         rho = (1 - remMass) / (M + delta)
         return self.cond_cuda(self.cond_to_torch(rho))
 
-    def _calcThetaPost(self, transStateCount, startStateCount, M):
+    def _calcThetaPost(self, transStateCount, startStateCount, M, rho):
         transStateCount_ = transStateCount
-        Ebeta = self.rho2beta(self.cond_cpu(self.rho), returnSize='K+1')
+        Ebeta = self.rho2beta(self.cond_cpu(rho), returnSize='K+1')
         alphaEbeta = self.transAlpha * Ebeta
 
         transTheta = self.cond_cuda(torch.zeros((M, M)))
         transTheta += alphaEbeta[np.newaxis, :]
-        if not len(transStateCount_.shape) == 0 and not transStateCount_.shape == (1, 1):
-            kp_ = self.cond_cuda(torch.zeros((M, M)))
-            kp_[:-1, :-1] = self.kappa * self.cond_cuda(torch.eye(M-1))
-            transTheta[:M, :M] += transStateCount_ + kp_
-        else:
-            transTheta[:M, :M] += transStateCount_ + self.kappa * self.cond_cuda(torch.eye(M))
+        transTheta[:M-1, :M-1] += self.transTheta * 0.5
+        transTheta[:M, :M] += transStateCount_[:M, :M] + self.kappa * self.cond_cuda(torch.eye(M))
 
         startTheta = self.startAlpha * Ebeta
-        startTheta[:M] += startStateCount
-
-        return transTheta / torch.sum(transTheta), startTheta / torch.sum(startTheta)
-        # return transTheta, startTheta
+        startTheta[:M-1] += self.startTheta
+        startTheta[:M] += startStateCount[:M]
+        #return transTheta / torch.sum(transTheta), startTheta / torch.sum(startTheta)
+        return transTheta, startTheta
 
 
     def _calcThetaFull(self, transStateCount, startStateCount, M=None, rho=None, kappa=None):
@@ -363,8 +359,8 @@ class GPI_HDP():
         startTheta = self.startAlpha * Ebeta
         startTheta[:M-1] += startStateCount[:M-1]
 
-        return transTheta / torch.sum(transTheta), startTheta / torch.sum(startTheta)
-        #return transTheta, startTheta
+        #return transTheta / torch.sum(transTheta), startTheta / torch.sum(startTheta)
+        return transTheta, startTheta
         
     def compute_Pi(self):
         """ Compute transition matrix
@@ -851,8 +847,8 @@ class GPI_HDP():
         if post:
             nIters = 1
             for giter in range(nIters):
-                transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount)),
-                                                        self.cond_cuda(torch.clone(startStateCount)), M + 1, rho=rho_)
+                transTheta_, startTheta_ = self._calcThetaPost(self.cond_cuda(torch.clone(transStateCount)),
+                                                        self.cond_cuda(torch.clone(startStateCount)), M + 1, rho_)
                 if not one_sample:
                     rho_, omega_ = self.find_optimum_rhoOmega(startTheta=startTheta_,
                                                               transTheta=transTheta_, rho=rho_, omega=omega_, M=M)
@@ -1001,12 +997,12 @@ class GPI_HDP():
             transTheta = self.transTheta
         if startTheta is None:
             startTheta = self.startTheta
-        digammaSumTransTheta = torch.log(torch.sum(torch.exp(digamma(self.cond_cpu(transTheta[:M, :M + 1]))), axis=1))
+        digammaSumTransTheta = torch.log(torch.sum(torch.exp(digamma(self.cond_cpu(transTheta[:M, :M + 1]))), axis=1) + 1e-5)
         transPi = digamma(self.cond_cpu(transTheta[:M, :M])) - digammaSumTransTheta[:, np.newaxis]
         self.trans_A = transPi
         # Calculate LOG of start state prob vector
         startPi = digamma(self.cond_cpu(startTheta[:M])) - torch.log(
-            torch.sum(torch.exp(digamma(self.cond_cpu(startTheta[:M + 1])))))
+            torch.sum(torch.exp(digamma(self.cond_cpu(startTheta[:M + 1])))) + 1e-5)
         i = 0
         reparam = True
         resp_per_group = torch.sum(resp, axis=0)
@@ -1945,12 +1941,13 @@ class GPI_HDP():
             startTheta = self.startTheta
         if transTheta is None:
             transTheta = self.transTheta
+        jit = 1e-5
         ELogPi = digamma(self.cond_to_numpy(self.cond_cpu(transTheta))) \
-                 - np.log(np.sum(np.exp(digamma(self.cond_to_numpy(self.cond_cpu(transTheta)))), axis=1))[:,
+                 - np.log(np.sum(np.exp(digamma(self.cond_to_numpy(self.cond_cpu(transTheta)))), axis=1) + jit)[:,
                    np.newaxis]
         sumELogPi = np.sum(ELogPi, axis=0)
         startELogPi = digamma(self.cond_to_numpy(self.cond_cpu(startTheta))) \
-                      - np.log(np.sum(np.exp(digamma(self.cond_to_numpy(self.cond_cpu(startTheta))))))
+                      - np.log(np.sum(np.exp(digamma(self.cond_to_numpy(self.cond_cpu(startTheta))))) + jit)
 
         # Select initial rho, omega values for gradient descent
         if not rho is None:
