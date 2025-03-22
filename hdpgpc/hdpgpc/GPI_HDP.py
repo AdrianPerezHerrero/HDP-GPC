@@ -101,7 +101,7 @@ class GPI_HDP():
                  noise_warp=0.05, recursive_warp=False, warp_updating=False, method_compute_warp='greedy', mode_warp='rough',
                  verbose=False, annealing=True, hmm_switch=True, max_models=None, batch=None,
                  check_var=False, bayesian_params=True, cuda=False, inducing_points=False, estimation_limit=None, reestimate_initial_params=False,
-                 n_explore_steps=10, free_deg_MNIV=5):
+                 n_explore_steps=10, free_deg_MNIV=5, share_gp=False, use_snr=True, reduce_outputs=False, reduce_outputs_ratio=1.0):
         if M is None:
             M = 1
         self.M = M
@@ -165,6 +165,7 @@ class GPI_HDP():
         # Define some characteristics of the model with an initial M decided
         self.ini_lengthscale = ini_lengthscale
         self.bound_lengthscale = bound_lengthscale
+        self.share_gp = share_gp
         #self.static_factor = ini_sigma[0] / (ini_sigma[0] + ini_gamma[0])
         #self.dynamic_factor = ini_gamma[0] / (ini_sigma[0] + ini_gamma[0])
         self.static_factor = ini_sigma[0] / ini_sigma[0]
@@ -184,6 +185,9 @@ class GPI_HDP():
         self.warp_updating = warp_updating
         self.max_models = max_models
         self.batch = batch
+        self.use_snr = use_snr
+        self.reduce_outputs = reduce_outputs
+        self.reduce_outputs_ratio = reduce_outputs_ratio
         self.check_var = check_var
         self.bayesian_params = bayesian_params
         self.x_basis_warp = x_basis_warp
@@ -632,35 +636,58 @@ class GPI_HDP():
                 snr_frac = torch.sum(snr_, dim=0) / torch.sum(snr_)
                 return torch.einsum('ij,j->i', q, snr_frac)
 
+    def reduce_num_outputs(self, y_trains):
+        ratio = self.reduce_outputs_ratio
+        num_final_outputs = int(np.rint(y_trains.shape[2] * ratio))
+        var = np.var(np.sum(y_trains, axis=1), axis=0)
+        final_outputs = np.sort(var.argsort()[::-1][:num_final_outputs])
+        print("Performed reduction of outputs based on variance.")
+        print("Ratio of reduction: " + str(ratio) + " Final outputs: " + str(final_outputs))
+        self.n_outputs = num_final_outputs
+        self.wp_sys = [self.wp_sys[ld] for ld in final_outputs]
+        self.gpmodels = [self.gpmodels[ld] for ld in final_outputs]
+        return y_trains[:,:,final_outputs]
+
     def compute_snr_ini(self, y_trains):
         """ Initial computation of snr
         """
-        n_samples = np.array(y_trains).shape[0]
-        n_outputs = np.array(y_trains).shape[2]
-        snr = torch.zeros(n_samples, n_outputs)
-        snr_comp = SignalNoiseRatio()
-        for ld in range(n_outputs):
-            snr[:, ld] = torch.tensor(
-                [snr_comp(torch.from_numpy(y),
-                     torch.mean(torch.from_numpy(y_trains)[:, :, ld], dim=0)) for y in
-                y_trains[:, :, ld]])
-        self.snr_norm = torch.softmax(snr, dim=1)
+        if self.use_snr:
+            n_samples = np.array(y_trains).shape[0]
+            n_outputs = np.array(y_trains).shape[2]
+            snr = torch.zeros(n_samples, n_outputs)
+            snr_comp = SignalNoiseRatio()
+            for ld in range(n_outputs):
+                snr[:, ld] = torch.tensor(
+                    [snr_comp(torch.from_numpy(y),
+                         torch.mean(torch.from_numpy(y_trains)[:, :, ld], dim=0)) for y in
+                    y_trains[:, :, ld]])
+            self.snr_norm = torch.softmax(snr, dim=1)
+        else:
+            snr = torch.sum(torch.from_numpy(y_trains), dim=1)
+            self.snr_norm = torch.softmax(snr, dim=1)
 
     def compute_snr(self, y_trains, gp):
         """ Iterative computation of snr
         """
-        snr = torch.zeros(y_trains.shape[0])
-        snr_comp = SignalNoiseRatio()
-        for t in range(y_trains.shape[0]):
-            j = np.min([np.max([gp.find_closest_lower(t), 1]), len(gp.f_star_sm) - 1])
-            snr[t] = snr_comp(y_trains[t], gp.f_star_sm[j].T[0])
-        #snr = torch.tensor([0.5] * y_trains.shape[0])
-        return snr
+        if self.use_snr:
+            snr = torch.zeros(y_trains.shape[0])
+            snr_comp = SignalNoiseRatio()
+            for t in range(y_trains.shape[0]):
+                j = np.min([np.max([gp.find_closest_lower(t), 1]), len(gp.f_star_sm) - 1])
+                snr[t] = snr_comp(y_trains[t], gp.f_star_sm[j].T[0])
+            #snr = torch.tensor([0.5] * y_trains.shape[0])
+            return snr
+        else:
+            snr = torch.sum(y_trains, dim=1)
+            return snr
 
     def normalize_snr(self, snr):
         """ Normalize snr using softmax
         """
-        return torch.softmax(torch.max(torch.clone(snr), dim=1)[0], dim=1)
+        if self.use_snr:
+            return torch.softmax(torch.max(torch.clone(snr), dim=1)[0], dim=1)
+        else:
+            return torch.softmax(torch.max(torch.clone(snr), dim=1)[0], dim=1)
 
     def include_batch(self, x_trains, y_trains, with_warp=False, force_model=None, it_limit=None, warp=False):
         """
@@ -686,6 +713,8 @@ class GPI_HDP():
         print("startAlpha: " + str(self.startAlpha))
         print("kappa: " + str(self.kappa))
         print("---------------------------------", flush=True)
+        if self.reduce_outputs:
+            y_trains = self.reduce_num_outputs(y_trains)
         n_samples = np.array(y_trains).shape[0]
         n_outputs = np.array(y_trains).shape[2]
         t = self.T
@@ -1058,7 +1087,16 @@ class GPI_HDP():
         if torch.mean(q_) == 0.0:
             snr_ = torch.zeros(y_trains.shape[0], M, self.n_outputs)
             for ld in range(self.n_outputs):
-                gp = self.create_gp_default()
+                if not self.share_gp:
+                    gp = self.create_gp_default()
+                else:
+                    if ld == 0:
+                        gp = self.create_gp_default()
+                    else:
+                        gp = self.gpmodel_deepcopy(self.gpmodels[ld-1][0])
+                        if gp.fitted:
+                            gp.reinit_LDS(save_last=False)
+                            gp.reinit_GP(save_last=False)
                 q_[:, 0, ld], q_lat_[:, 0, ld]= gp.full_pass_weighted(x_trains, y_trains[:, :, [ld]], resp[:, 0],
                                                      snr=self.snr_norm[:, ld])
                 snr_[:, 0, ld] = self.compute_snr(y_trains[:, :, ld], gp)
@@ -1298,9 +1336,11 @@ class GPI_HDP():
                     for ld in range(self.n_outputs):
                         for m in range(M):
                             if reorder[m] == M - 1:
-                                # gp = self.gpmodel_deepcopy(self.gpmodels[ld][m_chosen])
-                                # If uncommented then new GP is used for a new model, more expensive but official model.
-                                gp = self.create_gp_default()
+                                if self.share_gp:
+                                    gp = self.gpmodel_deepcopy(self.gpmodels[ld][m_chosen])
+                                else:
+                                    # If not share_gp then new GP is used for a new model, more expensive but official model.
+                                    gp = self.create_gp_default()
                                 if gp.fitted:
                                     gp.reinit_LDS(save_last=False)
                                     gp.reinit_GP(save_last=False)
@@ -1414,9 +1454,9 @@ class GPI_HDP():
         q_bas = torch.sum(q[torch.where(resp.int() > 0.99)]) * self.static_factor
         elbo_latent = torch.sum(q_lat[torch.where(resp.int() > 0.99)]) * self.dynamic_factor
         if post:
-            elbo_bas = self.elbo_Linears(resp, respPair, post=post, one_sample=one_sample) * n_points
+            elbo_bas = self.elbo_Linears(resp, respPair, post=post, one_sample=one_sample) * n_points / self.n_outputs
         else:
-            elbo_bas = self.elbo_Linears(resp, respPair, one_sample=one_sample) * n_points
+            elbo_bas = self.elbo_Linears(resp, respPair, one_sample=one_sample) * n_points / self.n_outputs
         elbo_bas_LDS = 0
         if snr is None:
             frac = torch.ones(self.n_outputs, device=resp.device()) / self.n_outputs#  / self.M
