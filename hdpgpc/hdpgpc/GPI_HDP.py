@@ -1073,18 +1073,18 @@ class GPI_HDP():
         f_ind_old = torch.clone(self.f_ind_old)
 
         # Compute q with best index of the old model.
-        snr_temp = torch.zeros(y_trains.shape[0], M, self.n_outputs)
-        for ld in range(self.n_outputs):
-            print("\n-----------Lead " + str(ld + 1) + "-----------")
-            for m in range(M):
-                gp = self.gpmodel_deepcopy(self.gpmodels[ld][m])
-                if gp.fitted:
-                    gp.reinit_LDS(save_last=False)
-                    gp.reinit_GP(save_last=False)
-                if len(indexes_[m]) > 0:
-                    gp.include_weighted_sample(0, x_trains[f_ind_old[m]], x_trains[f_ind_old[m]], y_trains_w[f_ind_old[m],:,[ld]], h=1.0)
-                q_simple[:, m, ld] = gp.compute_sq_err_all(x_trains, y_trains_w[:,:, [ld]])
-                snr_temp[:, m, ld] = self.compute_snr(y_trains[:,:,ld], gp)
+        #snr_temp = torch.zeros(y_trains.shape[0], M, self.n_outputs)
+        # for ld in range(self.n_outputs):
+        #     print("\n-----------Lead " + str(ld + 1) + "-----------")
+        #     for m in range(M):
+        #         gp = self.gpmodel_deepcopy(self.gpmodels[ld][m])
+        #         if gp.fitted:
+        #             gp.reinit_LDS(save_last=False)
+        #             gp.reinit_GP(save_last=False)
+        #         if len(indexes_[m]) > 0:
+        #             gp.include_weighted_sample(0, x_trains[f_ind_old[m]], x_trains[f_ind_old[m]], y_trains_w[f_ind_old[m],:,[ld]], h=1.0)
+        #         q_simple[:, m, ld] = gp.compute_sq_err_all(x_trains, y_trains_w[:,:, [ld]])
+                #snr_temp[:, m, ld] = self.compute_snr(y_trains[:,:,ld], gp)
 
         if M > 1:
             q_aux = torch.clone(q_simple)
@@ -1234,7 +1234,7 @@ class GPI_HDP():
         last_indexes = torch.tensor([-1])
         q = torch.clone(q_aux)
         q_lat = torch.clone(q_lat_)
-        snr_aux = torch.clone(snr_temp)
+        snr_aux = torch.clone(snr_)
         resp_, respPair_, q_def, q_lat_def, snr_aux_def = self.new_group(resp, respPair, torch.clone(q),
                                                                          torch.clone(q_lat), torch.clone(snr_aux))
         _, _, q__def, q_lat__def, snr__def = self.new_group(resp, respPair, torch.clone(q_),
