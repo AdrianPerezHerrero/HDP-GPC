@@ -1072,19 +1072,19 @@ class GPI_HDP():
                 indexes_[m] = torch.where(resp[:, m] == self.cond_cuda(torch.tensor(1.0)))[0].long()
         f_ind_old = torch.clone(self.f_ind_old)
 
-        # Compute q with best index of the old model.
-        #snr_temp = torch.zeros(y_trains.shape[0], M, self.n_outputs)
-        # for ld in range(self.n_outputs):
-        #     print("\n-----------Lead " + str(ld + 1) + "-----------")
-        #     for m in range(M):
-        #         gp = self.gpmodel_deepcopy(self.gpmodels[ld][m])
-        #         if gp.fitted:
-        #             gp.reinit_LDS(save_last=False)
-        #             gp.reinit_GP(save_last=False)
-        #         if len(indexes_[m]) > 0:
-        #             gp.include_weighted_sample(0, x_trains[f_ind_old[m]], x_trains[f_ind_old[m]], y_trains_w[f_ind_old[m],:,[ld]], h=1.0)
-        #         q_simple[:, m, ld] = gp.compute_sq_err_all(x_trains, y_trains_w[:,:, [ld]])
-                #snr_temp[:, m, ld] = self.compute_snr(y_trains[:,:,ld], gp)
+        #Compute q with best index of the old model.
+        snr_temp = torch.zeros(y_trains.shape[0], M, self.n_outputs)
+        for ld in range(self.n_outputs):
+            print("\n-----------Lead " + str(ld + 1) + "-----------")
+            for m in range(M):
+                gp = self.gpmodel_deepcopy(self.gpmodels[ld][m])
+                if gp.fitted:
+                    gp.reinit_LDS(save_last=False)
+                    gp.reinit_GP(save_last=False)
+                if len(indexes_[m]) > 0:
+                    gp.include_weighted_sample(0, x_trains[f_ind_old[m]], x_trains[f_ind_old[m]], y_trains_w[f_ind_old[m],:,[ld]], h=1.0)
+                q_simple[:, m, ld] = gp.compute_sq_err_all(x_trains, y_trains_w[:,:, [ld]])
+                snr_temp[:, m, ld] = self.compute_snr(y_trains[:,:,ld], gp)
 
         if M > 1:
             q_aux = torch.clone(q_simple)
@@ -1286,9 +1286,9 @@ class GPI_HDP():
                     #resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
 
                     # Reallocating resp to preserve order.
-                    resp_per_group_temp = torch.sum(resp_temp, axis=0)
-                    reorder = torch.argsort(resp_per_group_temp, descending=True)
-                    resp_temp = resp_temp[:, reorder]
+                    # resp_per_group_temp = torch.sum(resp_temp, axis=0)
+                    # reorder = torch.argsort(resp_per_group_temp, descending=True)
+                    # resp_temp = resp_temp[:, reorder]
 
                     # Compute chosen model conditioned on new resp
                     # Update all models conditioned on new resp if it has changed
