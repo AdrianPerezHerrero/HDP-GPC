@@ -1286,7 +1286,7 @@ class GPI_HDP():
                     #resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
 
                     # Reallocating resp to preserve order.
-                    #resp_per_group_temp = torch.sum(resp_temp, axis=0)
+                    resp_per_group_temp = torch.sum(resp_temp, axis=0)
                     #reorder = torch.argsort(resp_per_group_temp, descending=True)
                     reorder = torch.arange(resp_per_group_temp.shape[0])
                     resp_temp = resp_temp[:, reorder]
