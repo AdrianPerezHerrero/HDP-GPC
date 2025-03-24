@@ -1287,8 +1287,8 @@ class GPI_HDP():
 
                     # Reallocating resp to preserve order.
                     resp_per_group_temp = torch.sum(resp_temp, axis=0)
-                    #reorder = torch.argsort(resp_per_group_temp, descending=True)
-                    reorder = torch.arange(resp_per_group_temp.shape[0])
+                    reorder = torch.argsort(resp_per_group_temp, descending=True)
+                    #reorder = torch.arange(resp_per_group_temp.shape[0])
                     resp_temp = resp_temp[:, reorder]
 
                     # Compute chosen model conditioned on new resp
@@ -1532,8 +1532,8 @@ class GPI_HDP():
         # ini_Gamma = self.cond_to_torch(np.max(([ini_Gamma, 12.0])))
         #ini_Gamma = self.cond_to_torch(np.max([var_y_y_, var_y_y * 1.5]))
         #ini_Gamma = var_y_y_ * 1.5
-        bound_sigma = (ini_Sigma.item() * 1e-7, 1.0)
-        bound_gamma = (ini_Gamma.item() * 1e-7, 1.0)
+        bound_sigma = (ini_Sigma.item() * 1e-7, ini_Sigma.item() * 1e-5)
+        bound_gamma = (ini_Gamma.item() * 1e-7, ini_Gamma.item() * 1e-5)
         #bound_sigma = (0.1, 20.0)
         #bound_gamma = (0.1, 20.0)
         print("-----------Reestimated ------------", flush=True)
