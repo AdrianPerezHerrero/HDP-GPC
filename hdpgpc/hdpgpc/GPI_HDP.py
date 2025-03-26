@@ -1463,7 +1463,7 @@ class GPI_HDP():
         if one_sample:
             return elb #/ M_
         else:
-            return elb / np.min([M_, self.M]) #
+            return elb / M_ #np.min([M_, self.M]) #
 
     def redefine_default(self, x_trains, y_trains, resp):
         """ Method to compute Sigma and Gamma from a batch of examples and assign it to initial values.
@@ -1518,7 +1518,7 @@ class GPI_HDP():
         # ini_Sigma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.0
         # ini_Gamma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.0
         ini_Sigma = var_y_y * 0.055
-        ini_Gamma = var_y_y * 0.080
+        ini_Gamma = var_y_y * 0.070
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.0])) * 0.050
         #ini_Gamma = var_y_y * 0.012
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.5])) * 2.0
