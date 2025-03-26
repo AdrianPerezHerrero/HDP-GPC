@@ -1343,7 +1343,7 @@ class GPI_HDP():
                     q_bas, elbo_bas = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                             self.weight_mean(q_lat, snr_aux), gpmodels_temp, M,
                                                             snr=snr_aux, post=True)
-                    if (torch.where(torch.sum(resp_temp, dim=0) < 1.0)[0].shape[0] > 0) or torch.argmax(torch.sum(resp_temp, dim=0))[0] == M:
+                    if (torch.where(torch.sum(resp_temp, dim=0) < 1.0)[0].shape[0] > 0) or torch.argmax(torch.sum(resp_temp, dim=0)) == M:
                         print("Bad estimation")
                         continue
                     i__ = 0
