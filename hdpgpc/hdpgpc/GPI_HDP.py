@@ -328,8 +328,8 @@ class GPI_HDP():
 
         transTheta = self.cond_cuda(torch.zeros((M, M)))
         transTheta += alphaEbeta[np.newaxis, :]
-        transTheta[:M-1, :M-1] += self.transTheta * 0.7
-        transTheta[:M, :M] += transStateCount_[:M, :M] * 0.3 + self.kappa * self.cond_cuda(torch.eye(M))
+        transTheta[:M-1, :M-1] += self.transTheta * 0.5
+        transTheta[:M, :M] += transStateCount_[:M, :M] * 0.5 + self.kappa * self.cond_cuda(torch.eye(M))
 
         startTheta = self.startAlpha * Ebeta
         startTheta[:M-1] += self.startTheta
@@ -1466,7 +1466,7 @@ class GPI_HDP():
         if one_sample:
             return elb #/ M_
         else:
-            return elb / M_ #np.min([M_, self.M]) #
+            return elb / np.min([M_, self.M]) #
 
     def redefine_default(self, x_trains, y_trains, resp):
         """ Method to compute Sigma and Gamma from a batch of examples and assign it to initial values.
