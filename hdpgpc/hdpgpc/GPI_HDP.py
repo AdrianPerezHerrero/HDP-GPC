@@ -1380,7 +1380,7 @@ class GPI_HDP():
 
                     update_snr = True
 
-                    if torch.all(torch.sum(resp_temp, dim=0) >= 1.0):
+                    if torch.all(torch.sum(resp_temp, dim=0) >= 1.0) and not torch.argmax(torch.sum(resp_temp, dim=0)) == M:
                         if q_bas < q_bas_post:
                             if not q_bas + elbo_bas < q_bas_post + elbo_post:
                                 print("Possibly better q_obs but worse elbo.")
