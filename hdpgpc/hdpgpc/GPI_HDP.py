@@ -847,9 +847,14 @@ class GPI_HDP():
         if post:
             nIters = 1
             for giter in range(nIters):
-                transTheta_, startTheta_ = self._calcThetaPost(self.cond_cuda(torch.clone(transStateCount)),
-                                                        self.cond_cuda(torch.clone(startStateCount)), M + 1, rho_)
-                if not one_sample:
+                if one_sample:
+                    transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount)),
+                                                                   self.cond_cuda(torch.clone(startStateCount)), M + 1,
+                                                                   rho=rho_)
+                else:
+                    transTheta_, startTheta_ = self._calcThetaPost(self.cond_cuda(torch.clone(transStateCount)),
+                                                                   self.cond_cuda(torch.clone(startStateCount)), M + 1,
+                                                                   rho_)
                     rho_, omega_ = self.find_optimum_rhoOmega(startTheta=startTheta_,
                                                               transTheta=transTheta_, rho=rho_, omega=omega_, M=M)
         else:
@@ -1343,7 +1348,7 @@ class GPI_HDP():
                     q_bas, elbo_bas = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                             self.weight_mean(q_lat, snr_aux), gpmodels_temp, M,
                                                             snr=snr_aux, post=True)
-                    if (torch.where(torch.sum(resp_temp, dim=0) < 1.0)[0].shape[0] > 0) or torch.argmax(torch.sum(resp_temp, dim=0)) == M:
+                    if (torch.where(torch.sum(resp_temp, dim=0) < 1.0)[0].shape[0] > 0) or torch.argmax(torch.sum(resp_temp, dim=0)).item() == resp_temp.shape[1]-1:
                         print("Bad estimation")
                         continue
                     i__ = 0
@@ -1380,7 +1385,7 @@ class GPI_HDP():
 
                     update_snr = True
 
-                    if torch.all(torch.sum(resp_temp, dim=0) >= 1.0) and not torch.argmax(torch.sum(resp_temp, dim=0)) == M:
+                    if torch.all(torch.sum(resp_temp, dim=0) >= 1.0) and not torch.argmax(torch.sum(resp_temp, dim=0)).item() == resp_temp.shape[1]-1:
                         if q_bas < q_bas_post:
                             if not q_bas + elbo_bas < q_bas_post + elbo_post:
                                 print("Possibly better q_obs but worse elbo.")
