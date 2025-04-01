@@ -165,10 +165,10 @@ class GPI_HDP():
         # Define some characteristics of the model with an initial M decided
         self.ini_lengthscale = ini_lengthscale
         self.bound_lengthscale = bound_lengthscale
-        #self.static_factor = ini_sigma[0] / (ini_sigma[0] + ini_gamma[0])
-        #self.dynamic_factor = ini_gamma[0] / (ini_sigma[0] + ini_gamma[0])
-        self.static_factor = ini_sigma[0] / ini_sigma[0]
-        self.dynamic_factor = ini_gamma[0] / ini_gamma[0]
+        self.static_factor = ini_sigma[0] / (ini_sigma[0] + ini_gamma[0])
+        self.dynamic_factor = ini_gamma[0] / (ini_sigma[0] + ini_gamma[0])
+        #self.static_factor = ini_sigma[0] / ini_sigma[0]
+        #self.dynamic_factor = ini_gamma[0] / ini_gamma[0]
         self.bound_sigma = bound_sigma
         self.bound_gamma = bound_gamma
         self.bound_sigma_warp = bound_noise_warp
@@ -1080,7 +1080,8 @@ class GPI_HDP():
         #Compute q with best index of the old model.
         snr_temp = torch.zeros(y_trains.shape[0], M, self.n_outputs)
         for ld in range(self.n_outputs):
-            print("\n-----------Lead " + str(ld + 1) + "-----------")
+            if self.verbose:
+                print("\n-----------Lead " + str(ld + 1) + "-----------")
             for m in range(M):
                 gp = self.gpmodel_deepcopy(self.gpmodels[ld][m])
                 if gp.fitted:
@@ -1115,9 +1116,11 @@ class GPI_HDP():
             q_lat = torch.clone(q_lat_)
             gpmodels_temp = [[] for _ in range(self.n_outputs)]
             for ld in range(self.n_outputs):
-                print("\n-----------Lead " + str(ld + 1) + "-----------")
+                if self.verbose:
+                    print("\n-----------Lead " + str(ld + 1) + "-----------")
                 for m in range(M):
-                    print("\n   -----------Model " + str(m + 1) + "-----------")
+                    if self.verbose:
+                        print("\n   -----------Model " + str(m + 1) + "-----------")
                     gp = self.gpmodel_deepcopy(self.gpmodels[ld][reorder[m]])
                     if not torch.equal(resp[:, reorder[m]].long(), resp_temp[:, m].long()):
                         if gp.fitted:
@@ -2038,9 +2041,11 @@ class GPI_HDP():
         indexes_ = [[] for _ in range(self.n_outputs)]
         gpmodels_temp = [[] for _ in range(self.n_outputs)]
         for ld in range(self.n_outputs):
-            print("\n-----------Lead " + str(ld + 1) + "-----------")
+            if self.verbose:
+                print("\n-----------Lead " + str(ld + 1) + "-----------")
             for m in range(M):
-                print("\n   -----------Model " + str(m + 1) + "-----------")
+                if self.verbose:
+                    print("\n   -----------Model " + str(m + 1) + "-----------")
                 indexes_[ld].append(torch.where(resp_temp[:, m] == self.cond_cuda(torch.tensor(1.0)))[0].int())
                 if len(gpmodels[ld]) > reorder[m]:
                     gp = self.gpmodel_deepcopy(gpmodels[ld][reorder[m]])
