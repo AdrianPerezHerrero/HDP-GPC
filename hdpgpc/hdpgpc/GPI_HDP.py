@@ -165,10 +165,10 @@ class GPI_HDP():
         # Define some characteristics of the model with an initial M decided
         self.ini_lengthscale = ini_lengthscale
         self.bound_lengthscale = bound_lengthscale
-        self.static_factor = ini_sigma[0] / (ini_sigma[0] + ini_gamma[0])
-        self.dynamic_factor = ini_gamma[0] / (ini_sigma[0] + ini_gamma[0])
-        #self.static_factor = ini_sigma[0] / ini_sigma[0]
-        #self.dynamic_factor = ini_gamma[0] / ini_gamma[0]
+        #self.static_factor = ini_sigma[0] / (ini_sigma[0] + ini_gamma[0])
+        #self.dynamic_factor = ini_gamma[0] / (ini_sigma[0] + ini_gamma[0])
+        self.static_factor = ini_sigma[0] / ini_sigma[0]
+        self.dynamic_factor = ini_gamma[0] / ini_gamma[0]
         self.bound_sigma = bound_sigma
         self.bound_gamma = bound_gamma
         self.bound_sigma_warp = bound_noise_warp
@@ -1528,8 +1528,8 @@ class GPI_HDP():
         # Good results using 0.018.
         # ini_Sigma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.0
         # ini_Gamma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.0
-        ini_Sigma = var_y_y * 0.055
-        ini_Gamma = var_y_y * 0.085
+        ini_Sigma = var_y_y * 0.005
+        ini_Gamma = var_y_y * 0.001
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.0])) * 0.050
         #ini_Gamma = var_y_y * 0.012
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.5])) * 2.0
