@@ -1425,9 +1425,9 @@ class GPI_HDP():
         q_bas = torch.sum(q[torch.where(resp.int() > 0.99)]) * self.static_factor
         elbo_latent = torch.sum(q_lat[torch.where(resp.int() > 0.99)]) * self.dynamic_factor
         if post:
-            elbo_bas = self.elbo_Linears(resp, respPair, post=post, one_sample=one_sample) * n_points / self.n_outputs
+            elbo_bas = self.elbo_Linears(resp, respPair, post=post, one_sample=one_sample) * n_points #/ self.n_outputs
         else:
-            elbo_bas = self.elbo_Linears(resp, respPair, one_sample=one_sample) * n_points / self.n_outputs
+            elbo_bas = self.elbo_Linears(resp, respPair, one_sample=one_sample) * n_points #/ self.n_outputs
         elbo_bas_LDS = 0
         if snr is None:
             frac = torch.ones(self.n_outputs, device=resp.device()) / self.n_outputs#  / self.M
@@ -1475,7 +1475,7 @@ class GPI_HDP():
         if one_sample:
             return elb #/ M_
         else:
-            return elb #/ M_ #* np.min([M_ - 1, self.M])
+            return elb / 2.0 #/ M_ #* np.min([M_ - 1, self.M])
 
     def redefine_default(self, x_trains, y_trains, resp):
         """ Method to compute Sigma and Gamma from a batch of examples and assign it to initial values.
