@@ -255,7 +255,7 @@ class GPI_HDP():
         # self.transAlpha = 200.0
         # self.startAlpha = 200.0
         # self.kappa = 0.0
-        self.gamma = 0.5
+        self.gamma = 0.01
         self.transAlpha = 0.5
         self.startAlpha = 0.5
         self.kappa = 0.0
@@ -328,6 +328,7 @@ class GPI_HDP():
 
         transTheta = self.cond_cuda(torch.zeros((M, M)))
         transTheta += alphaEbeta[np.newaxis, :]
+        #coef = self.M / M
         transTheta[:M-1, :M-1] += self.transTheta * 0.5
         transTheta[:M, :M] += transStateCount_[:M, :M] * 0.5 + self.kappa * self.cond_cuda(torch.eye(M))
 
@@ -673,9 +674,9 @@ class GPI_HDP():
         self : returns an instance of self.
         """
         # # Redefine HDP hyperparams for batch inclusion
-        self.gamma = 0.8
-        self.transAlpha = 0.8
-        self.startAlpha = 0.8
+        self.gamma = 0.01
+        self.transAlpha = 0.5
+        self.startAlpha = 0.5
         self.kappa = 0.0
         print("------ HDP Hyperparameters ------", flush=True)
         print("gamma: " + str(self.gamma))
@@ -1381,6 +1382,8 @@ class GPI_HDP():
 
 
                     #new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
+                    print("Step " + str(step + 1) + "/" + str(n_steps) + "- Trying to divide: " + str(
+                        m_chosen) + " with beat " + str(f_ind_new.item()))
                     print(">>> Prev -------")
                     q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_), self.weight_mean(q_lat_, snr_), self.gpmodels, self.M, snr=snr_, post=False)
                     print(">>> Post -------")
