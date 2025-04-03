@@ -101,7 +101,7 @@ class GPI_HDP():
                  noise_warp=0.05, recursive_warp=False, warp_updating=False, method_compute_warp='greedy', mode_warp='rough',
                  verbose=False, annealing=True, hmm_switch=True, max_models=None, batch=None,
                  check_var=False, bayesian_params=True, cuda=False, inducing_points=False, estimation_limit=None, reestimate_initial_params=False,
-                 n_explore_steps=10, free_deg_MNIV=5):
+                 n_explore_steps=10, free_deg_MNIV=5, share_gp=False):
         if M is None:
             M = 1
         self.M = M
@@ -165,6 +165,7 @@ class GPI_HDP():
         # Define some characteristics of the model with an initial M decided
         self.ini_lengthscale = ini_lengthscale
         self.bound_lengthscale = bound_lengthscale
+        self.share_gp = share_gp
         #self.static_factor = ini_sigma[0] / (ini_sigma[0] + ini_gamma[0])
         #self.dynamic_factor = ini_gamma[0] / (ini_sigma[0] + ini_gamma[0])
         self.static_factor = ini_sigma[0] / ini_sigma[0]
@@ -1062,7 +1063,16 @@ class GPI_HDP():
         if torch.mean(q_) == 0.0:
             snr_ = torch.zeros(y_trains.shape[0], M, self.n_outputs)
             for ld in range(self.n_outputs):
-                gp = self.create_gp_default()
+                if not self.share_gp:
+                    gp = self.create_gp_default()
+                else:
+                    if ld == 0:
+                        gp = self.create_gp_default()
+                    else:
+                        gp = self.gpmodel_deepcopy(self.gpmodels[ld-1][0])
+                        if gp.fitted:
+                            gp.reinit_LDS(save_last=False)
+                            gp.reinit_GP(save_last=False)
                 q_[:, 0, ld], q_lat_[:, 0, ld]= gp.full_pass_weighted(x_trains, y_trains[:, :, [ld]], resp[:, 0],
                                                      snr=self.snr_norm[:, ld])
                 snr_[:, 0, ld] = self.compute_snr(y_trains[:, :, ld], gp)
@@ -1306,9 +1316,11 @@ class GPI_HDP():
                     for ld in range(self.n_outputs):
                         for m in range(M):
                             if reorder[m] == M - 1:
-                                # gp = self.gpmodel_deepcopy(self.gpmodels[ld][m_chosen])
-                                # If uncommented then new GP is used for a new model, more expensive but official model.
-                                gp = self.create_gp_default()
+                                if self.share_gp:
+                                    gp = self.gpmodel_deepcopy(self.gpmodels[ld][m_chosen])
+                                else:
+                                    # If not share_gp then new GP is used for a new model, more expensive but official model.
+                                    gp = self.create_gp_default()
                                 if gp.fitted:
                                     gp.reinit_LDS(save_last=False)
                                     gp.reinit_GP(save_last=False)
