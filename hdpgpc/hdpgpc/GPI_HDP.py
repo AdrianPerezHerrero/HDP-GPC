@@ -674,9 +674,9 @@ class GPI_HDP():
         self : returns an instance of self.
         """
         # # Redefine HDP hyperparams for batch inclusion
-        self.gamma = 0.01
-        self.transAlpha = 0.5
-        self.startAlpha = 0.5
+        self.gamma = 0.8
+        self.transAlpha = 0.8
+        self.startAlpha = 0.8
         self.kappa = 0.0
         print("------ HDP Hyperparameters ------", flush=True)
         print("gamma: " + str(self.gamma))
@@ -1382,7 +1382,7 @@ class GPI_HDP():
 
 
                     #new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
-                    print("Step " + str(step + 1) + "/" + str(n_steps) + "- Trying to divide: " + str(
+                    print("- Trying to divide: " + str(
                         m_chosen) + " with beat " + str(f_ind_new.item()))
                     print(">>> Prev -------")
                     q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_), self.weight_mean(q_lat_, snr_), self.gpmodels, self.M, snr=snr_, post=False)
@@ -1532,8 +1532,8 @@ class GPI_HDP():
         # Good results using 0.018.
         # ini_Sigma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.0
         # ini_Gamma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.0
-        ini_Sigma = var_y_y * 0.055
-        ini_Gamma = var_y_y * 0.075
+        ini_Sigma = var_y_y * 0.1
+        ini_Gamma = var_y_y * 0.2
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.0])) * 0.050
         #ini_Gamma = var_y_y * 0.012
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.5])) * 2.0
