@@ -256,7 +256,7 @@ class GPI_HDP():
         # self.transAlpha = 200.0
         # self.startAlpha = 200.0
         # self.kappa = 0.0
-        self.gamma = 0.01
+        self.gamma = 0.5
         self.transAlpha = 0.5
         self.startAlpha = 0.5
         self.kappa = 0.0
@@ -1279,6 +1279,7 @@ class GPI_HDP():
                     if not l_ in potential_ind[f_ind_new.item()]:
                         some_new_index = True
                 if some_new_index:
+                    q_simple_ = torch.clone(q_def)
                     q, q_lat, snr_aux = torch.clone(q_def), torch.clone(q_lat_def), torch.clone(snr_aux_def)
                     q__, q_lat__, snr__ = torch.clone(q__def), torch.clone(q_lat__def), torch.clone(snr__def)
                     last_indexes = potential_ind[f_ind_new.item()]
@@ -1290,10 +1291,10 @@ class GPI_HDP():
                             gp.reinit_LDS(save_last=False)
                             gp.reinit_GP(save_last=False)
                         gp.include_weighted_sample(0, x_trains[f_ind_new], x_trains[f_ind_new], y_trains_w[f_ind_new,:,[ld]], h=1.0)
-                        q[:, -1, ld] = gp.compute_sq_err_all(x_trains, y_trains_w[:,:,[ld]])
+                        q_simple_[:, -1, ld] = gp.compute_sq_err_all(x_trains, y_trains_w[:,:,[ld]])
                         snr_aux[:, -1, ld] = self.compute_snr(y_trains_w[:, :, ld], gp)
                     # Compute resp
-                    q_mean = self.weight_mean(q, snr_aux)
+                    q_mean = self.weight_mean(q_simple_, snr_aux)
                     q_norm, _ = self.LogLik(q_mean)
                     alpha, margprob = self.forward(startPi, transPi, q_norm)
                     beta = self.backward(transPi, q_norm, margprob)
@@ -1413,8 +1414,8 @@ class GPI_HDP():
                             pos_new = torch.where(reorder == M - 1)[0].long()
                             indexes = torch.where(resp_temp[:, pos_new] == 1.0)[0]
                             if len(indexes) > 0:
-                                #f_ind_old[-1] = indexes[torch.argmax(self.weight_mean(q_simple, snr_aux)[indexes, pos_new]).long()]
-                                f_ind_old[-1] = f_ind_new
+                                f_ind_old[-1] = indexes[torch.argmax(self.weight_mean(q_simple_, snr_aux)[indexes, pos_new]).long()]
+                                #f_ind_old[-1] = f_ind_new
                             else:
                                 f_ind_old[-1] = f_ind_new
                             self.f_ind_old = torch.clone(f_ind_old[reorder])
@@ -1544,8 +1545,8 @@ class GPI_HDP():
         # Good results using 0.018.
         # ini_Sigma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.0
         # ini_Gamma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.0
-        ini_Sigma = var_y_y * 0.1
-        ini_Gamma = var_y_y * 0.15
+        ini_Sigma = var_y_y * 0.055
+        ini_Gamma = var_y_y * 0.085
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.0])) * 0.050
         #ini_Gamma = var_y_y * 0.012
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.5])) * 2.0
