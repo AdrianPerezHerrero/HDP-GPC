@@ -1411,17 +1411,15 @@ class GPI_HDP():
                         if q_bas + elbo_bas < q_bas_post + elbo_post:
                             print("Chosen to divide: "+str(m_chosen)+" with beat "+str(f_ind_new.item()))
                             self.gpmodels = gpmodels_temp
-                            q_simple_ = q_simple_[:, reorder, :]
-                            for m in range(M):
-                                #pos_new = torch.where(reorder == m)[0].long()
-                                pos_new = reorder[m].long()
-                                indexes = torch.where(resp_temp[:, pos_new] == 1.0)[0]
-                                if len(indexes) > 0:
-                                    #f_ind_old[-1] = indexes[torch.argmax(self.weight_mean(q_simple_, snr_aux)[indexes, pos_new]).long()]
-                                    f_ind_old[m] = indexes[torch.argmax(self.weight_mean(q, snr_aux)[indexes, pos_new]).long()]
-                                    #f_ind_old[-1] = f_ind_new
-                                else:
-                                    f_ind_old[m] = f_ind_new if reorder[m] == M-1 else f_ind_old[m]
+                            pos_new = torch.where(reorder == M-1)[0].long()
+                            #pos_new = reorder[m].long()
+                            indexes = torch.where(resp_temp[:, pos_new] == 1.0)[0]
+                            if len(indexes) > 0:
+                                #f_ind_old[-1] = indexes[torch.argmax(self.weight_mean(q_simple_, snr_aux)[indexes, pos_new]).long()]
+                                f_ind_old[-1] = indexes[torch.argmax(self.weight_mean(q, snr_aux)[indexes, pos_new]).long()]
+                                #f_ind_old[-1] = f_ind_new
+                            else:
+                                f_ind_old[-1] = f_ind_new #if reorder[m] == M-1 else f_ind_old[m]
                             self.f_ind_old = torch.clone(f_ind_old[reorder])
                             if update_snr:
                                 self.snr_norm = self.normalize_snr(snr_aux)
