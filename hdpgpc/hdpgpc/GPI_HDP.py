@@ -1411,13 +1411,17 @@ class GPI_HDP():
                         if q_bas + elbo_bas < q_bas_post + elbo_post:
                             print("Chosen to divide: "+str(m_chosen)+" with beat "+str(f_ind_new.item()))
                             self.gpmodels = gpmodels_temp
-                            pos_new = torch.where(reorder == M - 1)[0].long()
-                            indexes = torch.where(resp_temp[:, pos_new] == 1.0)[0]
-                            if len(indexes) > 0:
-                                f_ind_old[-1] = indexes[torch.argmax(self.weight_mean(q_simple_, snr_aux)[indexes, pos_new]).long()]
-                                #f_ind_old[-1] = f_ind_new
-                            else:
-                                f_ind_old[-1] = f_ind_new
+                            q_simple_ = q_simple_[:, reorder, :]
+                            for m in range(M):
+                                #pos_new = torch.where(reorder == m)[0].long()
+                                pos_new = reorder[m].long()
+                                indexes = torch.where(resp_temp[:, pos_new] == 1.0)[0]
+                                if len(indexes) > 0:
+                                    #f_ind_old[-1] = indexes[torch.argmax(self.weight_mean(q_simple_, snr_aux)[indexes, pos_new]).long()]
+                                    f_ind_old[m] = indexes[torch.argmax(self.weight_mean(q, snr_aux)[indexes, pos_new]).long()]
+                                    #f_ind_old[-1] = f_ind_new
+                                else:
+                                    f_ind_old[m] = f_ind_new if reorder[m] == M-1 else f_ind_old[m]
                             self.f_ind_old = torch.clone(f_ind_old[reorder])
                             if update_snr:
                                 self.snr_norm = self.normalize_snr(snr_aux)
@@ -1441,9 +1445,9 @@ class GPI_HDP():
         q_bas = torch.sum(q[torch.where(resp.int() > 0.99)]) * self.static_factor
         elbo_latent = torch.sum(q_lat[torch.where(resp.int() > 0.99)]) * self.dynamic_factor
         if post:
-            elbo_bas = self.elbo_Linears(resp, respPair, post=post, one_sample=one_sample) * n_points #/ self.n_outputs
+            elbo_bas = self.elbo_Linears(resp, respPair, post=post, one_sample=one_sample)# * n_points #/ self.n_outputs
         else:
-            elbo_bas = self.elbo_Linears(resp, respPair, one_sample=one_sample) * n_points #/ self.n_outputs
+            elbo_bas = self.elbo_Linears(resp, respPair, one_sample=one_sample)# * n_points #/ self.n_outputs
         elbo_bas_LDS = 0
         if snr is None:
             frac = torch.ones(self.n_outputs, device=resp.device()) / self.n_outputs#  / self.M
@@ -1491,7 +1495,7 @@ class GPI_HDP():
         if one_sample:
             return elb #/ M_
         else:
-            return elb / 2.0 #/ M_ #* np.min([M_ - 1, self.M])
+            return elb #/ 2.0 #/ M_ #* np.min([M_ - 1, self.M])
 
     def redefine_default(self, x_trains, y_trains, resp):
         """ Method to compute Sigma and Gamma from a batch of examples and assign it to initial values.
@@ -2446,13 +2450,16 @@ class GPI_HDP():
         alpha = self.cond_cuda(self.cond_to_torch(alpha))
         beta = self.cond_cuda(self.cond_to_torch(beta))
         q = self.cond_cuda(self.cond_to_torch(q))
-
+        trans_A = self.compute_trans_A(q.shape[1])
+        PiMat = self.cond_cuda(torch.exp(trans_A))
         bmsgSoftEv = safe_exp(q)
         bmsgSoftEv *= beta
-        # respPair[1:] = alpha[:-1][:, :, np.newaxis] * \
-        #               bmsgSoftEv[1:][:, np.newaxis, :]
-        respPair = alpha[:, :, np.newaxis] * \
-                      bmsgSoftEv[:, np.newaxis, :]
+        respPair = torch.zeros((q.shape[0], q.shape[1], q.shape[1]))
+        respPair[1:] = alpha[:-1][:, :, np.newaxis] * \
+                      bmsgSoftEv[1:][:, np.newaxis, :]
+        # respPair = alpha[:, :, np.newaxis] * \
+        #               bmsgSoftEv[:, np.newaxis, :]
+        respPair *= PiMat[np.newaxis, :, :]
         den = torch.sum(respPair, dim=(1,2))[:, np.newaxis, np.newaxis]
         den[den == 0] = 1e-10
         respPair /= den
