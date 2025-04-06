@@ -1475,7 +1475,7 @@ class GPI_HDP():
         if one_sample:
             frac = sum_resp / torch.sum(sum_resp)
         else:
-            frac = sum_resp / sum_resp
+            frac = sum_resp / torch.sum(sum_resp) #sum_resp
         for i in sum_resp:
             if i > 0:
                 M_ = M_ + 1
@@ -1493,7 +1493,7 @@ class GPI_HDP():
         if one_sample:
             return elb #/ M_
         else:
-            return elb / 2.0 #M_ #* np.min([M_ - 1, self.M])
+            return elb #/ M_ #* np.min([M_ - 1, self.M])
 
     def redefine_default(self, x_trains, y_trains, resp):
         """ Method to compute Sigma and Gamma from a batch of examples and assign it to initial values.
