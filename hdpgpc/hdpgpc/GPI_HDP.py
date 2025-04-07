@@ -1378,6 +1378,8 @@ class GPI_HDP():
                         if q_bas + elbo_bas < q_bas_post + elbo_post:
                             print("Emergency reallocation and removing last group.")
                             reallocate = True
+                            for ld in range(self.n_outputs):
+                                gpmodels_temp[ld] = gpmodels_temp[ld][:-1]
                             self.gpmodels = gpmodels_temp
                             self.f_ind_old = f_ind_old[reorder]
                             if update_snr:
