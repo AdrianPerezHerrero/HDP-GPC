@@ -330,8 +330,8 @@ class GPI_HDP():
         transTheta = self.cond_cuda(torch.zeros((M, M)))
         transTheta += alphaEbeta[np.newaxis, :]
         #coef = self.M / M
-        transTheta[:M-1, :M-1] += self.transTheta * 0.5
-        transTheta[:M, :M] += transStateCount_[:M, :M] * 0.5 + self.kappa * self.cond_cuda(torch.eye(M))
+        transTheta[:M-1, :M-1] += self.transTheta * 0.8
+        transTheta[:M, :M] += transStateCount_[:M, :M] * 0.2 + self.kappa * self.cond_cuda(torch.eye(M))
 
         startTheta = self.startAlpha * Ebeta
         startTheta[:M-1] += self.startTheta
@@ -675,9 +675,9 @@ class GPI_HDP():
         self : returns an instance of self.
         """
         # # Redefine HDP hyperparams for batch inclusion
-        self.gamma = 0.8
-        self.transAlpha = 0.8
-        self.startAlpha = 0.8
+        self.gamma = 0.1
+        self.transAlpha = 0.1
+        self.startAlpha = 0.1
         self.kappa = 0.0
         print("------ HDP Hyperparameters ------", flush=True)
         print("gamma: " + str(self.gamma))
@@ -857,8 +857,8 @@ class GPI_HDP():
                     transTheta_, startTheta_ = self._calcThetaPost(self.cond_cuda(torch.clone(transStateCount)),
                                                                    self.cond_cuda(torch.clone(startStateCount)), M + 1,
                                                                    rho_)
-                    rho_, omega_ = self.find_optimum_rhoOmega(startTheta=startTheta_,
-                                                              transTheta=transTheta_, rho=rho_, omega=omega_, M=M)
+                    # rho_, omega_ = self.find_optimum_rhoOmega(startTheta=startTheta_,
+                    #                                           transTheta=transTheta_, rho=rho_, omega=omega_, M=M)
         else:
             transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount)),
                                                         self.cond_cuda(torch.clone(startStateCount)), M + 1, rho=rho_)
@@ -1493,7 +1493,7 @@ class GPI_HDP():
         if one_sample:
             return elb #/ M_
         else:
-            return elb #/ M_ * np.min([np.max([1, M_ - 1]), self.M])
+            return elb #/ 2.0#/ M_ #* np.min([np.max([1, M_ - 1]), self.M])
 
     def redefine_default(self, x_trains, y_trains, resp):
         """ Method to compute Sigma and Gamma from a batch of examples and assign it to initial values.
@@ -1547,8 +1547,8 @@ class GPI_HDP():
         # Good results using 0.018.
         # ini_Sigma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.0
         # ini_Gamma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.0
-        ini_Sigma = var_y_y * 0.080
-        ini_Gamma = var_y_y * 0.115
+        ini_Sigma = var_y_y * 0.001
+        ini_Gamma = var_y_y * 0.0005
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.0])) * 0.050
         #ini_Gamma = var_y_y * 0.012
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.5])) * 2.0
