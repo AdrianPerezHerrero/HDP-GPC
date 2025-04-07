@@ -958,6 +958,14 @@ class GPI_HDP():
         snr = snr_
         return resp, respPair, q, q_lat, snr
 
+    def remove_last_group(self, resp, respPair, q, q_lat, snr):
+        resp = resp[:, :-1]
+        respPair = respPair[:, :-1, :-1]
+        q = q[:, :-1, :]
+        q_lat = q_lat[:, :-1, :]
+        snr = snr[:, :-1, :]
+        return resp, respPair, q, q_lat, snr
+
     def refill_resp(self, resp, respPair=None):
         """ Refill HDP parameters if a model is reasignated.
         """
@@ -1365,9 +1373,22 @@ class GPI_HDP():
                     q_bas, elbo_bas = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                             self.weight_mean(q_lat, snr_aux), gpmodels_temp, M,
                                                             snr=snr_aux, post=True)
-                    if (torch.where(torch.sum(resp_temp, dim=0) < 1.0)[0].shape[0] > 0) or torch.argmax(torch.sum(resp_temp, dim=0)).item() == resp_temp.shape[1]-1:
-                        print("Bad estimation")
-                        continue
+                    if (torch.where(torch.sum(resp_temp, dim=0) < 1.0)[0].shape[0] > 0) or torch.argmax(
+                            torch.sum(resp_temp, dim=0)).item() == resp_temp.shape[1] - 1:
+                        if q_bas + elbo_bas < q_bas_post + elbo_post:
+                            print("Emergency reallocation and removing last group.")
+                            reallocate = True
+                            self.gpmodels = gpmodels_temp
+                            self.f_ind_old = f_ind_old[reorder]
+                            if update_snr:
+                                self.snr_norm = self.normalize_snr(snr_aux)
+                            resp_temp, respPair_temp, q, q_lat, snr_aux = self.remove_last_group(resp_temp,
+                                                                                                 respPair_temp, q,
+                                                                                                 q_lat, snr_aux)
+                            return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, reallocate
+                        else:
+                            print("Bad estimation")
+                            continue
                     i__ = 0
                     while True:
                         resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, gpmodels_temp = self.estimate_q_all(M,
@@ -1547,8 +1568,8 @@ class GPI_HDP():
         # Good results using 0.018.
         # ini_Sigma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.0
         # ini_Gamma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.0
-        ini_Sigma = var_y_y * 0.050
-        ini_Gamma = var_y_y * 0.070
+        ini_Sigma = var_y_y * 0.030
+        ini_Gamma = var_y_y * 0.050
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.0])) * 0.050
         #ini_Gamma = var_y_y * 0.012
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.5])) * 2.0
