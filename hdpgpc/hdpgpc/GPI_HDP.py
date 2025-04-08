@@ -1061,7 +1061,7 @@ class GPI_HDP():
                 elbo_bas = elbo_post
                 i = i + 1
         #q_obs = torch.sum(torch.sum(q_)).item()/len(y_trains)
-        self.update_initial_sigma()
+        #self.update_initial_sigma()
         return resp, respPair, q, q_lat, snr, y_trains_w, reallocate
 
     def estimate_q_first(self, M, x_trains, y_trains, y_trains_w, resp, respPair, q_, q_lat_, snr_, startPi, transPi, reallocate_=False, reparam=False):
