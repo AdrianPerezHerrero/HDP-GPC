@@ -1061,6 +1061,7 @@ class GPI_HDP():
                 elbo_bas = elbo_post
                 i = i + 1
         #q_obs = torch.sum(torch.sum(q_)).item()/len(y_trains)
+        self.update_initial_sigma()
         return resp, respPair, q, q_lat, snr, y_trains_w, reallocate
 
     def estimate_q_first(self, M, x_trains, y_trains, y_trains_w, resp, respPair, q_, q_lat_, snr_, startPi, transPi, reallocate_=False, reparam=False):
@@ -1213,6 +1214,7 @@ class GPI_HDP():
         j_ = 0
         for j, f_ind_new in enumerate(f_ind_new_potential):
             if j_ == n_steps // 2.0:
+            #if j_ == n_steps:
                 break
             m_chosen = -1
             for m in range(M - 1):
@@ -1230,6 +1232,7 @@ class GPI_HDP():
                         j_ = j_ + 1
                         break
 
+        # Potential compared with accumulated q -------------------------
         q_aux = torch.clone(q_simple)
         f_ind_new_q = torch.argsort(q_s + q_lat_s)
         last_indexes = torch.tensor([-1])
@@ -1252,6 +1255,7 @@ class GPI_HDP():
                         f_ind_new_potential_def[j_] = f_ind_new
                         j_ = j_ + 1
                         break
+        #-----------------------------------------
         #ord_ = torch.argsort(potential_q[f_ind_new_potential_def[:n_steps]])#, descending=True)
         #f_ind_new_potential_def[:n_steps] = f_ind_new_potential_def[ord_]
         # Adding 5 possible potential indexes not by q.
@@ -1870,15 +1874,21 @@ class GPI_HDP():
             if len(self.gpmodels[ld][model].indexes) > 1 and self.warp_updating[model] and with_warp:
                 self.wp_sys[ld][model].update_warp(x_train, self.x_w[-1][model])
 
-    def update_initial_sigma(self, model):
+    def update_initial_sigma(self):
         """ Method to iteratively update initial sigma (not works so well)
         """
-        gp = self.gpmodels[model]
-        estimator = (torch.mean(torch.diag(gp.Sigma[-1])) + torch.mean(torch.diag(gp.Gamma[-1]))) \
-                    * self.ini_sigma_def/torch.mean(torch.diag(gp.Sigma[-1]))
-        self.ini_sigma_def = (self.ini_sigma_def * self.T + estimator)/(self.T + 1)
-        self.gpmodels[-1] = self.create_gp_default()
-
+        estimator_sig, estimator_gam = 0.0, 0.0
+        for ld in range(self.n_outputs):
+            M = self.M
+            for gp in self.gpmodels[ld]:
+                estimator_sig = (estimator_sig * M + torch.mean(torch.diag(gp.Sigma[-1]))) / (M + 1)
+                estimator_gam = (estimator_gam * M + torch.mean(torch.diag(gp.Gamma[-1]))) / (M + 1)
+        self.ini_sigma_def = (self.ini_sigma_def * M + estimator_sig) / (M + 1)
+        self.ini_gamma_def = (self.ini_gamma_def * M + estimator_gam) / (M + 1)
+        for ld in range(self.n_outputs):
+            for gp in self.gpmodels[ld]:
+                gp.Sigma_def = (gp.Sigma_def * M + torch.eye(gp.Sigma_def.shape[0]) * estimator_sig) / (M + 1)
+                gp.Gamma_def = (gp.Gamma_def * M + torch.eye(gp.Gamma_def.shape[0]) * estimator_gam) / (M + 1)
 
     def calcELBO_LinearTerms(self, rho, omega, alpha, startAlpha, kappa, gamma, transTheta, startTheta, startStateCount,
                              transStateCount):
