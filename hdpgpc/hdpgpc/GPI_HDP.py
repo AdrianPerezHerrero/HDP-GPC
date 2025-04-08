@@ -1878,12 +1878,13 @@ class GPI_HDP():
         """ Method to iteratively update initial sigma (not works so well)
         """
         estimator_sig, estimator_gam = 0.0, 0.0
-        coef = 0.5
+        coef = 0.9
         for ld in range(self.n_outputs):
             for gp in self.gpmodels[ld]:
                 estimator_sig = estimator_sig + torch.mean(torch.diag(gp.Sigma[-1]))
                 estimator_gam = estimator_gam + torch.mean(torch.diag(gp.Gamma[-1]))
         estimator_sig = estimator_sig / (self.M * self.n_outputs)
+        estimator_gam = estimator_gam / (self.M * self.n_outputs)
         self.ini_sigma_def = self.ini_sigma_def * coef + estimator_sig * (1-coef)
         self.ini_gamma_def = self.ini_gamma_def * coef + estimator_gam * (1-coef)
         for ld in range(self.n_outputs):
