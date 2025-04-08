@@ -2098,9 +2098,9 @@ class GPI_HDP():
         resp_temp = torch.exp(logresp)
         respPair_temp = torch.exp(logrespPair)
 
-        resp_per_group_temp = torch.sum(resp, axis=0)
+        resp_per_group_temp = torch.sum(resp_temp, axis=0)
         reorder = torch.argsort(resp_per_group_temp, descending=True)
-        resp_temp = torch.clone(resp[:, reorder])
+        resp_temp = torch.clone(resp_temp[:, reorder])
         q__ = None
         indexes_ = [[] for _ in range(self.n_outputs)]
         gpmodels_temp = [[] for _ in range(self.n_outputs)]
