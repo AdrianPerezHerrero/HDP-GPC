@@ -1364,15 +1364,15 @@ class GPI_HDP():
                             gpmodels_temp[ld].append(gp)
 
                     # Recompute resp
-                    # q_mean = self.weight_mean(q, snr_aux)
-                    # q_norm, _ = self.LogLik(q_mean)
-                    # alpha, margprob = self.forward(startPi, transPi, q_norm)
-                    # beta = self.backward(transPi, q_norm, margprob)
-                    # resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
-                    # respPairlog_temp, _ = self.LogLik(
-                    #     self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
-                    # resp_temp = torch.exp(resplog_temp)
-                    # respPair_temp = torch.exp(respPairlog_temp)
+                    q_mean = self.weight_mean(q, snr_aux)
+                    q_norm, _ = self.LogLik(q_mean)
+                    alpha, margprob = self.forward(startPi, transPi, q_norm)
+                    beta = self.backward(transPi, q_norm, margprob)
+                    resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
+                    respPairlog_temp, _ = self.LogLik(
+                        self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
+                    resp_temp = torch.exp(resplog_temp)
+                    respPair_temp = torch.exp(respPairlog_temp)
 
                     #resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
                     q_bas_, elbo_bas_ = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
