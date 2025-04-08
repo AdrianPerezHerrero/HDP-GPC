@@ -1375,12 +1375,17 @@ class GPI_HDP():
                     # respPair_temp = torch.exp(respPairlog_temp)
 
                     #resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
-                    q_bas, elbo_bas = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
+                    q_bas_, elbo_bas_ = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                             self.weight_mean(q_lat, snr_aux), gpmodels_temp, M,
                                                             snr=snr_aux, post=True)
+
                     if (torch.where(torch.sum(resp_temp, dim=0) < 1.0)[0].shape[0] > 0) or torch.argmax(
                             torch.sum(resp_temp, dim=0)).item() == resp_temp.shape[1] - 1:
-                        if q_bas + elbo_bas < q_bas_post + elbo_post:
+                        print(">>> Possible emergency reallocation. Prev ----")
+                        q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_),
+                                                              self.weight_mean(q_lat_, snr_), self.gpmodels, self.M,
+                                                              snr=snr_, post=False)
+                        if q_bas + elbo_bas < q_bas_ + elbo_bas_:
                             print("Emergency reallocation and removing last group.")
                             reallocate = True
                             for ld in range(self.n_outputs):
@@ -1413,12 +1418,12 @@ class GPI_HDP():
                                                                                                                  reparam=reparam)
                         q_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                                 self.weight_mean(q_lat, snr_aux), gpmodels_temp, M, snr=snr_aux, post=True)
-                        print("ELBO_reduction: " + str(((q_post + elbo_post) - (q_bas + elbo_bas)).item()))
-                        if (torch.isclose(q_bas + elbo_bas, q_post + elbo_post,
+                        print("ELBO_reduction: " + str(((q_post + elbo_post) - (q_bas_ + elbo_bas_)).item()))
+                        if (torch.isclose(q_bas_ + elbo_bas_, q_post + elbo_post,
                                           rtol=1e-5) and i__ > 0) or i__ == 10:  # or reparam:
                                 break
-                        q_bas = q_post
-                        elbo_bas = elbo_post
+                        q_bas_ = q_post
+                        elbo_bas_ = elbo_post
                         i__ = i__ + 1
 
 
