@@ -1157,13 +1157,13 @@ class GPI_HDP():
                     gpmodels_temp[ld].append(gp)
 
             # Recompute resp
-            q_norm, _ = self.LogLik(self.weight_mean(q, snr_aux))
-            alpha, margprob = self.forward(startPi, transPi, q_norm)
-            beta = self.backward(transPi, q_norm, margprob)
-            resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
-            respPairlog_temp, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
-            resp_temp = torch.exp(resplog_temp)
-            respPair_temp = torch.exp(respPairlog_temp)
+            # q_norm, _ = self.LogLik(self.weight_mean(q, snr_aux))
+            # alpha, margprob = self.forward(startPi, transPi, q_norm)
+            # beta = self.backward(transPi, q_norm, margprob)
+            # resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
+            # respPairlog_temp, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
+            # resp_temp = torch.exp(resplog_temp)
+            # respPair_temp = torch.exp(respPairlog_temp)
             #resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
 
             new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
@@ -1364,15 +1364,16 @@ class GPI_HDP():
                             gpmodels_temp[ld].append(gp)
 
                     # Recompute resp
-                    q_mean = self.weight_mean(q, snr_aux)
-                    q_norm, _ = self.LogLik(q_mean)
-                    alpha, margprob = self.forward(startPi, transPi, q_norm)
-                    beta = self.backward(transPi, q_norm, margprob)
-                    resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
-                    respPairlog_temp, _ = self.LogLik(
-                        self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
-                    resp_temp = torch.exp(resplog_temp)
-                    respPair_temp = torch.exp(respPairlog_temp)
+                    # q_mean = self.weight_mean(q, snr_aux)
+                    # q_norm, _ = self.LogLik(q_mean)
+                    # alpha, margprob = self.forward(startPi, transPi, q_norm)
+                    # beta = self.backward(transPi, q_norm, margprob)
+                    # resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
+                    # respPairlog_temp, _ = self.LogLik(
+                    #     self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
+                    # resp_temp = torch.exp(resplog_temp)
+                    # respPair_temp = torch.exp(respPairlog_temp)
+
                     #resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
                     q_bas, elbo_bas = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                             self.weight_mean(q_lat, snr_aux), gpmodels_temp, M,
@@ -2088,6 +2089,15 @@ class GPI_HDP():
         q = torch.zeros((len(x_trains), M, self.n_outputs), device=self.device) + torch.min(q_) * 2.0
         q_lat = torch.zeros((len(x_trains), M, self.n_outputs), device=self.device)  # + torch.min(q_lat_) * 2.0
         snr_aux = torch.clone(snr_)
+
+        q_norm, _ = self.LogLik(self.weight_mean(q_, snr_aux))
+        alpha, margprob = self.forward(startPi, transPi, q_norm)
+        beta = self.backward(transPi, q_norm, margprob)
+        logresp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
+        logrespPair, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
+        resp_temp = torch.exp(logresp)
+        respPair_temp = torch.exp(logrespPair)
+
         resp_per_group_temp = torch.sum(resp, axis=0)
         reorder = torch.argsort(resp_per_group_temp, descending=True)
         resp_temp = torch.clone(resp[:, reorder])
@@ -2140,13 +2150,14 @@ class GPI_HDP():
                         q_lat[:, m, ld] = q_lat_[:, m, ld]
                         snr_aux[:, m, ld] = torch.zeros(snr_.shape[0])
                 gpmodels_temp[ld].append(gp)
-        q_norm, _ = self.LogLik(self.weight_mean(q, snr_aux))
-        alpha, margprob = self.forward(startPi, transPi, q_norm)
-        beta = self.backward(transPi, q_norm, margprob)
-        logresp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
-        logrespPair, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
-        resp_temp = torch.exp(logresp)
-        respPair_temp = torch.exp(logrespPair)
+        # q_norm, _ = self.LogLik(self.weight_mean(q, snr_aux))
+        # alpha, margprob = self.forward(startPi, transPi, q_norm)
+        # beta = self.backward(transPi, q_norm, margprob)
+        # logresp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
+        # logrespPair, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
+        # resp_temp = torch.exp(logresp)
+        # respPair_temp = torch.exp(logrespPair)
+
         #resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
         # Finally see if it is worthy to birth new cluster
         #new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
