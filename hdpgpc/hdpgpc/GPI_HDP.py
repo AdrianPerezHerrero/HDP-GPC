@@ -1580,8 +1580,8 @@ class GPI_HDP():
         #ini_Gamma = var_y_y * 0.012
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.5])) * 2.0
         #ini_Gamma = var_y_y_ * 1.0
-        #ini_Sigma = self.cond_to_torch(10.0)
-        #ini_Gamma = self.cond_to_torch(25.0)
+        #ini_Sigma = self.cond_to_torch(40.0)
+        #ini_Gamma = self.cond_to_torch(100.0)
         # if ini_Sigma > 200.0:
         #      ini_Sigma = ini_Sigma * 0.3
         #      ini_Gamma = ini_Gamma * 0.3
@@ -1878,17 +1878,18 @@ class GPI_HDP():
         """ Method to iteratively update initial sigma (not works so well)
         """
         estimator_sig, estimator_gam = 0.0, 0.0
-        for ld in range(self.n_outputs):
-            M = self.M
-            for gp in self.gpmodels[ld]:
-                estimator_sig = (estimator_sig * M + torch.mean(torch.diag(gp.Sigma[-1]))) / (M + 1)
-                estimator_gam = (estimator_gam * M + torch.mean(torch.diag(gp.Gamma[-1]))) / (M + 1)
-        self.ini_sigma_def = (self.ini_sigma_def * M + estimator_sig) / (M + 1)
-        self.ini_gamma_def = (self.ini_gamma_def * M + estimator_gam) / (M + 1)
+        coef = 0.5
         for ld in range(self.n_outputs):
             for gp in self.gpmodels[ld]:
-                gp.Sigma_def = (gp.Sigma_def * M + torch.eye(gp.Sigma_def.shape[0]) * estimator_sig) / (M + 1)
-                gp.Gamma_def = (gp.Gamma_def * M + torch.eye(gp.Gamma_def.shape[0]) * estimator_gam) / (M + 1)
+                estimator_sig = estimator_sig + torch.mean(torch.diag(gp.Sigma[-1]))
+                estimator_gam = estimator_gam + torch.mean(torch.diag(gp.Gamma[-1]))
+        estimator_sig = estimator_sig / (self.M * self.n_outputs)
+        self.ini_sigma_def = self.ini_sigma_def * coef + estimator_sig * (1-coef)
+        self.ini_gamma_def = self.ini_gamma_def * coef + estimator_gam * (1-coef)
+        for ld in range(self.n_outputs):
+            for gp in self.gpmodels[ld]:
+                gp.Sigma_def = gp.Sigma_def * coef + torch.eye(gp.Sigma_def.shape[0]) * estimator_sig * (1-coef)
+                gp.Gamma_def = gp.Gamma_def * coef + torch.eye(gp.Gamma_def.shape[0]) * estimator_gam * (1-coef)
 
     def calcELBO_LinearTerms(self, rho, omega, alpha, startAlpha, kappa, gamma, transTheta, startTheta, startStateCount,
                              transStateCount):
