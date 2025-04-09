@@ -1167,7 +1167,7 @@ class GPI_HDP():
                 q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_),
                                                       self.weight_mean(q_lat_, snr_), self.gpmodels, self.M,
                                                       snr=snr_, post=False)
-                if q_bas_ + elbo_bas_ < q_bas + elbo_bas:
+                if q_bas + elbo_bas < q_bas_ + elbo_bas_:
                     update_snr = True
                     print("Emergency reallocation and removing last group.")
                     reallocate = True
@@ -1438,7 +1438,7 @@ class GPI_HDP():
                         q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_),
                                                               self.weight_mean(q_lat_, snr_), self.gpmodels, self.M,
                                                               snr=snr_, post=False)
-                        if q_bas_ + elbo_bas_ < q_bas + elbo_bas:
+                        if q_bas + elbo_bas < q_bas_ + elbo_bas_:
                             print("Emergency reallocation and removing last group.")
                             reallocate = True
                             for ld in range(self.n_outputs):
