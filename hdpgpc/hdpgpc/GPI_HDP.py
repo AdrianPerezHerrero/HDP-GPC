@@ -1061,6 +1061,7 @@ class GPI_HDP():
                 elbo_bas = elbo_post
                 i = i + 1
         #q_obs = torch.sum(torch.sum(q_)).item()/len(y_trains)
+        #self.update_initial_sigma()
         return resp, respPair, q, q_lat, snr, y_trains_w, reallocate
 
     def estimate_q_first(self, M, x_trains, y_trains, y_trains_w, resp, respPair, q_, q_lat_, snr_, startPi, transPi, reallocate_=False, reparam=False):
@@ -1156,13 +1157,13 @@ class GPI_HDP():
                     gpmodels_temp[ld].append(gp)
 
             # Recompute resp
-            q_norm, _ = self.LogLik(self.weight_mean(q, snr_aux))
-            alpha, margprob = self.forward(startPi, transPi, q_norm)
-            beta = self.backward(transPi, q_norm, margprob)
-            resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
-            respPairlog_temp, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
-            resp_temp = torch.exp(resplog_temp)
-            respPair_temp = torch.exp(respPairlog_temp)
+            # q_norm, _ = self.LogLik(self.weight_mean(q, snr_aux))
+            # alpha, margprob = self.forward(startPi, transPi, q_norm)
+            # beta = self.backward(transPi, q_norm, margprob)
+            # resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
+            # respPairlog_temp, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
+            # resp_temp = torch.exp(resplog_temp)
+            # respPair_temp = torch.exp(respPairlog_temp)
             #resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
 
             new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
@@ -1213,6 +1214,7 @@ class GPI_HDP():
         j_ = 0
         for j, f_ind_new in enumerate(f_ind_new_potential):
             if j_ == n_steps // 2.0:
+            #if j_ == n_steps:
                 break
             m_chosen = -1
             for m in range(M - 1):
@@ -1230,6 +1232,7 @@ class GPI_HDP():
                         j_ = j_ + 1
                         break
 
+        # Potential compared with accumulated q -------------------------
         q_aux = torch.clone(q_simple)
         f_ind_new_q = torch.argsort(q_s + q_lat_s)
         last_indexes = torch.tensor([-1])
@@ -1252,6 +1255,7 @@ class GPI_HDP():
                         f_ind_new_potential_def[j_] = f_ind_new
                         j_ = j_ + 1
                         break
+        #-----------------------------------------
         #ord_ = torch.argsort(potential_q[f_ind_new_potential_def[:n_steps]])#, descending=True)
         #f_ind_new_potential_def[:n_steps] = f_ind_new_potential_def[ord_]
         # Adding 5 possible potential indexes not by q.
@@ -1369,10 +1373,12 @@ class GPI_HDP():
                         self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
                     resp_temp = torch.exp(resplog_temp)
                     respPair_temp = torch.exp(respPairlog_temp)
+
                     #resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
                     q_bas_, elbo_bas_ = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                             self.weight_mean(q_lat, snr_aux), gpmodels_temp, M,
                                                             snr=snr_aux, post=True)
+
                     if (torch.where(torch.sum(resp_temp, dim=0) < 1.0)[0].shape[0] > 0) or torch.argmax(
                             torch.sum(resp_temp, dim=0)).item() == resp_temp.shape[1] - 1:
                         print(">>> Possible emergency reallocation. Prev ----")
@@ -1574,14 +1580,14 @@ class GPI_HDP():
         # Good results using 0.018.
         # ini_Sigma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.0
         # ini_Gamma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.0
-        ini_Sigma = var_y_y * 0.055
-        ini_Gamma = var_y_y * 0.060
+        ini_Sigma = var_y_y * 0.050
+        ini_Gamma = var_y_y * 0.070
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.0])) * 0.050
         #ini_Gamma = var_y_y * 0.012
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.5])) * 2.0
         #ini_Gamma = var_y_y_ * 1.0
-        #ini_Sigma = self.cond_to_torch(10.0)
-        #ini_Gamma = self.cond_to_torch(25.0)
+        #ini_Sigma = self.cond_to_torch(40.0)
+        #ini_Gamma = self.cond_to_torch(100.0)
         # if ini_Sigma > 200.0:
         #      ini_Sigma = ini_Sigma * 0.3
         #      ini_Gamma = ini_Gamma * 0.3
@@ -1874,15 +1880,23 @@ class GPI_HDP():
             if len(self.gpmodels[ld][model].indexes) > 1 and self.warp_updating[model] and with_warp:
                 self.wp_sys[ld][model].update_warp(x_train, self.x_w[-1][model])
 
-    def update_initial_sigma(self, model):
+    def update_initial_sigma(self):
         """ Method to iteratively update initial sigma (not works so well)
         """
-        gp = self.gpmodels[model]
-        estimator = (torch.mean(torch.diag(gp.Sigma[-1])) + torch.mean(torch.diag(gp.Gamma[-1]))) \
-                    * self.ini_sigma_def/torch.mean(torch.diag(gp.Sigma[-1]))
-        self.ini_sigma_def = (self.ini_sigma_def * self.T + estimator)/(self.T + 1)
-        self.gpmodels[-1] = self.create_gp_default()
-
+        estimator_sig, estimator_gam = 0.0, 0.0
+        coef = 0.9
+        for ld in range(self.n_outputs):
+            for gp in self.gpmodels[ld]:
+                estimator_sig = estimator_sig + torch.mean(torch.diag(gp.Sigma[-1]))
+                estimator_gam = estimator_gam + torch.mean(torch.diag(gp.Gamma[-1]))
+        estimator_sig = estimator_sig / (self.M * self.n_outputs)
+        estimator_gam = estimator_gam / (self.M * self.n_outputs)
+        self.ini_sigma_def = self.ini_sigma_def * coef + estimator_sig * (1-coef)
+        self.ini_gamma_def = self.ini_gamma_def * coef + estimator_gam * (1-coef)
+        for ld in range(self.n_outputs):
+            for gp in self.gpmodels[ld]:
+                gp.Sigma_def = gp.Sigma_def * coef + torch.eye(gp.Sigma_def.shape[0]) * estimator_sig * (1-coef)
+                gp.Gamma_def = gp.Gamma_def * coef + torch.eye(gp.Gamma_def.shape[0]) * estimator_gam * (1-coef)
 
     def calcELBO_LinearTerms(self, rho, omega, alpha, startAlpha, kappa, gamma, transTheta, startTheta, startStateCount,
                              transStateCount):
@@ -2080,9 +2094,18 @@ class GPI_HDP():
         q = torch.zeros((len(x_trains), M, self.n_outputs), device=self.device) + torch.min(q_) * 2.0
         q_lat = torch.zeros((len(x_trains), M, self.n_outputs), device=self.device)  # + torch.min(q_lat_) * 2.0
         snr_aux = torch.clone(snr_)
-        resp_per_group_temp = torch.sum(resp, axis=0)
+
+        q_norm, _ = self.LogLik(self.weight_mean(q_, snr_aux))
+        alpha, margprob = self.forward(startPi, transPi, q_norm)
+        beta = self.backward(transPi, q_norm, margprob)
+        logresp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
+        logrespPair, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
+        resp_temp = torch.exp(logresp)
+        respPair_temp = torch.exp(logrespPair)
+
+        resp_per_group_temp = torch.sum(resp_temp, axis=0)
         reorder = torch.argsort(resp_per_group_temp, descending=True)
-        resp_temp = torch.clone(resp[:, reorder])
+        resp_temp = torch.clone(resp_temp[:, reorder])
         q__ = None
         indexes_ = [[] for _ in range(self.n_outputs)]
         gpmodels_temp = [[] for _ in range(self.n_outputs)]
@@ -2132,13 +2155,14 @@ class GPI_HDP():
                         q_lat[:, m, ld] = q_lat_[:, m, ld]
                         snr_aux[:, m, ld] = torch.zeros(snr_.shape[0])
                 gpmodels_temp[ld].append(gp)
-        q_norm, _ = self.LogLik(self.weight_mean(q, snr_aux))
-        alpha, margprob = self.forward(startPi, transPi, q_norm)
-        beta = self.backward(transPi, q_norm, margprob)
-        logresp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
-        logrespPair, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
-        resp_temp = torch.exp(logresp)
-        respPair_temp = torch.exp(logrespPair)
+        # q_norm, _ = self.LogLik(self.weight_mean(q, snr_aux))
+        # alpha, margprob = self.forward(startPi, transPi, q_norm)
+        # beta = self.backward(transPi, q_norm, margprob)
+        # logresp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
+        # logrespPair, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
+        # resp_temp = torch.exp(logresp)
+        # respPair_temp = torch.exp(logrespPair)
+
         #resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
         # Finally see if it is worthy to birth new cluster
         #new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]

@@ -448,7 +448,7 @@ class GPI_model():
         int_params = matrix_normal_inv_wishart(ini_A, torch.eye(ini_A.shape[0], device=self.device), self.free_deg_MNIV, ini_Gamma)
         obs_params = matrix_normal_inv_wishart(ini_C, torch.eye(ini_C.shape[0], device=self.device), self.free_deg_MNIV, ini_Sigma)
         elb_LDS = elb_LDS + int_params.log_likelihood_MNIW(A_, Gam_, n0) + obs_params.log_likelihood_MNIW(C_, Sig_, n0)
-        return elb_LDS# / len(self.A)
+        return elb_LDS #/ len(self.A)
 
     def compute_sq_err_all(self, x_trains, y_trains, no_first=False):
         """ Method to compute the squared error over all provided examples y_trains.
@@ -1269,7 +1269,7 @@ class matrix_normal_inv_wishart():
                    # - self.n0 * 0.5 * torch.logdet(self.scale)\
                    # - self.n0 * d * 0.5 * torch.log(torch.tensor(2.0 * torch.pi, device=self.scale.device))
         scale_lik = - 0.5 * torch.trace(torch.matmul(sig_inv, self.scale)) #\
-                    # - (self.n0 + 1) * 0.5 * torch.logdet(Sigma) #\
+                    #- (self.n0 + 1) * 0.5 * torch.logdet(Sigma) #\
                     #- n0 * 0.5 * torch.logdet(self.scale)
                     #- n0 * d * 0.5 * torch.log(torch.tensor(2.0, device=self.scale.device))\
                     #- torch.special.multigammaln(torch.tensor((n0 + d)*0.5, device=self.scale.device), d)
