@@ -1204,7 +1204,7 @@ class GPI_HDP():
                                                         post=False)
                 print("ELBO_reduction: " + str(((q_post + elbo_post) - (q_bas_ + elbo_bas_)).item()))
                 if (torch.isclose(q_bas_ + elbo_bas_, q_post + elbo_post,
-                                  rtol=1e-5) and i__ > 0) or i__ == 10:  # or reparam:
+                                  rtol=1e-5) and i__ > 0) or i__ == 20:  # or reparam:
                     break
                 q_bas_ = q_post
                 elbo_bas_ = elbo_post
@@ -1417,7 +1417,7 @@ class GPI_HDP():
                             gpmodels_temp[ld].append(gp)
 
                     # Recompute resp
-                    q_mean = self.weight_mean(q + q_lat, snr_aux)
+                    q_mean = self.weight_mean(q, snr_aux)
                     q_norm, _ = self.LogLik(q_mean)
                     alpha, margprob = self.forward(startPi, transPi, q_norm)
                     beta = self.backward(transPi, q_norm, margprob)
@@ -2148,7 +2148,7 @@ class GPI_HDP():
         q_lat = torch.zeros((len(x_trains), M, self.n_outputs), device=self.device)  # + torch.min(q_lat_) * 2.0
         snr_aux = torch.clone(snr_)
 
-        q_norm, _ = self.LogLik(self.weight_mean(q_ + q_lat_, snr_aux))
+        q_norm, _ = self.LogLik(self.weight_mean(q_, snr_aux))
         alpha, margprob = self.forward(startPi, transPi, q_norm)
         beta = self.backward(transPi, q_norm, margprob)
         logresp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
