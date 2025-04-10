@@ -1118,6 +1118,7 @@ class GPI_HDP():
             if torch.sum(resp, dim=0)[-1] == 0:
                 q_aux[:, -1, :] = torch.zeros(q_aux[:, -1, :].shape) + torch.min(q_aux) * 2.0
                 snr_aux[:, -1, :] = torch.zeros(snr_aux[:, -1, :].shape) + torch.min(snr_aux) * 2.0
+
             q_norm, _ = self.LogLik(self.weight_mean(q_aux, snr_aux))
             alpha, margprob = self.forward(startPi, transPi, q_norm)
             beta = self.backward(transPi, q_norm, margprob)
@@ -1156,42 +1157,95 @@ class GPI_HDP():
                         snr_aux[:, m, ld] = torch.clone(snr_[:, reorder[m], ld])
                     gpmodels_temp[ld].append(gp)
 
-            # Recompute resp
-            # q_norm, _ = self.LogLik(self.weight_mean(q, snr_aux))
-            # alpha, margprob = self.forward(startPi, transPi, q_norm)
-            # beta = self.backward(transPi, q_norm, margprob)
-            # resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
-            # respPairlog_temp, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
-            # resp_temp = torch.exp(resplog_temp)
-            # respPair_temp = torch.exp(respPairlog_temp)
-            #resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
-
-            new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
-            print(">>> Prev -------")
-            q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_), self.weight_mean(q_lat_, snr_),
-                                                  self.gpmodels, M, snr=snr_, post=False)
-            print(">>> Post -------")
-            q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux), self.weight_mean(q_lat, snr_aux),
-                                                        gpmodels_temp, M, snr=snr_aux, post=False)
-            update_snr = True
-            if torch.all(torch.sum(resp_temp, dim=0)[:-1] >= 1.0):
-                if q_bas < q_bas_post:
-                    if not q_bas + elbo_bas < q_bas_post + elbo_post:
-                        print("Possibly better q_obs but worse elbo.")
-                if q_bas + elbo_bas < q_bas_post + elbo_post and q_bas != q_bas_post:
-                    print("Reallocating beats into existing groups.")
-                    reallocate = True
-                    self.gpmodels = gpmodels_temp
-                    self.f_ind_old = f_ind_old[reorder]
-                    if update_snr:
-                        self.snr_norm = self.normalize_snr(snr_aux)
-                    else:
-                        snr_aux = snr_
-                    return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w_, reallocate
-                else:
-                    print("Not reallocating, trying to generate new group.")
-            else:
+            q_bas_, elbo_bas_ = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
+                                                    self.weight_mean(q_lat, snr_aux), gpmodels_temp, M,
+                                                    snr=snr_aux, post=False)
+            if torch.argmax(torch.sum(resp_temp, dim=0)).item() == resp_temp.shape[1] - 1:
                 print("Bad estimation")
+            else:
+                if (torch.where(torch.sum(resp_temp, dim=0) < 1.0)[0].shape[0] > 0):
+                    print(">>> Possible emergency reallocation. Prev ----")
+                    q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_),
+                                                          self.weight_mean(q_lat_, snr_), self.gpmodels, self.M,
+                                                          snr=snr_, post=False)
+                    if q_bas + elbo_bas < q_bas_ + elbo_bas_:
+                        update_snr = True
+                        print("Emergency reallocation and removing last group.")
+                        reallocate = True
+                        for ld in range(self.n_outputs):
+                            gpmodels_temp[ld] = gpmodels_temp[ld][:-1]
+                        self.gpmodels = gpmodels_temp
+                        self.f_ind_old = f_ind_old[reorder]
+                        if update_snr:
+                            self.snr_norm = self.normalize_snr(snr_aux)
+                        resp_temp, respPair_temp, q, q_lat, snr_aux = self.remove_last_group(resp_temp,
+                                                                                             respPair_temp, q,
+                                                                                             q_lat, snr_aux)
+                        return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, reallocate
+                    else:
+                        print("Bad estimation")
+                i__ = 0
+                while True:
+                    resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, gpmodels_temp = self.estimate_q_all(M,
+                                                                                                                 x_trains=x_trains,
+                                                                                                                 y_trains=y_trains,
+                                                                                                                 y_trains_w=y_trains_w,
+                                                                                                                 resp=resp_temp,
+                                                                                                                 respPair=respPair_temp,
+                                                                                                                 q_=q,
+                                                                                                                 q_lat_=q_lat,
+                                                                                                                 snr_=snr_aux,
+                                                                                                                 startPi=startPi,
+                                                                                                                 transPi=transPi,
+                                                                                                                 gpmodels=gpmodels_temp,
+                                                                                                                 reparam=reparam,
+                                                                                                                 post=False)
+                    q_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
+                                                            self.weight_mean(q_lat, snr_aux), gpmodels_temp, M, snr=snr_aux,
+                                                            post=False)
+                    print("ELBO_reduction: " + str(((q_post + elbo_post) - (q_bas_ + elbo_bas_)).item()))
+                    if (torch.isclose(q_bas_ + elbo_bas_, q_post + elbo_post,
+                                      rtol=1e-5) and i__ > 0) or i__ == 20:  # or reparam:
+                        break
+                    q_bas_ = q_post
+                    elbo_bas_ = elbo_post
+                    i__ = i__ + 1
+                # Recompute resp
+                # q_norm, _ = self.LogLik(self.weight_mean(q, snr_aux))
+                # alpha, margprob = self.forward(startPi, transPi, q_norm)
+                # beta = self.backward(transPi, q_norm, margprob)
+                # resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
+                # respPairlog_temp, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
+                # resp_temp = torch.exp(resplog_temp)
+                # respPair_temp = torch.exp(respPairlog_temp)
+                #resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
+
+                new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
+                print(">>> Prev -------")
+                q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_), self.weight_mean(q_lat_, snr_),
+                                                      self.gpmodels, M, snr=snr_, post=False)
+                print(">>> Post -------")
+                q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux), self.weight_mean(q_lat, snr_aux),
+                                                            gpmodels_temp, M, snr=snr_aux, post=False)
+                update_snr = True
+                if torch.all(torch.sum(resp_temp, dim=0)[:-1] >= 1.0):
+                    if q_bas < q_bas_post:
+                        if not q_bas + elbo_bas < q_bas_post + elbo_post:
+                            print("Possibly better q_obs but worse elbo.")
+                    if q_bas + elbo_bas < q_bas_post + elbo_post and q_bas != q_bas_post:
+                        print("Reallocating beats into existing groups.")
+                        reallocate = True
+                        self.gpmodels = gpmodels_temp
+                        self.f_ind_old = f_ind_old[reorder]
+                        if update_snr:
+                            self.snr_norm = self.normalize_snr(snr_aux)
+                        else:
+                            snr_aux = snr_
+                        return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w_, reallocate
+                    else:
+                        print("Not reallocating, trying to generate new group.")
+                else:
+                    print("Bad estimation")
         #f_ind_new_potential = torch.argsort(self.weight_mean(q_simple)[torch.where(resp == 1.0)])
         q_sim_s = self.weight_mean(q_simple)[torch.where(resp == 1.0)]
         q_sim_s = (q_sim_s - torch.max(q_sim_s)) / (torch.max(q_sim_s) - torch.min(q_sim_s))
@@ -1378,9 +1432,11 @@ class GPI_HDP():
                     q_bas_, elbo_bas_ = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                             self.weight_mean(q_lat, snr_aux), gpmodels_temp, M,
                                                             snr=snr_aux, post=True)
-
-                    if (torch.where(torch.sum(resp_temp, dim=0) < 1.0)[0].shape[0] > 0) or torch.argmax(
+                    if torch.argmax(
                             torch.sum(resp_temp, dim=0)).item() == resp_temp.shape[1] - 1:
+                        print("Bad estimation")
+                        continue
+                    if (torch.where(torch.sum(resp_temp, dim=0) < 1.0)[0].shape[0] > 0):
                         print(">>> Possible emergency reallocation. Prev ----")
                         q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_),
                                                               self.weight_mean(q_lat_, snr_), self.gpmodels, self.M,
@@ -1580,8 +1636,8 @@ class GPI_HDP():
         # Good results using 0.018.
         # ini_Sigma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.0
         # ini_Gamma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.0
-        ini_Sigma = var_y_y * 0.050
-        ini_Gamma = var_y_y * 0.070
+        ini_Sigma = var_y_y * 0.035
+        ini_Gamma = var_y_y * 0.050
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.0])) * 0.050
         #ini_Gamma = var_y_y * 0.012
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.5])) * 2.0
@@ -2086,7 +2142,7 @@ class GPI_HDP():
         return q_new
 
     def estimate_q_all(self, M, x_trains, y_trains, y_trains_w, resp, respPair, q_, q_lat_, snr_, startPi, transPi,
-                       gpmodels=None, reparam=False):
+                       gpmodels=None, reparam=False, post=True):
         """ Internal method to converge the ELBO using the most recent assignation of the examples.
         """
         if gpmodels is None:
@@ -2168,9 +2224,9 @@ class GPI_HDP():
         #new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
         print(">>> Q_all_loop -------")
         q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_),
-                                              self.weight_mean(q_lat_, snr_), gpmodels, self.M, snr=snr_, post=True)
+                                              self.weight_mean(q_lat_, snr_), gpmodels, self.M, snr=snr_, post=post)
         q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
-                                                    self.weight_mean(q_lat, snr_aux), gpmodels_temp, M, snr=snr_aux, post=True)
+                                                    self.weight_mean(q_lat, snr_aux), gpmodels_temp, M, snr=snr_aux, post=post)
         update_snr = True
         if torch.all(torch.sum(resp_temp, dim=0) >= 1.0):
             if q_bas + elbo_bas < q_bas_post + elbo_post:
