@@ -1181,6 +1181,7 @@ class GPI_HDP():
                         resp_temp, respPair_temp, q, q_lat, snr_aux = self.remove_last_group(resp_temp,
                                                                                              respPair_temp, q,
                                                                                              q_lat, snr_aux)
+                        self.M = M - 1
                         return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, reallocate
                     else:
                         print("Bad estimation")
