@@ -1600,13 +1600,15 @@ class GPI_HDP():
              q__[j] = gp.log_sq_error(x_trains[j], y)
         #q__, q_lat__= gp.full_pass_weighted(x_trains, y_trains[:, :, [0]], resp[:, 0], snr=self.snr_norm[:, 0])
         f_ind = torch.where(q__ == torch.median(q__))[0].item()
+        #f_ind = torch.where(q__ == torch.mode(q__))[0].item()
         #f_ind = 0
         gp = self.create_gp_default()
         gp.include_weighted_sample(0, x_trains[f_ind], x_trains[f_ind], y_trains[f_ind, :, [0]], h=1.0)
         q__ = gp.compute_sq_err_all(x_trains, y_trains[:, :, [0]])
         n_f = 200
         selected_beats = torch.argsort(q__, descending=True)[:n_f]
-        samples = y_trains[selected_beats, :, 0].T
+        #Selected isoelectric part.
+        samples = y_trains[selected_beats, :15, 0].T
         var_y_y = torch.median(torch.diag(torch.linalg.multi_dot([(samples - torch.mean(samples, dim=1)[:, np.newaxis]),
                                                                   (samples - torch.mean(samples, dim=1)[:,
                                                                              np.newaxis]).T])) / n_f)  # * 0.15
