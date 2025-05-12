@@ -1268,7 +1268,7 @@ class GPI_HDP():
         last_indexes = torch.tensor([-1])
         j_ = 0
         for j, f_ind_new in enumerate(f_ind_new_potential):
-            if j_ == n_steps // 2.0:
+            if j_ == np.max([n_steps // 2.0, 1]):
             #if j_ == n_steps:
                 break
             m_chosen = -1
@@ -1291,7 +1291,7 @@ class GPI_HDP():
         q_aux = torch.clone(q_simple)
         f_ind_new_q = torch.argsort(q_s + q_lat_s)
         last_indexes = torch.tensor([-1])
-        j_ = int(n_steps // 2.0)
+        j_ = int(np.max([n_steps // 2.0, 1]))
         for j, f_ind_new in enumerate(f_ind_new_q):
             if j_ == n_steps:
                 break
