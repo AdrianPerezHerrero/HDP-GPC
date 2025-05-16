@@ -249,10 +249,12 @@ class GPI_model():
         #exp_t_t_ = lat_cov + torch.matmul(lat_f, lat_f.T)
         #exp_t_t = lat_cov + torch.matmul(f_star, f_star.T)
         Sigma_inv = torch.linalg.solve(cov_f, self.cond_to_cuda(torch.eye(t)))
+        q = y.shape[0]
         err = -1 / 2 * torch.linalg.multi_dot([y.T, Sigma_inv, y])\
               + 1 / 2 * torch.linalg.multi_dot([y.T, Sigma_inv, f_star]) \
               + 1 / 2 * torch.linalg.multi_dot([f_star.T, Sigma_inv, y]) \
-              - 1 / 2 * torch.linalg.multi_dot([f_star.T, Sigma_inv, f_star])
+              - 1 / 2 * torch.linalg.multi_dot([f_star.T, Sigma_inv, f_star]) \
+              - 1 / 2 * q * torch.log(torch.tensor(2.0) * torch.pi)# - 1 / 2 * torch.logdet(cov_f)
               #- 1 / 2 * torch.trace(torch.linalg.multi_dot([C.T, Sigma_inv, C, exp_t_t_])) \
               #- 1 / 2 * torch.trace(torch.linalg.multi_dot([Sigma_inv, exp_t_t]))
               # - 1 / 2 * torch.trace(cov_f)
@@ -266,16 +268,19 @@ class GPI_model():
         if i == 0:
             cov_f_ = self.cov_f_sm[i + 1]
             lat_f_ = self.f_star_sm[i + 1]
-            Gamma_inv = torch.linalg.solve(self.Gamma[-1] * h_ini, self.cond_to_cuda(torch.eye(self.Gamma[-1].shape[0])))
+            Gamma = self.Gamma[-1]
+            Gamma_inv = torch.linalg.solve(Gamma * h_ini, self.cond_to_cuda(torch.eye(Gamma.shape[0])))
             A = self.A[-1]
         else:
             cov_f_ = self.cov_f_sm[i]
             lat_f_ = self.f_star_sm[i]
             if i+1 < len(self.Gamma):
-                Gamma_inv = torch.linalg.solve(self.Gamma[i+1], self.cond_to_cuda(torch.eye(self.Gamma[i].shape[0])))
+                Gamma = self.Gamma[i+1]
+                Gamma_inv = torch.linalg.solve(Gamma, self.cond_to_cuda(torch.eye(Gamma.shape[0])))
                 A = self.A[i+1]
             else:
-                Gamma_inv = torch.linalg.solve(self.Gamma[-1], self.cond_to_cuda(torch.eye(self.Gamma[-1].shape[0])))
+                Gamma = self.Gamma[-1]
+                Gamma_inv = torch.linalg.solve(Gamma, self.cond_to_cuda(torch.eye(Gamma.shape[0])))
                 A = self.A[-1]
         #cov_f = self.cov_f_sm[i + 1]
         lat_f = self.f_star_sm[i + 1]#
@@ -286,9 +291,11 @@ class GPI_model():
         #exp_t_t = cov_f + torch.matmul(lat_f, lat_f.T)
         #A = self.A[i + 1]
         #Gamma_inv = torch.linalg.solve(Gamma, self.cond_to_cuda(torch.eye(Gamma.shape[0])))
+        q = lat_f.shape[0]
         err = -1 / 2 * torch.linalg.multi_dot([lat_f.T, Gamma_inv, lat_f]) \
               + torch.linalg.multi_dot([lat_f.T, Gamma_inv, A, lat_f_]) \
               - 1 / 2 * torch.trace(torch.linalg.multi_dot([A.T, Gamma_inv, A, exp_t_t_])) \
+              - 1 / 2 * q * torch.log(torch.tensor(2.0) * torch.pi) # - 1 / 2 * torch.logdet(Gamma)
               #- 1 / 2 * torch.trace(torch.linalg.multi_dot([lat_f_.T, A.T, Gamma_inv, A, lat_f_])) \
               #- 1 / 2 * torch.trace(torch.linalg.multi_dot([Gamma_inv, exp_t_t]))
               # - 1 / 2 * torch.trace(Gamma)
@@ -384,10 +391,10 @@ class GPI_model():
             self.f_star_sm = [torch.clone(self.f_star[0]),torch.clone(self.f_star[-1])]
             self.cov_f = [self.cov_f[0],self.cov_f[-1]]
             self.cov_f_sm = [self.cov_f_sm[0],self.cov_f_sm[-1]]
-            self.y_train = []
-            self.x_train = []
             if not save_index:
                 self.indexes = [0]
+                self.y_train = []
+                self.x_train = []
 
         else:
             self.y_var = self.y_var[:1]
