@@ -80,6 +80,7 @@ labels_trans = np.array([np.where(vals==l)[0] for l in labels_num]).squeeze()
 start_ini_time = time.time()
 sw_gp.reload_model_from_labels(x_trains, data, labels_trans, M)
 
+new_labels = sw_gp.cluster_new_batch(x_trains, data)
 #Print results
 print("Time --- %s mins ---" % str((time.time() - start_ini_time)/60.0))
 out = os.path.join(os.path.join(cwd,"results"), "Rec" + rec + "_")

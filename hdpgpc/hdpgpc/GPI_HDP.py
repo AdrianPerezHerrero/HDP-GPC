@@ -2275,6 +2275,32 @@ class GPI_HDP():
             print("Bad estimation")
             return resp, respPair, q_, q_lat_, snr_, y_trains_w, gpmodels
 
+    def cluster_new_batch(self, x_trains, y_trains):
+        x_trains = self.cond_cuda(self.cond_to_torch(x_trains))
+        y_trains = self.cond_cuda(self.cond_to_torch(y_trains))
+        q = torch.zeros(y_trains.shape[0], self.M, self.n_outputs)
+        snr = torch.zeros(y_trains.shape[0], self.M, self.n_outputs)
+        for ld in range(self.n_outputs):
+            for m in range(self.M):
+                gp = self.gpmodels[ld][m]
+                for i in range(y_trains.shape[0]):
+                    q[i, m, ld] = gp.log_sq_error(x_trains[i], y_trains[i, :, [ld]], i=-1)
+                snr[:, m, ld] = self.compute_snr(y_trains[:, :, ld], gp)
+        transTheta = self.transTheta
+        startTheta = self.startTheta
+        digammaSumTransTheta = torch.log(torch.sum(torch.exp(digamma(self.cond_cpu(transTheta[:self.M, :self.M + 1]))), axis=1) + 1e-5)
+        transPi = digamma(self.cond_cpu(transTheta[:self.M, :self.M])) - digammaSumTransTheta[:, np.newaxis]
+        # Calculate LOG of start state prob vector
+        startPi = digamma(self.cond_cpu(startTheta[:self.M])) - torch.log(
+            torch.sum(torch.exp(digamma(self.cond_cpu(startTheta[:self.M + 1])))) + 1e-5)
+
+        q_norm, _ = self.LogLik(self.weight_mean(q, snr))
+        alpha, margprob = self.forward(startPi, transPi, q_norm)
+        beta = self.backward(transPi, q_norm, margprob)
+        resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
+        respPairlog_temp, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
+        resp = torch.exp(resplog_temp)
+        return torch.where(resp == 1.0)[1]
 
     def compute_warp_y(self, x_train, y, strategie='standard', force_model=None, gpmodel=None, i=None, ld=0):
         """
@@ -2862,9 +2888,11 @@ class GPI_HDP():
             for ld in range(self.n_outputs):
                 for m in range(M):
                     self.gpmodels[ld].append(self.gpmodel_deepcopy(gp))
+        self.M = M
         self.T = y_trains.shape[0]
         self.y_train = y_trains
         self.x_train = x_trains
+        self.y = y_trains
         resp = torch.zeros(y_trains.shape[0], M)
         resp[torch.arange(y_trains.shape[0]), labels] = 1.0
         respPair = self.cond_cuda(torch.zeros((y_trains.shape[0], M, M)))
@@ -2882,6 +2910,7 @@ class GPI_HDP():
                                                                      resp[:, m])
                 snr[:, m, ld] = self.compute_snr(y_trains[:, :, ld], gp)
                 self.gpmodels[ld][m] = gp
+        self.q.append(q)
         resp__ = torch.clone(resp)
         respPair__ = torch.clone(respPair)
         # Update HDP variational params.
