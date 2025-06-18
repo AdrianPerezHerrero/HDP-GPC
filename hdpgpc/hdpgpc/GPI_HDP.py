@@ -101,7 +101,7 @@ class GPI_HDP():
                  noise_warp=0.05, recursive_warp=False, warp_updating=False, method_compute_warp='greedy', mode_warp='rough',
                  verbose=False, annealing=True, hmm_switch=True, max_models=None, batch=None,
                  check_var=False, bayesian_params=True, cuda=False, inducing_points=False, estimation_limit=None, reestimate_initial_params=False,
-                 n_explore_steps=10, free_deg_MNIV=5, share_gp=False):
+                 n_explore_steps=10, free_deg_MNIV=5, share_gp=False, use_snr=True, reduce_outputs=False, reduce_outputs_ratio=1.0):
         if M is None:
             M = 1
         self.M = M
@@ -181,6 +181,9 @@ class GPI_HDP():
         self.warp_updating = warp_updating
         self.max_models = max_models
         self.batch = batch
+        self.use_snr = use_snr
+        self.reduce_outputs = reduce_outputs
+        self.reduce_outputs_ratio = reduce_outputs_ratio
         self.check_var = check_var
         self.bayesian_params = bayesian_params
         self.x_basis_warp = x_basis_warp
@@ -631,35 +634,60 @@ class GPI_HDP():
                 snr_frac = torch.sum(snr_, dim=0) / torch.sum(snr_)
                 return torch.einsum('ij,j->i', q, snr_frac)
 
+    def reduce_num_outputs(self, y_trains):
+        ratio = self.reduce_outputs_ratio
+        num_final_outputs = int(np.rint(y_trains.shape[2] * ratio))
+        var = np.var(np.sum(y_trains, axis=1), axis=0)
+        final_outputs = np.sort(var.argsort()[::-1][:num_final_outputs])
+        print("Performed reduction of outputs based on variance.")
+        print("Ratio of reduction: " + str(ratio) + " Final outputs: " + str(final_outputs))
+        self.n_outputs = num_final_outputs
+        self.wp_sys = [self.wp_sys[ld] for ld in final_outputs]
+        self.gpmodels = [self.gpmodels[ld] for ld in final_outputs]
+        return y_trains[:,:,final_outputs]
+
     def compute_snr_ini(self, y_trains):
         """ Initial computation of snr
         """
-        n_samples = np.array(y_trains).shape[0]
-        n_outputs = np.array(y_trains).shape[2]
-        snr = torch.zeros(n_samples, n_outputs)
-        snr_comp = SignalNoiseRatio()
-        for ld in range(n_outputs):
-            snr[:, ld] = torch.tensor(
-                [snr_comp(torch.from_numpy(y),
-                     torch.mean(torch.from_numpy(y_trains)[:, :, ld], dim=0)) for y in
-                y_trains[:, :, ld]])
-        self.snr_norm = torch.softmax(snr, dim=1)
+        if self.use_snr:
+            n_samples = np.array(y_trains).shape[0]
+            n_outputs = np.array(y_trains).shape[2]
+            snr = torch.zeros(n_samples, n_outputs)
+            snr_comp = SignalNoiseRatio()
+            for ld in range(n_outputs):
+                snr[:, ld] = torch.tensor(
+                    [snr_comp(torch.from_numpy(y),
+                              torch.mean(torch.from_numpy(y_trains)[:, :, ld], dim=0)) for y in
+                     y_trains[:, :, ld]])
+            self.snr_norm = torch.softmax(snr, dim=1)
+        else:
+            n_outputs = np.array(y_trains).shape[2]
+            snr = torch.log(torch.sum(torch.from_numpy(y_trains), dim=1))
+            self.snr_norm = torch.softmax(snr, dim=1)
 
     def compute_snr(self, y_trains, gp):
         """ Iterative computation of snr
         """
-        snr = torch.zeros(y_trains.shape[0])
-        snr_comp = SignalNoiseRatio()
-        for t in range(y_trains.shape[0]):
-            j = np.min([np.max([gp.find_closest_lower(t), 1]), len(gp.f_star_sm) - 1])
-            snr[t] = snr_comp(y_trains[t], gp.f_star_sm[j].T[0])
-        #snr = torch.tensor([0.5] * y_trains.shape[0])
-        return snr
+        if self.use_snr:
+            snr = torch.zeros(y_trains.shape[0])
+            snr_comp = SignalNoiseRatio()
+            for t in range(y_trains.shape[0]):
+                j = np.min([np.max([gp.find_closest_lower(t), 1]), len(gp.f_star_sm) - 1])
+                snr[t] = snr_comp(y_trains[t], gp.f_star_sm[j].T[0])
+            # snr = torch.tensor([0.5] * y_trains.shape[0])
+            return snr
+        else:
+            snr = torch.log(torch.sum(y_trains, dim=1))
+            return snr
 
     def normalize_snr(self, snr):
         """ Normalize snr using softmax
         """
-        return torch.softmax(torch.max(torch.clone(snr), dim=1)[0], dim=1)
+        if self.use_snr:
+            return torch.softmax(torch.max(torch.clone(snr), dim=1)[0], dim=1)
+        else:
+            return torch.softmax(torch.max(torch.clone(snr), dim=1)[0], dim=1)
+
 
     def include_batch(self, x_trains, y_trains, with_warp=False, force_model=None, it_limit=None, warp=False):
         """
