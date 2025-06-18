@@ -2824,6 +2824,57 @@ class GPI_HDP():
         with open(st, 'wb') as inp:
             plk.dump(self, inp)
 
+    def reload_model_from_labels(self, x_trains, y_trains, labels, M):
+        assert y_trains.shape[2] == self.n_outputs
+        y_trains = self.cond_cuda(self.cond_to_torch(y_trains))
+        x_trains = self.cond_cuda(self.cond_to_torch(x_trains))
+        if M != self.M:
+            gp = self.gpmodels[0][0]
+            self.gpmodels = [[] for _ in range(self.n_outputs)]
+            for ld in range(self.n_outputs):
+                for m in range(M):
+                    self.gpmodels[ld].append(self.gpmodel_deepcopy(gp))
+        self.T = y_trains.shape[0]
+        self.y_train = y_trains
+        self.x_train = x_trains
+        resp = torch.zeros(y_trains.shape[0], M)
+        resp[torch.arange(y_trains.shape[0]), labels] = 1.0
+        respPair = self.cond_cuda(torch.zeros((y_trains.shape[0], M, M)))
+        respPair[np.arange(y_trains.shape[0]-1), labels[:-1], labels[1:]] = 1.0
+        q = torch.zeros(y_trains.shape[0], M, self.n_outputs)
+        q_lat = torch.zeros(y_trains.shape[0], M, self.n_outputs)
+        snr = torch.zeros(y_trains.shape[0], M, self.n_outputs)
+        for ld in range(self.n_outputs):
+            for m in range(M):
+                gp = self.gpmodel_deepcopy(self.gpmodels[0][0])
+                if gp.fitted:
+                    gp.reinit_LDS(save_last=False)
+                    gp.reinit_GP(save_last=False)
+                q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains[:, :, [ld]],
+                                                                     resp[:, m])
+                snr[:, m, ld] = self.compute_snr(y_trains[:, :, ld], gp)
+                self.gpmodels[ld][m] = gp
+        resp__ = torch.clone(resp)
+        respPair__ = torch.clone(respPair)
+        # Update HDP variational params.
+        startStateCount = self.cond_cuda(resp__[0])
+        transStateCount = self.cond_cuda(torch.sum(respPair__, axis=0))
+        resp, respPair, q, q_lat, snr, end = self.refill(resp, respPair, startStateCount, transStateCount, q, q_lat,snr)
+
+        self.reinit_global_params(M, transStateCount, startStateCount)
+        nIters = 2
+        for giter in range(nIters):
+            self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
+                                                                   self.cond_cuda(startStateCount), M + 1)
+            self.rho, self.omega = self.find_optimum_rhoOmega()
+        transTheta = self.transTheta
+        startTheta = self.startTheta
+        digammaSumTransTheta = torch.log(
+            torch.sum(torch.exp(digamma(self.cond_cpu(transTheta[:M, :M + 1]))), axis=1) + 1e-5)
+        transPi = digamma(self.cond_cpu(transTheta[:M, :M])) - digammaSumTransTheta[:, np.newaxis]
+        self.trans_A = transPi
+
+
     def gpmodel_deepcopy(self, gpmodel):
         gp_ = gp.GPI_model(gpmodel.gp.kernel.clone_with_theta(gpmodel.gp.kernel.theta), gpmodel.x_basis.clone(), verbose=self.verbose)
         gp_.y_train = gpmodel.y_train.copy()
