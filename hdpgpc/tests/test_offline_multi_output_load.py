@@ -27,7 +27,7 @@ if len(sys.argv) > 1:
     rec = sys.argv[1]
     #rec = "100"
 else:
-    rec = "100"
+    rec = "102"
 #Data should have the shape [num_samples, num_obs_per_sample, num_outputs]
 data = np.load(os.path.join(data_dir, rec+".npy"))
 labels = np.load(os.path.join(data_dir, rec+"_labels.npy"))
@@ -71,9 +71,14 @@ sw_gp = hdpgp.GPI_HDP(x_basis, x_basis_warp=x_basis_warp, n_outputs=num_outputs,
                           bayesian_params=True, inducing_points=False, reestimate_initial_params=True,
                           n_explore_steps=20, free_deg_MNIV=5)
 
-
+labels_trans = {'N': 1, 'V': 2, 'R': 3, '!': 4, 'F': 5, 'L': 6, 'A': 7, '/': 8, 'Q': 9, 'f': 10, 'E': 11,
+                'J': 12, 'j': 13, 'e': 14, 'a': 15, 'S': 16}
+labels_num = [labels_trans[l]-1 for l in labels]
+vals = np.unique(labels_num)
+M = vals.shape[0]
+labels_trans = np.array([np.where(vals==l)[0] for l in labels_num]).squeeze()
 start_ini_time = time.time()
-sw_gp.include_batch(x_trains, data, with_warp=warp)
+sw_gp.reload_model_from_labels(x_trains, data, labels_trans, M)
 
 #Print results
 print("Time --- %s mins ---" % str((time.time() - start_ini_time)/60.0))

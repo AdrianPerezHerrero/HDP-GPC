@@ -101,7 +101,7 @@ class GPI_HDP():
                  noise_warp=0.05, recursive_warp=False, warp_updating=False, method_compute_warp='greedy', mode_warp='rough',
                  verbose=False, annealing=True, hmm_switch=True, max_models=None, batch=None,
                  check_var=False, bayesian_params=True, cuda=False, inducing_points=False, estimation_limit=None, reestimate_initial_params=False,
-                 n_explore_steps=10, free_deg_MNIV=5, share_gp=False):
+                 n_explore_steps=10, free_deg_MNIV=5, share_gp=False, use_snr=True, reduce_outputs=False, reduce_outputs_ratio=1.0):
         if M is None:
             M = 1
         self.M = M
@@ -181,6 +181,9 @@ class GPI_HDP():
         self.warp_updating = warp_updating
         self.max_models = max_models
         self.batch = batch
+        self.use_snr = use_snr
+        self.reduce_outputs = reduce_outputs
+        self.reduce_outputs_ratio = reduce_outputs_ratio
         self.check_var = check_var
         self.bayesian_params = bayesian_params
         self.x_basis_warp = x_basis_warp
@@ -631,35 +634,60 @@ class GPI_HDP():
                 snr_frac = torch.sum(snr_, dim=0) / torch.sum(snr_)
                 return torch.einsum('ij,j->i', q, snr_frac)
 
+    def reduce_num_outputs(self, y_trains):
+        ratio = self.reduce_outputs_ratio
+        num_final_outputs = int(np.rint(y_trains.shape[2] * ratio))
+        var = np.var(np.sum(y_trains, axis=1), axis=0)
+        final_outputs = np.sort(var.argsort()[::-1][:num_final_outputs])
+        print("Performed reduction of outputs based on variance.")
+        print("Ratio of reduction: " + str(ratio) + " Final outputs: " + str(final_outputs))
+        self.n_outputs = num_final_outputs
+        self.wp_sys = [self.wp_sys[ld] for ld in final_outputs]
+        self.gpmodels = [self.gpmodels[ld] for ld in final_outputs]
+        return y_trains[:,:,final_outputs]
+
     def compute_snr_ini(self, y_trains):
         """ Initial computation of snr
         """
-        n_samples = np.array(y_trains).shape[0]
-        n_outputs = np.array(y_trains).shape[2]
-        snr = torch.zeros(n_samples, n_outputs)
-        snr_comp = SignalNoiseRatio()
-        for ld in range(n_outputs):
-            snr[:, ld] = torch.tensor(
-                [snr_comp(torch.from_numpy(y),
-                     torch.mean(torch.from_numpy(y_trains)[:, :, ld], dim=0)) for y in
-                y_trains[:, :, ld]])
-        self.snr_norm = torch.softmax(snr, dim=1)
+        if self.use_snr:
+            n_samples = np.array(y_trains).shape[0]
+            n_outputs = np.array(y_trains).shape[2]
+            snr = torch.zeros(n_samples, n_outputs)
+            snr_comp = SignalNoiseRatio()
+            for ld in range(n_outputs):
+                snr[:, ld] = torch.tensor(
+                    [snr_comp(torch.from_numpy(y),
+                              torch.mean(torch.from_numpy(y_trains)[:, :, ld], dim=0)) for y in
+                     y_trains[:, :, ld]])
+            self.snr_norm = torch.softmax(snr, dim=1)
+        else:
+            n_outputs = np.array(y_trains).shape[2]
+            snr = torch.log(torch.sum(torch.from_numpy(y_trains), dim=1))
+            self.snr_norm = torch.softmax(snr, dim=1)
 
     def compute_snr(self, y_trains, gp):
         """ Iterative computation of snr
         """
-        snr = torch.zeros(y_trains.shape[0])
-        snr_comp = SignalNoiseRatio()
-        for t in range(y_trains.shape[0]):
-            j = np.min([np.max([gp.find_closest_lower(t), 1]), len(gp.f_star_sm) - 1])
-            snr[t] = snr_comp(y_trains[t], gp.f_star_sm[j].T[0])
-        #snr = torch.tensor([0.5] * y_trains.shape[0])
-        return snr
+        if self.use_snr:
+            snr = torch.zeros(y_trains.shape[0])
+            snr_comp = SignalNoiseRatio()
+            for t in range(y_trains.shape[0]):
+                j = np.min([np.max([gp.find_closest_lower(t), 1]), len(gp.f_star_sm) - 1])
+                snr[t] = snr_comp(y_trains[t], gp.f_star_sm[j].T[0])
+            # snr = torch.tensor([0.5] * y_trains.shape[0])
+            return snr
+        else:
+            snr = torch.log(torch.sum(y_trains, dim=1))
+            return snr
 
     def normalize_snr(self, snr):
         """ Normalize snr using softmax
         """
-        return torch.softmax(torch.max(torch.clone(snr), dim=1)[0], dim=1)
+        if self.use_snr:
+            return torch.softmax(torch.max(torch.clone(snr), dim=1)[0], dim=1)
+        else:
+            return torch.softmax(torch.max(torch.clone(snr), dim=1)[0], dim=1)
+
 
     def include_batch(self, x_trains, y_trains, with_warp=False, force_model=None, it_limit=None, warp=False):
         """
@@ -1268,7 +1296,7 @@ class GPI_HDP():
         last_indexes = torch.tensor([-1])
         j_ = 0
         for j, f_ind_new in enumerate(f_ind_new_potential):
-            if j_ == n_steps // 2.0:
+            if j_ == np.max([n_steps // 2.0, 1]):
             #if j_ == n_steps:
                 break
             m_chosen = -1
@@ -1291,7 +1319,7 @@ class GPI_HDP():
         q_aux = torch.clone(q_simple)
         f_ind_new_q = torch.argsort(q_s + q_lat_s)
         last_indexes = torch.tensor([-1])
-        j_ = int(n_steps // 2.0)
+        j_ = int(np.max([n_steps // 2.0, 1]))
         for j, f_ind_new in enumerate(f_ind_new_q):
             if j_ == n_steps:
                 break
@@ -1419,6 +1447,7 @@ class GPI_HDP():
                             gpmodels_temp[ld].append(gp)
 
                     # Recompute resp
+                    update_snr = True
                     # q_mean = self.weight_mean(q, snr_aux)
                     # q_norm, _ = self.LogLik(q_mean)
                     # alpha, margprob = self.forward(startPi, transPi, q_norm)
@@ -1638,8 +1667,8 @@ class GPI_HDP():
         # Good results using 0.018.
         # ini_Sigma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.0
         # ini_Gamma = self.cond_to_torch(np.max([var_y_y, var_y_y_])) * 2.0
-        ini_Sigma = var_y_y * 0.1
-        ini_Gamma = var_y_y * 0.12
+        ini_Sigma = var_y_y * 0.02
+        ini_Gamma = var_y_y * 0.025
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.0])) * 0.050
         #ini_Gamma = var_y_y * 0.012
         #ini_Gamma = self.cond_to_torch(np.min([np.max([var_y_y_,var_y_y * 1.2]), var_y_y * 2.5])) * 2.0
@@ -2822,6 +2851,57 @@ class GPI_HDP():
         self.full_model_to_cpu()
         with open(st, 'wb') as inp:
             plk.dump(self, inp)
+
+    def reload_model_from_labels(self, x_trains, y_trains, labels, M):
+        assert y_trains.shape[2] == self.n_outputs
+        y_trains = self.cond_cuda(self.cond_to_torch(y_trains))
+        x_trains = self.cond_cuda(self.cond_to_torch(x_trains))
+        if M != self.M:
+            gp = self.gpmodels[0][0]
+            self.gpmodels = [[] for _ in range(self.n_outputs)]
+            for ld in range(self.n_outputs):
+                for m in range(M):
+                    self.gpmodels[ld].append(self.gpmodel_deepcopy(gp))
+        self.T = y_trains.shape[0]
+        self.y_train = y_trains
+        self.x_train = x_trains
+        resp = torch.zeros(y_trains.shape[0], M)
+        resp[torch.arange(y_trains.shape[0]), labels] = 1.0
+        respPair = self.cond_cuda(torch.zeros((y_trains.shape[0], M, M)))
+        respPair[np.arange(y_trains.shape[0]-1), labels[:-1], labels[1:]] = 1.0
+        q = torch.zeros(y_trains.shape[0], M, self.n_outputs)
+        q_lat = torch.zeros(y_trains.shape[0], M, self.n_outputs)
+        snr = torch.zeros(y_trains.shape[0], M, self.n_outputs)
+        for ld in range(self.n_outputs):
+            for m in range(M):
+                gp = self.gpmodel_deepcopy(self.gpmodels[0][0])
+                if gp.fitted:
+                    gp.reinit_LDS(save_last=False)
+                    gp.reinit_GP(save_last=False)
+                q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains[:, :, [ld]],
+                                                                     resp[:, m])
+                snr[:, m, ld] = self.compute_snr(y_trains[:, :, ld], gp)
+                self.gpmodels[ld][m] = gp
+        resp__ = torch.clone(resp)
+        respPair__ = torch.clone(respPair)
+        # Update HDP variational params.
+        startStateCount = self.cond_cuda(resp__[0])
+        transStateCount = self.cond_cuda(torch.sum(respPair__, axis=0))
+        resp, respPair, q, q_lat, snr, end = self.refill(resp, respPair, startStateCount, transStateCount, q, q_lat,snr)
+
+        self.reinit_global_params(M, transStateCount, startStateCount)
+        nIters = 2
+        for giter in range(nIters):
+            self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
+                                                                   self.cond_cuda(startStateCount), M + 1)
+            self.rho, self.omega = self.find_optimum_rhoOmega()
+        transTheta = self.transTheta
+        startTheta = self.startTheta
+        digammaSumTransTheta = torch.log(
+            torch.sum(torch.exp(digamma(self.cond_cpu(transTheta[:M, :M + 1]))), axis=1) + 1e-5)
+        transPi = digamma(self.cond_cpu(transTheta[:M, :M])) - digammaSumTransTheta[:, np.newaxis]
+        self.trans_A = transPi
+
 
     def gpmodel_deepcopy(self, gpmodel):
         gp_ = gp.GPI_model(gpmodel.gp.kernel.clone_with_theta(gpmodel.gp.kernel.theta), gpmodel.x_basis.clone(), verbose=self.verbose)
