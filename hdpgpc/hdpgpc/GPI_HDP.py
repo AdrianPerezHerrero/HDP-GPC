@@ -99,7 +99,7 @@ class GPI_HDP():
                  bound_lengthscale=None, ini_gamma=None, ini_sigma=None, ini_outputscale=None, bound_sigma=(1e-10, 1e+10),
                  bound_gamma=(1e-1, 1e+2), bound_noise_warp=(1e-10, 1e+10), reest_conditions=[1, 20, 5],
                  noise_warp=0.05, recursive_warp=False, warp_updating=False, method_compute_warp='greedy', mode_warp='rough',
-                 verbose=False, annealing=True, hmm_switch=True, max_models=None, batch=None,
+                 verbose=False, annealing=True, hmm_switch=True, max_models=None, batch=None, strong_assign=False,
                  check_var=False, bayesian_params=True, cuda=False, inducing_points=False, estimation_limit=None, reestimate_initial_params=False,
                  n_explore_steps=10, free_deg_MNIV=5, share_gp=False, use_snr=True, reduce_outputs=False, reduce_outputs_ratio=1.0):
         if M is None:
@@ -185,6 +185,7 @@ class GPI_HDP():
         self.warp_updating = warp_updating
         self.max_models = max_models
         self.batch = batch
+        self.strong_assign = strong_assign
         self.use_snr = use_snr
         self.reduce_outputs = reduce_outputs
         self.reduce_outputs_ratio = reduce_outputs_ratio
@@ -591,6 +592,11 @@ class GPI_HDP():
             SoftEv = logSoftEv - lognormC[:, np.newaxis]
         else:
             SoftEv = logSoftEv
+        if self.strong_assign:
+            max_indices = torch.argmax(SoftEv, dim=axis)
+            mask = torch.zeros_like(SoftEv, dtype=torch.bool)
+            mask.scatter_(1, max_indices.unsqueeze(1), True)
+            SoftEv = torch.where(mask, SoftEv, torch.min(SoftEv))
         return SoftEv, lognormC
 
     def signaltonoise(self, a, axis=0, ddof=0):

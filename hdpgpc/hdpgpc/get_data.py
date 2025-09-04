@@ -292,11 +292,11 @@ def take_standard_labels(data, labels, permutation=False, filter=None):
     else:
         return data, data_2d, labels
 
-def compute_estimators_LDS(samples, n_f=None):
+def compute_estimators_LDS(samples, n_f=None, dim=0):
     if n_f is None:
         n_f = samples.shape[0] - 2
-    samples_ = torch.from_numpy(samples[:n_f][:, :, 0].T)
-    samples__ = torch.from_numpy(samples[1:n_f + 1][:, :, 0].T)
+    samples_ = torch.from_numpy(samples[:n_f][:, :, dim].T)
+    samples__ = torch.from_numpy(samples[1:n_f + 1][:, :, dim].T)
 
     std = torch.mean(torch.diag(torch.linalg.multi_dot(
         [(samples_ - torch.mean(samples_, dim=1)[:, np.newaxis]),
