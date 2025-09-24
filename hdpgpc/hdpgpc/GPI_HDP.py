@@ -713,6 +713,8 @@ class GPI_HDP():
         print("startAlpha: " + str(self.startAlpha))
         print("kappa: " + str(self.kappa))
         print("---------------------------------", flush=True)
+        if self.reduce_outputs:
+            y_trains = self.reduce_num_outputs(y_trains)
         n_samples = np.array(y_trains).shape[0]
         n_outputs = np.array(y_trains).shape[2]
         t = self.T
