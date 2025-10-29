@@ -801,7 +801,7 @@ class GPI_HDP():
                     break
                 resp_group = torch.sum(resp, axis=0)
                 self.train_elbo.append(elbo_)
-                self.resp_assigned.append(torch.where(resp == 1.0)[1])
+                self.resp_assigned.append(torch.argmax(resp, axis=1))
                 self.q_last, self.q_lat_last, self.snr_last = q, q_lat, snr
                 self.startStateCount_last, self.transStateCount_last = startStateCount, transStateCount
                 self.resp_last, self.respPair_last = resp, respPair
