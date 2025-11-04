@@ -722,7 +722,7 @@ def plot_MDS_plotly(sw_gp, main_model, labels, N_0, lead=0, save=None):
         plt.show()
 
 
-def plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, N_0, title=None, save=None, lead=0, step=0.1, plot_latent=False, ticks=False, yscale=False):
+def plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, N_0, title=None, save=None, lead=0, step=0.1, plot_latent=False, ticks=False, yscale=False, line_max=False):
     num_models = len(selected_gpmodels)
     num_cols = int(np.ceil(np.sqrt(num_models)))
     num_rows = int(np.ceil(num_models / num_cols))
@@ -783,6 +783,13 @@ def plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, N_0, title=
         mean = np.mean(np.array(gp.y_train), axis=0)
         ax.plot(x_b.cpu(), mean, color='black', linewidth=2, label=f'Experimental mean [{m + 1}]', linestyle='--')
 
+        if line_max:
+            max_freq = x_b.cpu()[np.argmax(mean_)]
+            ax.vlines(max_freq, np.min(sw_gp.y_train.numpy())-0.1*np.min(sw_gp.y_train.numpy()), y_max + 0.1 * y_max, 'r', linestyle='--')
+            x_ticks = np.append(ax.get_xticks()[2:], np.round(max_freq, 3))
+            ax.set_xticks(x_ticks)
+            #ax.set_xticklabels(list([f'{t:.3f}' for t in ticks_]))
+            ax.tick_params(axis='both', which='major', labelsize=8)
         if title is None:
             ax.set_title(f"ECG CLUSTER {m + 1} ({main_model[m]})")
         else:
@@ -791,7 +798,8 @@ def plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, N_0, title=
     if yscale:
         for ax in fig.get_axes():
             ax.set_ylim(np.min(sw_gp.y_train.numpy())-0.1*np.min(sw_gp.y_train.numpy()), y_max + 0.1 * y_max)
-            ax.set_xticks(np.arange(0.0,0.5,0.1))
+            if not line_max:
+                ax.set_xticks(np.arange(0.0,0.5,0.1))
     if not ticks:
         for ax in fig.get_axes():
         #     ax.label_outer()
