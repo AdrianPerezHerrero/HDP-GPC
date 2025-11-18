@@ -740,7 +740,7 @@ class SwellBackTriangulation:
             # Energy decreases with lateral offset from beam center
             # Use Gaussian-like decay
             #directional_weight = np.exp(-0.5 * (lateral_offset / beam_halfwidth_km) ** 2)
-            directional_weight = 0.0
+            directional_weight = directional_weight - directional_weight
             # Swell misses the target completely
 
         # Use mean frequency from both buoys
