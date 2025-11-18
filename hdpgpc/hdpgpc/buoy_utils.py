@@ -18,6 +18,7 @@ class BuoyObservation:
     peak_frequency: float  # Peak frequency (Hz)
     peak_direction: float  # Peak direction (degrees, nautical convention)
     peak_energy: float  # Peak spectral energy (m²/Hz/deg)
+    spread_direction: Optional[float] = 30.0 # Spread of direction
     variance_spectrum: Optional[np.ndarray] = None # Variance of spectrum
     A_matrix: Optional[np.ndarray] = None  # Linear transformation matrix A
     C_matrix: Optional[np.ndarray] = None  # Linear transformation matrix C
@@ -252,6 +253,7 @@ class SwellBackTriangulation:
     EARTH_RADIUS_KM = 6371.0  # Mean Earth radius (km)
     GRAVITY = 9.81  # Gravitational acceleration (m/s²)
     SWELL_ATTENUATION_COEF = 1e-7  # Frequency-dependent attenuation (1/m)
+    DISPERSION_RATE = 0.3 #Dispersion rate when swell moves /100m
 
     def __init__(self,
                  buoy1: BuoyObservation,
@@ -435,6 +437,8 @@ class SwellBackTriangulation:
             self.buoy2.lat, self.buoy2.lon, back_az2, self.buoy2.peak_frequency
         )
 
+        w1 = self.buoy1.peak_energy
+        w2 = self.buoy2.peak_energy
         if method == "intersection":
             source_lat, source_lon, confidence = self._find_great_circle_intersection(
                 self.buoy1.lat, self.buoy1.lon, back_az1,
@@ -442,20 +446,33 @@ class SwellBackTriangulation:
             )
         elif method == "weighted_centroid":
             # Weight by inverse variance or peak energy
-            w1 = self.buoy1.peak_energy
-            w2 = self.buoy2.peak_energy
             source_lat = (w1 * backtrack1['candidate_lat'] +
                           w2 * backtrack2['candidate_lat']) / (w1 + w2)
             source_lon = (w1 * backtrack1['candidate_lon'] +
                           w2 * backtrack2['candidate_lon']) / (w1 + w2)
             confidence = np.mean([backtrack1['uncertainty_km'],
                                   backtrack2['uncertainty_km']])
+
         else:
             raise ValueError(f"Unknown method: {method}")
+
+        source_x = (w1 * np.cos(np.radians(self.buoy1.peak_direction)) +
+                    w2 * np.cos(np.radians(self.buoy2.peak_direction))) / (w1 + w2)
+        source_y = (w1 * np.sin(np.radians(self.buoy1.peak_direction)) +
+                    w2 * np.sin(np.radians(self.buoy2.peak_direction))) / (w1 + w2)
+        initial_bearing = np.arctan2(source_y, source_x)
+        initial_bearing = np.degrees(initial_bearing) % 360
+
+        distance_source_buoy1 =  self.haversine_distance(self.buoy1.lat, self.buoy1.lon, source_lat, source_lon)
+        distance_source_buoy2 =  self.haversine_distance(self.buoy2.lat, self.buoy2.lon, source_lat, source_lon)
+        source_directional_spread = self._estimate_source_directional_spread(
+            self.buoy1.spread_direction, self.buoy2.spread_direction, distance_source_buoy1, distance_source_buoy2)
 
         return {
             'source_lat': source_lat,
             'source_lon': source_lon,
+            'source_dp': initial_bearing,
+            'source_directional_spread': source_directional_spread,
             'confidence_radius_km': confidence,
             'buoy1_backtrack': backtrack1,
             'buoy2_backtrack': backtrack2,
@@ -499,6 +516,52 @@ class SwellBackTriangulation:
             'uncertainty_km': 500,  # ±500 km typical uncertainty
             'all_candidates': candidates
         }
+
+    def _estimate_source_directional_spread(
+            self,
+            buoy1_spread: float,
+            buoy2_spread: float,
+            distance_buoy1_to_source: float,
+            distance_buoy2_to_source: float) -> float:
+        """
+        Estimate directional spread at source from buoy observations.
+
+        Directional spread increases with propagation distance due to:
+        - Angular dispersion (~0.5-1° per 100 km for swell)
+        - Nonlinear interactions
+
+        Parameters:
+        -----------
+        buoy1_spread, buoy2_spread : float
+            Observed directional spreads at buoys (degrees)
+        distance_buoy1_to_source, distance_buoy2_to_source : float
+            Backtracked distances (km)
+
+        Returns:
+        --------
+        source_spread : float
+            Estimated directional spread at source (degrees)
+        """
+
+        # Typical angular dispersion rate for swell
+        # Literature values: 0.5-1.5° per 100 km
+        dispersion_rate = self.DISPERSION_RATE  # degrees per 100 km (conservative)
+
+        # Remove propagation-induced spreading from each buoy
+        spread1_at_source = buoy1_spread - (distance_buoy1_to_source / 100) * dispersion_rate
+        spread2_at_source = buoy2_spread - (distance_buoy2_to_source / 100) * dispersion_rate
+
+        # Clamp to reasonable minimum (source can't have zero spread)
+        spread1_at_source = max(spread1_at_source, 10.0)  # Minimum 10°
+        spread2_at_source = max(spread2_at_source, 10.0)
+
+        # Weighted average (weight by inverse distance - closer buoy more reliable)
+        w1 = distance_buoy1_to_source / (distance_buoy1_to_source + distance_buoy2_to_source)
+        w2 = distance_buoy2_to_source / (distance_buoy1_to_source + distance_buoy2_to_source)
+
+        source_spread = (w1 * spread1_at_source + w2 * spread2_at_source) / (w1 + w2)
+
+        return source_spread
 
     def _find_great_circle_intersection(self, lat1: float, lon1: float,
                                         bearing1: float,
@@ -544,7 +607,66 @@ class SwellBackTriangulation:
         distance_m = distance_km * 1000
         group_velocity = self.deep_water_group_velocity(frequency)
         travel_time_sec = distance_m / group_velocity.to_numpy()
-        return travel_time_sec / 3600  # Convert to hours
+        return travel_time_sec / 3600.0  # Convert to hours
+
+    def _compute_directional_weight(self, source_direction: float,
+                                   target_bearing: float,
+                                   directional_spread: float = 30.0,
+                                   spreading_exponent: float = 2.0) -> float:
+        """
+        Compute energy fraction that reaches target based on directional spreading.
+
+        Uses a cosine-power spreading function to model how energy radiates
+        from source in different directions.
+
+        Parameters:
+        -----------
+        source_direction : float
+            Mean propagation direction from source (degrees, 0=N, 90=E)
+        target_bearing : float
+            Bearing from source to coastal buoy (degrees)
+        directional_spread : float
+            Characteristic angular width of the directional distribution (degrees)
+            Typical values: 20-40° for swell, 40-60° for wind-sea
+        spreading_exponent : float
+            Exponent controlling directional concentration
+            Higher values = narrower beam
+            Typical values: 2-4 for swell, 1-2 for wind-sea
+
+        Returns:
+        --------
+        weight : float
+            Energy fraction reaching target (0-1)
+            1.0 = target perfectly aligned with source direction
+            0.0 = target outside spreading cone
+        """
+
+        # Angular difference between source direction and target bearing
+        angular_offset = abs(source_direction - target_bearing)
+
+        # Normalize to [-180, 180]
+        if angular_offset > 180:
+            angular_offset = 360 - angular_offset
+
+        # Cosine-power spreading function
+        # Common model: D(θ) = A * cos^n(θ/2)
+        # where θ is angle from mean direction
+
+        # Normalize offset by spreading width
+        normalized_offset = angular_offset / directional_spread
+
+        # Apply spreading function
+        if normalized_offset < 1.5:  # Within ~1.5σ of mean direction
+            # Cosine-power model
+            weight = np.cos(np.radians(angular_offset / 2)) ** (2 * spreading_exponent)
+
+            # Alternative: Gaussian-like model
+            # weight = np.exp(-0.5 * (angular_offset / directional_spread)**2)
+        else:
+            # Far from main lobe - minimal energy
+            weight = 0.0
+
+        return max(0.0, min(1.0, weight))  # Clamp to [0, 1]
 
     # ==================== COASTAL ARRIVAL PREDICTION ====================
 
@@ -574,15 +696,58 @@ class SwellBackTriangulation:
             source_lat, source_lon, self.coastal_lat, self.coastal_lon
         )
 
-        approach_direction = self.initial_bearing(
-            source_lat, source_lon, self.coastal_lat, self.coastal_lon
+        geometric_bearing = self.initial_bearing(
+                self.coastal_lat, self.coastal_lon, source_lat, source_lon
+            )
+        if source_result['source_dp'] is None:
+            approach_direction = geometric_bearing
+        else:
+            approach_direction = source_result['source_dp']
+
+        directional_weight = self._compute_directional_weight(
+            approach_direction,
+            geometric_bearing,
+            source_result.get('source_directional_spread', 30.0),
+            spreading_exponent=2.0
         )
+
+        angular_offset = abs(approach_direction - geometric_bearing)
+        if angular_offset > 180:
+            angular_offset = 360 - angular_offset
+
+        angular_offset_rad = np.radians(angular_offset)
+
+        # Effective distance along propagation direction
+        effective_distance = distance_to_coast * np.cos(angular_offset_rad)
+
+        # Lateral distance (perpendicular to propagation)
+        lateral_offset = distance_to_coast * np.sin(angular_offset_rad)
+
+        # Check if target is reachable
+        # Swell has finite beam width due to directional spreading
+        directional_spread = source_result.get('source_directional_spread', 30.0)
+
+        # Spread increases as it covers distance
+        directional_spread = directional_spread + (effective_distance / 100.0) * self.DISPERSION_RATE
+        # Beam half-width at target distance (simple spreading model)
+        # Beam expands with distance: width ≈ 2 * distance * tan(spread/2)
+        beam_halfwidth_km = effective_distance * np.tan(np.radians(directional_spread / 2))
+
+        will_reach = lateral_offset <= beam_halfwidth_km
+
+        # Compute directional weight (energy fraction reaching target)
+        if not will_reach:
+            # Energy decreases with lateral offset from beam center
+            # Use Gaussian-like decay
+            #directional_weight = np.exp(-0.5 * (lateral_offset / beam_halfwidth_km) ** 2)
+            directional_weight = 0.0
+            # Swell misses the target completely
 
         # Use mean frequency from both buoys
         mean_frequency = (self.buoy1.peak_frequency + self.buoy2.peak_frequency) / 2
 
         # Compute travel time from source to coast
-        travel_time_hours = self._compute_travel_time(distance_to_coast, mean_frequency)
+        travel_time_hours = self._compute_travel_time(effective_distance, mean_frequency)
 
         # Estimate source generation time (use buoy1 as reference)
         # Subtract travel time from buoy1 to source
@@ -601,6 +766,8 @@ class SwellBackTriangulation:
             mean_energy, mean_frequency, distance_to_coast
         )
 
+        arrival_energy = arrival_energy * directional_weight
+
         # Frequency may shift slightly due to dispersion (simplified: assume constant)
         arrival_frequency = mean_frequency
 
@@ -614,6 +781,7 @@ class SwellBackTriangulation:
             'arrival_period': 1.0 / arrival_frequency,
             'arrival_energy': arrival_energy,
             'arrival_direction': arrival_direction,
+            'directional_weight': directional_weight,
             'propagation_distance_km': distance_to_coast,
             'travel_time_hours': travel_time_hours,
             'source_generation_time': estimated_source_time,
@@ -1393,6 +1561,278 @@ class FastReverseWaveShoaling:
 
         return spectrum_deep, direction_deep
 
+
+def compute_rotation_deviation(spectra, directions, a1, b1, dm):
+    """
+
+    :param spectra: 2d spectra
+    :param directions: directions
+    :param a1: first fourier coefficient
+    :param b1: second fourier coefficient
+    :param dm: measured mean direction
+    :return: degrees of alignment between measured mean direction and spectra
+    """
+
+    def circular_diff(angle1, angle2):
+        """Compute smallest angular difference (degrees)"""
+        diff = (angle1 - angle2) % 360
+        return diff
+
+    theta_rad = np.radians(directions)
+
+    # Integrate over all frequencies
+    a1_total = np.sum(spectra * np.cos(theta_rad)[np.newaxis, :], axis=(0, 1))
+    b1_total = np.sum(spectra * np.sin(theta_rad)[np.newaxis, :], axis=(0, 1))
+
+    # Mean direction
+    mean_dir_rad = np.arctan2(b1_total, a1_total)
+    mean_dir_deg = np.degrees(mean_dir_rad)
+
+    #Using bulk parameters
+    peak_freq_idx = np.argmax(np.trapezoid(spectra, theta_rad, axis=1))
+    bulk_mean_dir_deg = np.degrees(np.arctan2(b1[peak_freq_idx],a1[peak_freq_idx]))
+
+    error_fourier = circular_diff(dm, bulk_mean_dir_deg)
+    error_spectra = circular_diff(dm, mean_dir_deg)
+
+    return error_spectra, error_fourier
+
+import pandas as pd
+
+
+def compute_propagation_time(peak_frequency_hz, distance_km):
+    """
+    Compute wave propagation time using deep-water group velocity.
+
+    For deep water: C_g = g / (4π f)
+
+    Parameters:
+    -----------
+    peak_frequency_hz : float
+        Peak frequency of the wave event (Hz)
+    distance_km : float
+        Great-circle distance from offshore to coastal buoy (km)
+
+    Returns:
+    --------
+    travel_time_hours : float
+        Estimated propagation time (hours)
+    """
+    g = 9.81  # m/s²
+
+    # Deep-water group velocity
+    Cg = g / (4 * np.pi * peak_frequency_hz)  # m/s
+
+    # Convert distance to meters
+    distance_m = distance_km * 1000
+
+    # Travel time
+    travel_time_sec = distance_m / Cg
+    travel_time_hours = travel_time_sec / 3600
+
+    return travel_time_hours
+
+
+def compute_great_circle_distance(lat1, lon1, lat2, lon2):
+    """
+    Compute great-circle distance between two points (Haversine formula).
+
+    Parameters:
+    -----------
+    lat1, lon1 : float
+        Latitude/longitude of point 1 (degrees)
+    lat2, lon2 : float
+        Latitude/longitude of point 2 (degrees)
+
+    Returns:
+    --------
+    distance_km : float
+        Distance in kilometers
+    """
+    from math import radians, sin, cos, sqrt, atan2
+
+    R = 6371.0  # Earth radius in km
+
+    lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
+
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+
+    a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
+    c = 2 * atan2(sqrt(a), sqrt(1 - a))
+
+    distance_km = R * c
+    return distance_km
+
+
+def compute_cooccurrence_matrix_with_physics(
+        labels_offshore,
+        labels_coastal,
+        timestamps_offshore,
+        timestamps_coastal,
+        peak_frequencies_offshore,  # NEW: Peak frequency for each offshore event
+        peak_directions_offshore,  # NEW: Peak direction for each offshore event
+        offshore_location,  # NEW: (lat, lon) of offshore buoy
+        coastal_location,  # NEW: (lat, lon) of coastal buoy
+        time_window_hours=6,
+        n_clusters_offshore=None,
+        n_clusters_coastal=None,
+        min_lag_hours=6,  # Minimum physical constraint
+        max_lag_hours=120):  # Maximum physical constraint
+    """
+    Compute co-occurrence matrix with physics-based dynamic time lags.
+
+    For each offshore event:
+    1. Extract peak frequency and direction
+    2. Compute great-circle distance to coastal buoy
+    3. Calculate propagation time using group velocity
+    4. Match with coastal events at predicted arrival time ± window
+
+    Parameters:
+    -----------
+    labels_offshore : np.ndarray
+        Cluster labels at offshore buoy, shape (n_samples_offshore,)
+    labels_coastal : np.ndarray
+        Cluster labels at coastal buoy, shape (n_samples_coastal,)
+    timestamps_offshore : np.ndarray or pd.DatetimeIndex
+        Timestamps for offshore observations
+    timestamps_coastal : np.ndarray or pd.DatetimeIndex
+        Timestamps for coastal observations
+    peak_frequencies_offshore : np.ndarray
+        Peak frequency (Hz) for each offshore event, shape (n_samples_offshore,)
+    peak_directions_offshore : np.ndarray
+        Peak direction (degrees) for each offshore event, shape (n_samples_offshore,)
+    offshore_location : tuple
+        (latitude, longitude) of offshore buoy
+    coastal_location : tuple
+        (latitude, longitude) of coastal buoy
+    time_window_hours : float
+        Tolerance window for matching (±hours)
+    min_lag_hours, max_lag_hours : float
+        Physical constraints on propagation time
+
+    Returns:
+    --------
+    cooccurrence_matrix : np.ndarray
+        Shape (n_clusters_offshore, n_clusters_coastal)
+    normalized_matrix : np.ndarray
+        Row-normalized probabilities
+    metadata : dict
+        Extended statistics including propagation times
+    """
+    # Auto-detect number of clusters
+    if n_clusters_offshore is None:
+        n_clusters_offshore = len(np.unique(labels_offshore))
+    if n_clusters_coastal is None:
+        n_clusters_coastal = len(np.unique(labels_coastal))
+
+    # Convert to pandas
+    df_offshore = pd.DataFrame({
+        'time': pd.to_datetime(timestamps_offshore),
+        'cluster': labels_offshore,
+        'peak_freq': peak_frequencies_offshore,
+        'peak_dir': peak_directions_offshore
+    })
+    df_coastal = pd.DataFrame({
+        'time': pd.to_datetime(timestamps_coastal),
+        'cluster': labels_coastal
+    })
+
+    # Compute fixed great-circle distance (doesn't change)
+    lat_off, lon_off = offshore_location
+    lat_coast, lon_coast = coastal_location
+    distance_km = compute_great_circle_distance(lat_off, lon_off, lat_coast, lon_coast)
+
+    print(f"Distance from offshore to coastal buoy: {distance_km:.1f} km")
+
+    # Initialize
+    cooccurrence = np.zeros((n_clusters_offshore, n_clusters_coastal), dtype=int)
+    matched_pairs = []
+    propagation_times_used = []
+
+    # Time window
+    window_delta = pd.Timedelta(hours=time_window_hours)
+
+    # For each offshore observation
+    for idx, row in df_offshore.iterrows():
+        offshore_time = row['time']
+        offshore_cluster = int(row['cluster'])
+        peak_freq = row['peak_freq']
+        peak_dir = row['peak_dir']
+
+        # Skip if missing data
+        if np.isnan(peak_freq) or peak_freq <= 0:
+            continue
+
+        # Compute propagation time based on frequency
+        travel_time_hours = compute_propagation_time(peak_freq, distance_km)
+
+        # Apply physical constraints
+        travel_time_hours = np.clip(travel_time_hours, min_lag_hours, max_lag_hours)
+
+        propagation_times_used.append(travel_time_hours)
+
+        # Predicted arrival time
+        lag_delta = pd.Timedelta(hours=travel_time_hours)
+        expected_arrival = offshore_time + lag_delta
+
+        # Find coastal observations within time window
+        time_min = expected_arrival - window_delta
+        time_max = expected_arrival + window_delta
+
+        coastal_matches = df_coastal[
+            (df_coastal['time'] >= time_min) &
+            (df_coastal['time'] <= time_max)
+            ]
+
+        # For each match, increment co-occurrence
+        for _, coastal_row in coastal_matches.iterrows():
+            coastal_cluster = int(coastal_row['cluster'])
+            cooccurrence[offshore_cluster, coastal_cluster] += 1
+
+            actual_lag = (coastal_row['time'] - offshore_time).total_seconds() / 3600
+
+            matched_pairs.append({
+                'offshore_time': offshore_time,
+                'offshore_cluster': offshore_cluster,
+                'coastal_time': coastal_row['time'],
+                'coastal_cluster': coastal_cluster,
+                'peak_frequency_hz': peak_freq,
+                'peak_direction_deg': peak_dir,
+                'predicted_lag_hours': travel_time_hours,
+                'actual_lag_hours': actual_lag,
+                'lag_error_hours': actual_lag - travel_time_hours
+            })
+
+    # Normalize
+    row_sums = cooccurrence.sum(axis=1, keepdims=True)
+    row_sums[row_sums == 0] = 1
+    normalized_matrix = cooccurrence / row_sums
+
+    # Enhanced metadata
+    matched_pairs_df = pd.DataFrame(matched_pairs)
+
+    metadata = {
+        'total_offshore_samples': len(df_offshore),
+        'total_coastal_samples': len(df_coastal),
+        'matched_pairs': len(matched_pairs),
+        'match_rate': len(matched_pairs) / len(df_offshore) if len(df_offshore) > 0 else 0,
+        'matched_pairs_df': matched_pairs_df,
+        'distance_km': distance_km,
+        'mean_propagation_time_hours': np.mean(propagation_times_used),
+        'std_propagation_time_hours': np.std(propagation_times_used),
+        'min_propagation_time_hours': np.min(propagation_times_used) if propagation_times_used else 0,
+        'max_propagation_time_hours': np.max(propagation_times_used) if propagation_times_used else 0,
+        'time_window_used': time_window_hours,
+    }
+
+    # Additional statistics if we have matches
+    if len(matched_pairs) > 0:
+        metadata['mean_lag_error_hours'] = matched_pairs_df['lag_error_hours'].mean()
+        metadata['std_lag_error_hours'] = matched_pairs_df['lag_error_hours'].std()
+        metadata['rmse_lag_hours'] = np.sqrt(np.mean(matched_pairs_df['lag_error_hours'] ** 2))
+
+    return cooccurrence, normalized_matrix, metadata
 
 import numpy as np
 import matplotlib.pyplot as plt
