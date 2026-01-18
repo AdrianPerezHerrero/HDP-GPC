@@ -321,6 +321,6 @@ ax3.set_xlim(test_x.min(), test_x.max())
 ax3.legend(loc='lower right', ncol=3)
 
 # Save
-plt.savefig('mitbih_gp_analysis.png', dpi=300, bbox_inches='tight')
+plt.savefig('../figures/mitbih_gp_analysis.png', dpi=300, bbox_inches='tight')
 print("\nSuccess. Figure saved to 'mitbih_gp_analysis.png'")
 plt.show()
