@@ -442,7 +442,7 @@ class GPI_HDP():
     def create_gp_default(self, i=None):
         """ Create a GP default when a birth happens.
         """
-        if i is None or len(self.wp_sys) <= i:
+        if i is None or len(self.wp_sys[0]) <= i:
             kernel, ini_sigma, ini_gamma, ini_outputscale, bound_sigma, bound_gamma, bound_noise_warp, annealing, method_compute_warp,\
                 model_type, recursive_warp, warp_updating, inducing_points, estimation_limit, free_deg_MNIV = self.get_default_options()
             kernel = kernel.clone_with_theta(kernel.theta)
@@ -456,14 +456,12 @@ class GPI_HDP():
                 print("Chosen model should be dynamic or static.")
             gp_.initial_conditions(ini_mean=None, ini_cov=None,
                                    ini_A=cond[0], ini_Gamma=cond[1], ini_C=cond[2], ini_Sigma=cond[3])
-            # for ld in range(self.n_outputs):
-            #     self.wp_sys[ld].append(Warping_system(self.x_basis_warp[0], self.noise_warp, bound_noise_warp,
+            # self.wp_sys.append(Warping_system(self.x_basis_warp[0], self.noise_warp, bound_noise_warp,
             #                                       recursive=recursive_warp, cuda=self.cuda, mode=self.mode_warp))
-            self.wp_sys.append(Warping_system(self.x_basis_warp[0], self.noise_warp, bound_noise_warp,
-                                                  recursive=recursive_warp, cuda=self.cuda, mode=self.mode_warp))
             if self.cuda and torch.cuda.is_available():
                 gp_.model_to_cuda()
-                self.wp_sys[-1].warp_gp.model_to_cuda()
+                for ld in range(self.n_outputs):
+                    self.wp_sys[ld][-1].warp_gp.model_to_cuda()
             self.bound_sigma.append(bound_sigma)
             self.bound_gamma.append(bound_gamma)
             self.bound_sigma_warp.append(bound_noise_warp)
@@ -494,8 +492,9 @@ class GPI_HDP():
                 print("Chosen model should be dynamic or static.")
             gp_.initial_conditions(ini_mean=None, ini_cov=None,
                                    ini_A=cond[0], ini_Gamma=cond[1], ini_C=cond[2], ini_Sigma=cond[3])
-            self.wp_sys[i] = Warping_system(self.x_basis_warp[0], self.noise_warp, bound_noise_warp,
-                                              recursive=recursive_warp, cuda=self.cuda, mode=self.mode_warp)
+            for ld in range(self.n_outputs):
+                self.wp_sys[ld][i] = Warping_system(self.x_basis_warp[0], self.noise_warp, bound_noise_warp,
+                                                  recursive=recursive_warp, cuda=self.cuda, mode=self.mode_warp)
             if self.cuda and torch.cuda.is_available():
                 gp_.model_to_cuda()
                 self.wp_sys[i].warp_gp.model_to_cuda()
@@ -689,7 +688,7 @@ class GPI_HDP():
             return torch.softmax(torch.max(torch.clone(snr), dim=1)[0], dim=1)
 
 
-    def include_batch(self, x_trains, y_trains, with_warp=False, force_model=None, it_limit=None, warp=False):
+    def include_batch(self, x_trains, y_trains, it_limit=None, warp=False):
         """
         Include the batch of samples received and restimate all the parameters of the
         full model, including the state-space and the GPS.
@@ -815,7 +814,12 @@ class GPI_HDP():
                         break
                     else:
                         elbo = elbo_
-                        q, q_lat, warp_computed = self.compute_warp_actual_state(x_trains, y_trains, q=q, q_lat=q_lat)
+                        q, q_lat, warp_computed, y_trains = self.compute_warp_actual_state(x_trains, y_trains, q=q, q_lat=q_lat)
+                        resp, respPair, q, q_lat, snr, y_trains_w, reallocate = self.variational_local_terms_batch(M, x_trains,  y_trains, y_trains, self.transTheta,
+                                                                                                                   self.startTheta, resp, respPair, q, q_lat, snr, reallocate)
+                        self.q_last, self.q_lat_last, self.snr_last = q, q_lat, snr
+                        self.resp_last, self.respPair_last = resp, respPair
+                        #break
                 else:
                     elbo = elbo_
                     self.y_train = y_trains
@@ -849,7 +853,7 @@ class GPI_HDP():
                     q_lat[:, m, ld] = gp.compute_q_lat_all(x_trains)
         warp_computed = True
         self.y_train = y_trains_w
-        return q, q_lat, warp_computed
+        return q, q_lat, warp_computed, y_trains_w
 
     def elbo_Linears(self, resp, respPair, post=False, one_sample=False):
         """ Compute ELBO for linear terms. HDP.
@@ -928,11 +932,11 @@ class GPI_HDP():
         q_lat = q_lat[:, reorder]
         M = self.M
         gpmodels_temp = [[] * M] * self.n_outputs
-        wp_sys = [] * M
+        wp_sys = [[] * M] * self.n_outputs
         for ld in range(self.n_outputs):
             for i in range(M):
                 gpmodels_temp[ld].append(self.gpmodels[ld][reorder[i]])
-                wp_sys.append(self.wp_sys[reorder[i]])
+                wp_sys[ld].append(self.wp_sys[ld][reorder[i]])
         self.gpmodels = gpmodels_temp
         self.wp_sys = wp_sys
         return resp, respPair, q, q_lat
@@ -1458,6 +1462,11 @@ class GPI_HDP():
                             print("Chosen to divide: "+str(m_chosen)+" with beat "+str(f_ind_new.item()))
                             self.gpmodels = gpmodels_temp
                             pos_new = torch.where(reorder == M-1)[0].long()
+                            for ld in range(self.n_outputs):
+                                self.wp_sys[ld].append(
+                                    Warping_system(self.x_basis_warp[0], self.noise_warp, self.bound_sigma_warp,
+                                                   recursive=self.recursive_warp, cuda=self.cuda, mode=self.mode_warp))
+                            self.model_type.append(self.model_type_def)
                             #pos_new = reorder[m].long()
                             indexes = torch.where(resp_temp[:, pos_new] == 1.0)[0]
                             if len(indexes) > 0:
@@ -1562,8 +1571,8 @@ class GPI_HDP():
         ini_Sigma = var_y_y * 0.02
         ini_Gamma = var_y_y * 0.025
 
-        bound_sigma = (ini_Sigma.item() * 1e-9, ini_Sigma.item() * 1e-6)
-        bound_gamma = (ini_Gamma.item() * 1e-9, ini_Gamma.item() * 1e-6)
+        bound_sigma = (ini_Sigma.item() * 1e-5, ini_Sigma.item() * 2.0)
+        bound_gamma = (ini_Gamma.item() * 1e-5, ini_Gamma.item() * 2.0)
 
         print("-----------Reestimated ------------", flush=True)
         print("Sigma: ", ini_Sigma)
@@ -3092,10 +3101,11 @@ class GPI_HDP():
         self.theta = recursive_numpy(self.theta)
         self.transTheta = recursive_numpy(self.transTheta)
         self.startTheta = recursive_numpy(self.startTheta)
-        for gp in self.gpmodels:
-            gp.model_to_numpy()
-        for w_gp in self.wp_sys:
-            w_gp.warp_gp.model_to_numpy()
+        for ld in range(self.n_outputs):
+            for gp in self.gpmodels[ld]:
+                gp.model_to_numpy()
+            for w_gp in self.wp_sys[ld]:
+                w_gp.warp_gp.model_to_numpy()
 
     def full_model_to_torch(self):
         def recursive_torch(x):
@@ -3120,10 +3130,11 @@ class GPI_HDP():
         self.theta = recursive_torch(self.theta)
         self.transTheta = recursive_torch(self.transTheta)
         self.startTheta = recursive_torch(self.startTheta)
-        for gp in self.gpmodels:
-            gp.model_to_torch()
-        for w_gp in self.wp_sys:
-            w_gp.warp_gp.model_to_torch()
+        for ld in range(self.n_outputs):
+            for gp in self.gpmodels[ld]:
+                gp.model_to_torch()
+            for w_gp in self.wp_sys[ld]:
+                w_gp.warp_gp.model_to_torch()
 
     def full_model_to_cuda(self):
         def recursive_cuda(x):
@@ -3150,10 +3161,11 @@ class GPI_HDP():
         self.theta = recursive_cuda(self.theta)
         self.transTheta = recursive_cuda(self.transTheta)
         self.startTheta = recursive_cuda(self.startTheta)
-        for gp in self.gpmodels:
-            gp.model_to_cuda()
-        for w_gp in self.wp_sys:
-            w_gp.warp_gp.model_to_cuda()
+        for ld in range(self.n_outputs):
+            for gp in self.gpmodels[ld]:
+                gp.model_to_cuda()
+            for w_gp in self.wp_sys[ld]:
+                w_gp.warp_gp.model_to_cuda()
 
     def full_model_to_cpu(self):
         if self.cuda:
@@ -3184,8 +3196,9 @@ class GPI_HDP():
             self.theta = recursive_cpu(self.theta)
             self.transTheta = recursive_cpu(self.transTheta)
             self.startTheta = recursive_cpu(self.startTheta)
-            for gp in self.gpmodels:
-                gp.model_to_cpu()
-            for w_gp in self.wp_sys:
-                w_gp.warp_gp.model_to_cpu()
+            for ld in range(self.n_outputs):
+                for gp in self.gpmodels[ld]:
+                    gp.model_to_cpu()
+                for w_gp in self.wp_sys[ld]:
+                    w_gp.warp_gp.model_to_cpu()
 
