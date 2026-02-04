@@ -247,21 +247,31 @@ class GPI_HDP():
         self.startTheta = []
 
         # Hyperparameters of HDP
-        # Gamma represent the variability in the prior weights for the rows of the transition matrix
+        # Gamma represent the variability in the prior weights for the rows of the transition matrix so:
+        #   -- higher gamma more possible clusters
+        #   -- lower gamma more concentrated prior distribution
         # transAlpha represent a factor of prior probability of state-state transition
+        #   -- higher transalpha more concentrated jumps (more skewed transition matrix)
+        #   -- lower transalpha more sparse jumps (more difusse transition matrix, higher flexibility)
         # startAlpha represent a factor of prior probability of starting state
         # kappa represent the sticky factor of self transition
-        # self.gamma = 700.0
-        # self.transAlpha = 1400.0
-        # self.startAlpha = 1400.0
+
+        #Less clusters scheme
+        # self.gamma = 0.1
+        # self.transAlpha = 1.0
+        # self.startAlpha = 1.0
         # self.kappa = 0.0
-        # self.gamma = 100.0
-        # self.transAlpha = 200.0
-        # self.startAlpha = 200.0
+
+        #Balanced scheme
+        # self.gamma = 0.1
+        # self.transAlpha = 0.1
+        # self.startAlpha = 0.1
         # self.kappa = 0.0
-        self.gamma = 0.5
-        self.transAlpha = 0.5
-        self.startAlpha = 0.5
+
+        #More clusters scheme
+        self.gamma = 10.0
+        self.transAlpha = 0.01
+        self.startAlpha = 0.01
         self.kappa = 0.0
 
         # Model associated with each state
@@ -702,10 +712,10 @@ class GPI_HDP():
         self : returns an instance of self.
         """
         # # Redefine HDP hyperparams for batch inclusion
-        self.gamma = 0.1
-        self.transAlpha = 0.1
-        self.startAlpha = 0.1
-        self.kappa = 0.0
+        # self.gamma = 0.1
+        # self.transAlpha = 0.1
+        # self.startAlpha = 0.1
+        # self.kappa = 0.0
         print("------ HDP Hyperparameters ------", flush=True)
         print("gamma: " + str(self.gamma))
         print("transAlpha: " + str(self.transAlpha))
@@ -1498,18 +1508,18 @@ class GPI_HDP():
         q_bas = torch.sum(q[torch.where(resp.int() > 0.99)]) * self.static_factor
         elbo_latent = torch.sum(q_lat[torch.where(resp.int() > 0.99)]) * self.dynamic_factor
         if post:
-            elbo_bas = self.elbo_Linears(resp, respPair, post=post, one_sample=one_sample)# * n_points #/ self.n_outputs
+            elbo_bas = self.elbo_Linears(resp, respPair, post=post, one_sample=one_sample) * n_points #/ self.n_outputs
         else:
-            elbo_bas = self.elbo_Linears(resp, respPair, one_sample=one_sample)# * n_points #/ self.n_outputs
+            elbo_bas = self.elbo_Linears(resp, respPair, one_sample=one_sample) * n_points #/ self.n_outputs
         elbo_bas_LDS = 0
         if snr is None:
             frac = torch.ones(self.n_outputs, device=resp.device()) / self.n_outputs#  / self.M
         elif snr == 'saved':
             frac = torch.sum(self.snr_norm, dim=0)
-            frac = frac / torch.sum(frac) #* self.n_outputs# / self.M#
+            frac = frac / torch.sum(frac) * n_points#* self.n_outputs# / self.M#
         else:
             frac = torch.sum(torch.softmax(torch.max(snr, dim=1)[0], dim=1), dim=0)
-            frac = frac / torch.sum(frac) #* self.n_outputs# * self.M#
+            frac = frac / torch.sum(frac) * n_points#* self.n_outputs# * self.M#
         for i in range(self.n_outputs):
             elbo_bas_LDS = elbo_bas_LDS + self.full_LDS_elbo(gpmodels[i], torch.sum(resp, dim=0), one_sample=one_sample) * frac[i]
 
@@ -1548,7 +1558,7 @@ class GPI_HDP():
         if one_sample:
             return elb #/ M_
         else:
-            return elb #/ 2.0#/ M_ #* np.min([np.max([1, M_ - 1]), self.M])
+            return elb / M_ #* np.min([np.max([1, M_ - 1]), self.M])
 
     def redefine_default(self, x_trains, y_trains, resp):
         """ Method to compute Sigma and Gamma from a batch of examples and assign it to initial values.
@@ -1887,15 +1897,20 @@ class GPI_HDP():
             Ebeta = self.cond_to_numpy(self.cond_cpu(self.rho2beta(rho, returnSize='K + 1')))
         LstartSlack = np.inner(
             startStateCount + startAlpha * Ebeta - startTheta,
-            digamma(startTheta) - np.log(np.sum(np.exp(digamma(startTheta))))
+            digamma(startTheta) - digamma(np.sum(startTheta))
         )
         alphaEbetaPlusKappa = alpha * np.tile(Ebeta, (K, 1))
         alphaEbetaPlusKappa[:, :K] += kappa * np.eye(K)
-        digammaSum = np.log(np.sum(np.exp(digamma(transTheta)), axis=1))
+        #digammaSum = np.log(np.sum(np.exp(digamma(transTheta)), axis=1))
+        digammaSum = digamma(np.sum(transTheta, axis=1))
         transStateCount_[:K, :] = transStateCount_[:K, :] + alphaEbetaPlusKappa
+        # LtransSlack = np.sum(
+        #     (transStateCount_ - transTheta) *
+        #     (digamma(transTheta) - digammaSum[:, np.newaxis])
+        # )
         LtransSlack = np.sum(
             (transStateCount_ - transTheta) *
-            (digamma(transTheta) - digammaSum[:, np.newaxis])
+            (digamma(transTheta) - digammaSum[:, None])
         )
         return Ltop + LdiffcDir + LstartSlack + LtransSlack
 
