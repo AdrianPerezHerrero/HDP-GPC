@@ -108,11 +108,14 @@ class GPI_model():
         if ini_cov is None:
             self.cov_f.append(self.cond_to_torch(self.K))
             self.cov_f_sm.append(self.cond_to_torch(self.K))
+            self.ini_cov_def = self.K.clone()
         else:
             self.cov_f.append(self.cond_to_torch(ini_cov))
             self.cov_f_sm.append(self.cond_to_torch(ini_cov))
+            self.ini_cov_def = ini_cov
         if ini_A is None and ini_Gamma is None and ini_C is None and ini_Sigma is None:
             ini_A, ini_Gamma, ini_C, ini_Sigma = self.GPR_dynamic()
+
         self.A.append(ini_A)
         self.Gamma.append(ini_Gamma)
         self.C.append(ini_C)
@@ -222,20 +225,20 @@ class GPI_model():
 
         if i is not None:
             f_star, cov_f = self.observe(x_train, i, params, proj=proj)
-            lat_f, lat_cov = self.resample_latent_mean(x_train, i, params)
-            if C is None:
-                if x_train.shape[0] == self.x_basis.shape[0]:
-                    _, _, C, _ = self.get_params(i)
-                else:
-                    C = torch.eye(x_train.shape[0], device=self.device)
+            #lat_f, lat_cov = self.resample_latent_mean(x_train, i, params)
+            # if C is None:
+            #     if x_train.shape[0] == self.x_basis.shape[0]:
+            #         _, _, C, _ = self.get_params(i)
+            #     else:
+            #         C = torch.eye(x_train.shape[0], device=self.device)
         else:
             f_star, cov_f = self.step_forward_last(x_train, params)
-            lat_f, lat_cov = self.resample_latent_mean(x_train)
-            if C is None:
-                if x_train.shape[0] == self.x_basis.shape[0]:
-                    C = self.C[-1]
-                else:
-                    C = torch.eye(x_train.shape[0], device=self.device)
+            #lat_f, lat_cov = self.resample_latent_mean(x_train)
+            # if C is None:
+            #     if x_train.shape[0] == self.x_basis.shape[0]:
+            #         C = self.C[-1]
+            #     else:
+            #         C = torch.eye(x_train.shape[0], device=self.device)
         #If first iteration we add the kernel noise.
         if first:
             #ini_noise = self.cond_to_cuda(self.cond_to_torch(self.gp.kernel.get_params()["k2__noise_level"])) * 1e-4
@@ -351,7 +354,7 @@ class GPI_model():
         return new_x_basis
 
     def full_pass_weighted(self, x_trains, y_trains, resp, q=None, q_lat=None, snr=None):
-        """ Full forward pass method. Compute the full forward message passing and reestimation of 
+        """ Full forward pass method. Compute the full forward message passing and reestimation of
             dynamic parameters in a bayesian way.
             Used in the offline scheme.
 
@@ -362,7 +365,7 @@ class GPI_model():
         """
         q_ = torch.zeros(len(x_trains), device=self.device)
         q_lat_ = torch.zeros(1, device=self.device)
-        ind = torch.where(resp > self.cond_to_cuda(self.cond_to_torch(0.9)))[0]
+        ind = torch.where(resp == self.cond_to_cuda(self.cond_to_torch(1.0)))[0]
         if len(ind) == 0:
             return q, q_lat
         n_samp = x_trains.shape[0]
@@ -449,10 +452,14 @@ class GPI_model():
             #                        self.Sigma[-1] + self.cov_f[-1])
         else:
             A_, Gam_, C_, Sig_, n0 = self.A[-1], self.Gamma[-1], self.C[-1], self.Sigma[-1], self.internal_params.n0
-        int_params = matrix_normal_inv_wishart(ini_A, torch.eye(ini_A.shape[0], device=self.device), self.free_deg_MNIV, ini_Gamma)
+        if len(torch.nonzero(ini_Gamma))< 1:
+            log_lik_A_Gam = 0.0
+        else:
+            int_params = matrix_normal_inv_wishart(ini_A, torch.eye(ini_A.shape[0], device=self.device), self.free_deg_MNIV, ini_Gamma)
+            log_lik_A_Gam = int_params.log_likelihood_MNIW(A_, Gam_, n0)
         obs_params = matrix_normal_inv_wishart(ini_C, torch.eye(ini_C.shape[0], device=self.device), self.free_deg_MNIV, ini_Sigma)
-        elb_LDS = elb_LDS + int_params.log_likelihood_MNIW(A_, Gam_, n0) + obs_params.log_likelihood_MNIW(C_, Sig_, n0)
-        return elb_LDS #/ len(self.A)
+        elb_LDS = elb_LDS + log_lik_A_Gam + obs_params.log_likelihood_MNIW(C_, Sig_, n0)
+        return elb_LDS / ini_A.shape[0] * 100
 
     def compute_sq_err_all(self, x_trains, y_trains, no_first=False):
         """ Method to compute the squared error over all provided examples y_trains.
@@ -478,7 +485,8 @@ class GPI_model():
         sq_err = torch.zeros(x_trains.shape[0], device=x_trains[0].device)
         if self.N == 0:
             return sq_err
-        self.gamma_inv = torch.linalg.solve(self.Gamma[-1], self.cond_to_cuda(torch.eye(self.Gamma[-1].shape[0])))
+        if len(torch.nonzero(self.Gamma[-1]))< 1:
+            return sq_err
         for j, index in enumerate(self.indexes):
             sq_err[index] = self.log_lat_error(j, h_ini)
         return sq_err
@@ -598,11 +606,11 @@ class GPI_model():
         """
         if params is None:
             if t is None or t> len(self.indexes):
-                mean = self.f_star[-1]
-                cov = self.cov_f[-1]
+                mean = self.f_star_sm[-1]
+                cov = self.cov_f_sm[-1]
             else:
-                mean = self.f_star[t]
-                cov = self.cov_f[t]
+                mean = self.f_star_sm[t]
+                cov = self.cov_f_sm[t]
         else:
             mean = params[0]
             cov = params[1]
@@ -885,6 +893,8 @@ class GPI_model():
         """ Method to compute the variational Bayesian step for LDS parameters. Can deal with dynamic or static models.
             Can use full data batch n-step estimation or 1-step estimation.
         """
+        if len(torch.nonzero(self.Gamma[-1]))< 1:
+            model_type = 'static'
         if h == 1.0:
             if snr > 0.5:
                 if (full_data and 1 < self.N) or 1 < self.N < self.estimation_limit or force:
@@ -942,14 +952,22 @@ class GPI_model():
                         if not full_data:
                             samples_C = self.y_train[-1]
                             #samples_C_, _ = self.observe_last(self.x_train[-1])
-                            samples_C_ = self.f_star_sm[-1]
+                            if torch.equal(self.x_basis, self.x_train[-1]):
+                                samples_C_ = self.f_star_sm[-1]
+                                C, Sigma = self.C[-1], self.Sigma[-1]
+                                cov = torch.zeros(Sigma.shape, device=Sigma.device)
+                                cov_ = torch.zeros(cov.shape, device=cov.device)
+                                cov_cross = torch.zeros(cov.shape, device=cov.device)
+                            else:
+                                samples_C_, cov = self.resample_latent_mean(self.x_train[-1])
+                                cov = torch.zeros(cov.shape, device=cov.device)
+                                cov_ = torch.zeros(cov.shape, device=cov.device)
+                                cov_cross = torch.zeros(cov.shape, device=cov.device)
                             if model_type == 'static':
                                 samples_C_, _ = self.resample_latent_mean(self.x_train[-1])
                             samples_C_ = self.cond_to_cuda(samples_C_)
-                            C, Sigma = self.C[-1], self.Sigma[-1]
-                            cov = torch.zeros(Sigma.shape, device=Sigma.device)
-                            cov_ = torch.zeros(cov.shape, device=cov.device)
-                            cov_cross = torch.zeros(cov.shape, device=cov.device)
+
+
                         else:
                             samples_C  = torch.stack(self.y_train[:n_f])[:, :, 0].T
                             samples_C_ = torch.stack(self.f_star_sm[1:n_f+1])[:, :, 0].T
@@ -1001,7 +1019,7 @@ class GPI_model():
                     self.A.append(new_int_dist.get_mean())
                     self.Gamma.append(Gamma_)
                     if model_type == 'static':
-                        self.C.append(new_obs_dist.get_C())
+                        self.C.append(new_obs_dist.get_mean())
                     else:
                         self.C.append(new_obs_dist.get_mean())
                     self.Sigma.append(Sigma_)
