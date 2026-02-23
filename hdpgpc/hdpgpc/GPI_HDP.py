@@ -276,7 +276,7 @@ class GPI_HDP():
         # self.kappa = 0.0
 
         # More clusters scheme
-        self.gamma = 10.0
+        self.gamma = 100.0
         self.transAlpha = 0.01
         self.startAlpha = 0.01
         self.kappa = 0.0
@@ -409,8 +409,8 @@ class GPI_HDP():
         """ Compute transition matrix
         """
         return torch.exp(digamma(self.cond_cpu(self.transTheta)) -
-                         torch.log(torch.sum(torch.exp(digamma(self.cond_cpu(self.transTheta))), axis=1))[
-                             :, np.newaxis])
+                         torch.log(torch.sum(torch.exp(digamma(self.cond_cpu(self.transTheta))), axis=1))[:,
+                         np.newaxis])
 
     def rho2beta(self, rho, returnSize='K+1'):
         rho = np.asarray(rho, dtype=np.float64)
@@ -1516,8 +1516,8 @@ class GPI_HDP():
                                                                                          y_trains_w[:, :, [ld]],
                                                                                          resp_temp[:, m],
                                                                                          q=q__[:, reorder[m], ld],
-                                                                                         q_lat=q_lat__[
-                                                                                             :, reorder[m], ld],
+                                                                                         q_lat=q_lat__[:, reorder[m],
+                                                                                               ld],
                                                                                          snr=self.snr_norm[:, ld])
                                     snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp)
                                 else:
@@ -1551,6 +1551,7 @@ class GPI_HDP():
                             resp_temp, respPair_temp, q, q_lat, snr_aux = self.remove_last_group(resp_temp,
                                                                                                  respPair_temp, q,
                                                                                                  q_lat, snr_aux)
+                            M = M - 1
                             resp_per_group_temp = torch.sum(resp_temp[torch.where(resp_temp == 1.0)[0]], axis=0)
                             reorder = torch.argsort(resp_per_group_temp, descending=True)
                             self.f_ind_old = self.f_ind_old[reorder]
@@ -1579,8 +1580,11 @@ class GPI_HDP():
                                                                                                                      elbo_def=elbo_def__,
                                                                                                                      gpmodels=gpmodels_temp,
                                                                                                                      reparam=reparam)
-                        if resp_temp.shape[1] < M:
+                        if resp_temp.shape[1] < M:  # Then it has happened an emergency deleting
                             post_ = False
+                            M = M - 1
+                            reallocate = True
+                            break
                         q_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                                 self.weight_mean(q_lat, snr_aux), gpmodels_temp, M,
                                                                 snr=snr_aux, post=post_)
@@ -1725,8 +1729,8 @@ class GPI_HDP():
         samples = y_trains[:n_f][:, :10, 0].T
         samples_ = y_trains[1:n_f + 1][:, :10, 0].T
         var_y_y = torch.median(torch.diag(torch.linalg.multi_dot([(samples - torch.mean(samples, dim=1)[:, np.newaxis]),
-                                                                  (samples - torch.mean(samples, dim=1)[
-                                                                      :, np.newaxis]).T])) / n_f)  # * 0.15
+                                                                  (samples - torch.mean(samples, dim=1)[:,
+                                                                             np.newaxis]).T])) / n_f)  # * 0.15
         var_y_y_ = torch.median(
             torch.diag(torch.linalg.multi_dot([(samples_ - samples), (samples_ - samples).T])) / n_f)  # * 0.15
         kernel, ini_sigma, ini_gamma, ini_outputscale, bound_sigma, bound_gamma, bound_noise_warp, annealing, method_compute_warp, \
@@ -2193,7 +2197,7 @@ class GPI_HDP():
         jit = 1e-5
         ELogPi = digamma(self.cond_to_numpy(self.cond_cpu(transTheta))) \
                  - np.log(np.sum(np.exp(digamma(self.cond_to_numpy(self.cond_cpu(transTheta)))), axis=1) + jit)[:,
-        np.newaxis]
+                   np.newaxis]
         sumELogPi = np.sum(ELogPi, axis=0)
         startELogPi = digamma(self.cond_to_numpy(self.cond_cpu(startTheta))) \
                       - np.log(np.sum(np.exp(digamma(self.cond_to_numpy(self.cond_cpu(startTheta))))) + jit)
@@ -2368,7 +2372,7 @@ class GPI_HDP():
                 return resp, respPair, q_, q_lat_, snr_, y_trains_w, gpmodels
         else:
             print(f">>> Possible emergency reallocation. Prev ----:\n Q_em: {q_def}, Elbo: {elbo_def}")
-            if q_def + elbo_def < q_bas_post + elbo_post:
+            if (q_def + elbo_def < q_bas_post + elbo_post) and (q_bas + elbo_bas < q_bas_post + elbo_post):
                 print("Emergency reallocation and removing last group.")
                 reallocate = True
                 for ld in range(self.n_outputs):

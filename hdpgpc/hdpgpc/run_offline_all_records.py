@@ -89,7 +89,7 @@ def run_one_record(data_dir: Path, rec: str, out_dir: Path, warp: bool = False):
 
     # Hyperparameters (copied from test_offline_multi_output_local.py)
     M = 2
-    sigma = std * 1.0
+    sigma = std * 2.0
     gamma = std_dif * 1.0
     outputscale_ = 300.0
     ini_lengthscale = 3.0
@@ -134,7 +134,7 @@ def run_one_record(data_dir: Path, rec: str, out_dir: Path, warp: bool = False):
         bayesian_params=True,
         inducing_points=False,
         reestimate_initial_params=True,
-        n_explore_steps=6,
+        n_explore_steps=16,
         free_deg_MNIV=3,
         share_gp=True
     )
@@ -174,11 +174,11 @@ def main():
     data_dir = find_data_dir(repo_root)
 
     # Save under results/cluster_labels by default (adjust to your preference)
-    out_dir = repo_root / "results" / "cluster_labels" / "v2_UCR_ver"
+    out_dir = repo_root / "results" / "cluster_labels" / "v3_UCR_ver"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    recs = list_records(data_dir)
-    #recs = ["102", "104", "207", "105", "203", "217", "223"]
+    #recs = list_records(data_dir)
+    recs = ["104", "207", "105", "203", "217", "223"]
     if not recs:
         raise RuntimeError(f"No records found in {data_dir}. (Expected *.npy plus *_labels.npy)")
 
