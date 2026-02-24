@@ -207,7 +207,7 @@ def run_one_record(hdpgpc_dir: Path, data_dir: Path, pred_dir: Path, rec: str):
     print(f"[OK] {rec}: reload_model_from_labels done in {dt_min:.2f} min (M={M}).")
 
     # Plot results (same as your snippet)
-    results_dir = hdpgpc_dir / "results" / "eval_offline_v1_UCR" / "plots"
+    results_dir = hdpgpc_dir / "results" / "eval_offline_v2_UCR" / "plots"
     results_dir.mkdir(parents=True, exist_ok=True)
 
     out_prefix = str(results_dir / f"Rec{rec}_")
@@ -240,7 +240,7 @@ def main():
     data_dir = find_data_dir(hdpgpc_dir)
 
     # Where you saved cluster_labels_...npy
-    pred_dir = project_root / "results" / "cluster_labels" / "v1_UCR_ver"
+    pred_dir = project_root / "results" / "cluster_labels" / "v2_UCR_ver"
     if not pred_dir.exists():
         # fallback: maybe user saved under hdpgpc/results/cluster_labels
         pred_dir = hdpgpc_dir / "results" / "cluster_labels"

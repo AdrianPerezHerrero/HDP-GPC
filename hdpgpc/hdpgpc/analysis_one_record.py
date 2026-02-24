@@ -46,9 +46,9 @@ import matplotlib.pyplot as plt
 
 import hdpgpc.GPI_HDP as hdpgp
 from hdpgpc.get_data import compute_estimators_LDS
-from hdpgpc.util_plots import plot_models_plotly, print_results
-
-
+from hdpgpc.util_plots import plot_models_plotly, print_results, plot_warp, plot_MDS_regions_transitions
+from contextlib import redirect_stdout
+import sys, io
 dtype = torch.float64
 torch.set_default_dtype(dtype)
 
@@ -91,6 +91,115 @@ def find_cluster_label_file(pred_dir: Path, rec: str) -> Path:
         raise FileExistsError(f"Multiple cluster-label files for {rec} in {pred_dir}: {[m.name for m in matches]}")
     raise FileNotFoundError(f"No cluster-label file found for record {rec} in {pred_dir}")
 
+from hdpgpc.get_data import included_labels as MIT_INCLUDED_LABELS  # uses get_data.py list :contentReference[oaicite:4]{index=4}
+
+def align_like_get_data(
+    data: np.ndarray,
+    labels_true: np.ndarray,
+    cluster_labels: np.ndarray,
+    included_labels=MIT_INCLUDED_LABELS,
+    drop_zero_beats: bool = True,
+    eps_energy: float = 1e-12,
+):
+    """
+    Enforce (data, labels_true, cluster_labels) alignment using the same *practical* criteria
+    that the get_data.py pipeline implies:
+      - labels filtered to included_labels
+      - beats that are effectively 'dummy/zero' (from take_standard_labels-style masking) can be dropped
+      - tail mismatches (labels longer than extracted data) are trimmed, mimicking the extraction skip
+        when annotation[i] + samples[1] - 87 exceeds signal length :contentReference[oaicite:5]{index=5}
+
+    Returns: data_f, labels_f, clusters_f, info_dict
+    """
+    info = {}
+
+    data = np.asarray(data)
+    labels_true = np.asarray(labels_true)
+    cluster_labels = np.asarray(cluster_labels).reshape(-1)
+
+    n_data = int(data.shape[0])
+    n_lab = int(labels_true.shape[0])
+    n_clu = int(cluster_labels.shape[0])
+    info["n_data_in"] = n_data
+    info["n_labels_in"] = n_lab
+    info["n_clusters_in"] = n_clu
+
+    # --- Step 0: basic length reconciliation (before filtering)
+    # 0.a) If labels are longer than data, trim labels (this matches get_data tail skip behaviour)
+    # get_data can skip appending a beat if it falls outside the signal end, but labels are kept unless trimmed :contentReference[oaicite:6]{index=6}
+    if n_lab > n_data:
+        labels_true = labels_true[:n_data]
+        n_lab = n_data
+        info["trim_labels_to_data"] = True
+    else:
+        info["trim_labels_to_data"] = False
+
+    # 0.b) If data is longer than labels, try to drop "zero-energy" beats (often produced by take_standard_labels) :contentReference[oaicite:7]{index=7}
+    if n_data > n_lab:
+        if data.ndim == 3:
+            energy = np.sum(np.abs(data), axis=(1, 2))
+        else:
+            energy = np.sum(np.abs(data), axis=1)
+
+        nonzero_mask = energy > eps_energy
+        if int(nonzero_mask.sum()) == n_lab:
+            # assume labels correspond to the non-zero beats in order
+            if n_clu == n_data:
+                cluster_labels = cluster_labels[nonzero_mask]
+            data = data[nonzero_mask]
+            n_data = int(data.shape[0])
+            info["drop_zero_to_match_labels"] = True
+        else:
+            # fallback: hard-trim everything to min common length
+            n = min(n_data, n_lab, n_clu)
+            data = data[:n]
+            labels_true = labels_true[:n]
+            cluster_labels = cluster_labels[:n]
+            n_data = n_lab = n_clu = n
+            info["drop_zero_to_match_labels"] = False
+            info["hard_trim_to_min_len"] = True
+    else:
+        info["drop_zero_to_match_labels"] = False
+        info["hard_trim_to_min_len"] = False
+
+    # 0.c) If cluster_labels still mismatched, hard-trim to min
+    n = min(int(data.shape[0]), int(labels_true.shape[0]), int(cluster_labels.shape[0]))
+    if (data.shape[0] != n) or (labels_true.shape[0] != n) or (cluster_labels.shape[0] != n):
+        data = data[:n]
+        labels_true = labels_true[:n]
+        cluster_labels = cluster_labels[:n]
+        info["hard_trim_to_min_len_2"] = True
+    else:
+        info["hard_trim_to_min_len_2"] = False
+
+    # --- Step 1: label filtering (same included_labels list as get_data.py) :contentReference[oaicite:8]{index=8}
+    labels_str = labels_true.astype(str)
+    inc_mask = np.isin(labels_str, np.asarray(included_labels, dtype=str))
+
+    data = data[inc_mask]
+    labels_str = labels_str[inc_mask]
+    cluster_labels = cluster_labels[inc_mask]
+    info["after_included_labels"] = int(data.shape[0])
+
+    # --- Step 2: optional removal of near-zero beats (robust to take_standard_labels masking) :contentReference[oaicite:9]{index=9}
+    if drop_zero_beats:
+        if data.ndim == 3:
+            energy2 = np.sum(np.abs(data), axis=(1, 2))
+        else:
+            energy2 = np.sum(np.abs(data), axis=1)
+        nz_mask = energy2 > eps_energy
+        data = data[nz_mask]
+        labels_str = labels_str[nz_mask]
+        cluster_labels = cluster_labels[nz_mask]
+        info["after_drop_zero_beats"] = int(data.shape[0])
+    else:
+        info["after_drop_zero_beats"] = int(data.shape[0])
+
+    info["n_data_out"] = int(data.shape[0])
+    info["n_labels_out"] = int(labels_str.shape[0])
+    info["n_clusters_out"] = int(cluster_labels.shape[0])
+
+    return data, labels_str, cluster_labels.astype(np.int64), info
 
 # ------------------------
 # Model builder (same hyperparameters as reload_and_plot.py)
@@ -132,7 +241,7 @@ def build_sw_gp(
         mode_warp="rough",
         bayesian_params=True,
         inducing_points=False,
-        reestimate_initial_params=True,
+        reestimate_initial_params=False,
         n_explore_steps=15,
         free_deg_MNIV=3,
     )
@@ -211,6 +320,31 @@ def purity_score(y_true_int: np.ndarray, clusters: np.ndarray) -> float:
     for c, t in zip(clusters, y_true_int):
         cont[int(c), int(t)] += 1
     return float(np.sum(np.max(cont, axis=1)) / n)
+
+def majority_cluster_to_class_map(y_true_int: np.ndarray, clusters: np.ndarray):
+    """
+    Majority-vote cluster->class mapping.
+    Returns:
+      cluster_to_class: dict {cluster_id: class_id} (majority label in the cluster)
+      y_pred_mapped:    predicted class per sample (by majority mapping)
+      cont:             contingency table (K x J)
+    """
+    clusters = np.asarray(clusters).reshape(-1).astype(int)
+    y_true_int = np.asarray(y_true_int).reshape(-1).astype(int)
+
+    K = int(np.max(clusters)) + 1
+    J = int(np.max(y_true_int)) + 1
+
+    cont = np.zeros((K, J), dtype=np.int64)
+    for c, t in zip(clusters, y_true_int):
+        cont[c, t] += 1
+
+    cluster_to_class = {}
+    for k in range(K):
+        cluster_to_class[k] = int(np.argmax(cont[k])) if cont[k].sum() > 0 else 0
+
+    y_pred_mapped = np.asarray([cluster_to_class[int(c)] for c in clusters], dtype=int)
+    return cluster_to_class, y_pred_mapped, cont
 
 
 def hungarian_cluster_to_class_map(y_true_int: np.ndarray, clusters: np.ndarray):
@@ -463,12 +597,112 @@ def compute_and_plot_warps(
 
     pd.DataFrame(warp_rows).to_csv(out_dir / f"warps_summary_lead{lead}.csv", index=False)
 
+def plot_warps_plotly_per_cluster(
+    sw_gp,
+    x_train: np.ndarray,          # shape (L,1) or (L,)
+    data: np.ndarray,             # shape (T,L,D)
+    selected_gpmodels: list[int],
+    main_model: list,
+    labels: np.ndarray,           # y_true_sym
+    out_dir: Path,
+    lead: int = 0,
+    max_per_cluster: int = 30,
+):
+    """
+    Produce per-cluster warp subplots using util_plots.plot_warp (Plotly).
+    This function computes and stores warps in the structure expected by plot_warp:
+        view.x_w[j][m] = warp tensor for beat j wrt cluster m
+    util_plots.plot_warp uses plotly.subplots.make_subplots and colors by labels[j].
+    """
+    # Ensure x_train is (L,1) torch tensor
+    x_train_ = np.asarray(x_train, dtype=np.float64)
+    if x_train_.ndim == 1:
+        x_train_ = x_train_.reshape(-1, 1)
+    x_t = torch.from_numpy(x_train_)
+
+    T = int(data.shape[0])
+    M = int(sw_gp.M)
+
+    # plot_warp expects x_w[j][m] indexing (list-of-lists), not the tensor x_w used elsewhere.
+    x_w_store = [[None for _ in range(M)] for _ in range(T)]
+
+    # We'll truncate each cluster’s internal sequences for plotting (optional, but avoids huge HTMLs).
+    gp_list = sw_gp.gpmodels[lead]
+    wp_list = sw_gp.wp_sys[lead]
+    saved_state = {}
+
+    # Compute + store warps only for the beats that will be plotted
+    for m in selected_gpmodels:
+        gp = gp_list[m]
+
+        # Save original cluster contents so we can restore later
+        saved_state[m] = (list(gp.indexes), list(gp.x_train), list(gp.y_train))
+
+        # Limit number of warp traces per cluster (keep first element + next max_per_cluster)
+        if max_per_cluster is not None and max_per_cluster > 0:
+            keep = min(len(gp.indexes), max_per_cluster + 1)
+            gp.indexes = gp.indexes[:keep]
+            gp.x_train = gp.x_train[:keep]
+            gp.y_train = gp.y_train[:keep]
+
+        # plot_warp iterates gp.indexes[1:] and reads x_w[j][m]
+        for j in gp.indexes[1:]:
+            y = torch.from_numpy(np.asarray(data[j, :, lead], dtype=np.float64)).reshape(-1, 1)
+            _, x_w, _ = sw_gp.compute_warp_y(
+                x_t, y,
+                strategie="standard",
+                force_model=m,
+                gpmodel=gp,
+                ld=lead,
+            )
+            x_w_store[j][m] = x_w[m].detach()
+
+    # Fill any missing entries (defensive; avoids None crashes)
+    zero_warp = torch.zeros((x_train_.shape[0], 1), dtype=torch.float64)
+    for m in selected_gpmodels:
+        for j in gp_list[m].indexes[1:]:
+            if x_w_store[j][m] is None:
+                x_w_store[j][m] = zero_warp
+
+    # Build a light “view” object with the attribute layout expected by util_plots.plot_warp:
+    #   view.gpmodels[m], view.wp_sys[m], view.x_w[j][m]
+    class _WarpView:
+        pass
+
+    view = _WarpView()
+    view.gpmodels = gp_list
+    view.wp_sys = wp_list
+    view.x_w = x_w_store
+
+    # Save interactive HTML (plotly.offline.plot writes HTML files) :contentReference[oaicite:7]{index=7}
+    save_path = str(out_dir / f"warps_lead{lead}.pdf")
+    plot_warp(view, selected_gpmodels, main_model, labels, N_0=0, save=save_path, pdf_path=save_path)  # :contentReference[oaicite:8]{index=8}
+
+    # Restore original GP contents
+    for m, (idxs, xtr, ytr) in saved_state.items():
+        gp = gp_list[m]
+        gp.indexes = idxs
+        gp.x_train = xtr
+        gp.y_train = ytr
+
+class _TeeStdout(io.TextIOBase):
+    def __init__(self, *streams):
+        self.streams = streams
+
+    def write(self, s):
+        for st in self.streams:
+            st.write(s)
+        return len(s)
+
+    def flush(self):
+        for st in self.streams:
+            st.flush()
 
 # ------------------------
 # Main per-record routine
 # ------------------------
 def run_one_record(rec: str, pred_dir: Path, out_dir: Path, label_map_json: Path | None,
-                   max_warps_per_cluster: int, warp_lead: int):
+                   max_warps_per_cluster: int, warp_lead: int, mapping: str = "majority"):
     repo_root = find_project_root()
     data_dir = find_data_dir(repo_root)
 
@@ -477,21 +711,19 @@ def run_one_record(rec: str, pred_dir: Path, out_dir: Path, label_map_json: Path
     # Load data + true labels
     data = np.load(data_dir / f"{rec}.npy")
     labels_true_raw = np.load(data_dir / f"{rec}_labels.npy", allow_pickle=True)
-
-    num_samples, num_obs_per_sample, num_outputs = data.shape
-
-    # Load predicted cluster labels
     pred_path = find_cluster_label_file(pred_dir, rec)
     cluster_labels = np.load(pred_path, allow_pickle=True).reshape(-1)
 
-    # Align lengths
-    if len(cluster_labels) != num_samples:
-        n = min(len(cluster_labels), num_samples)
-        print(f"[WARN] {rec}: cluster_labels length={len(cluster_labels)} vs num_samples={num_samples}. Trimming to {n}.")
-        cluster_labels = cluster_labels[:n]
-        data = data[:n]
-        labels_true_raw = labels_true_raw[:n]
-        num_samples = n
+    # Apply the same practical selection criteria used by get_data.py
+    data, y_true_sym, cluster_labels, align_info = align_like_get_data(
+        data=data,
+        labels_true=labels_true_raw,
+        cluster_labels=cluster_labels,
+        included_labels=MIT_INCLUDED_LABELS,  # from get_data.py :contentReference[oaicite:12]{index=12}
+        drop_zero_beats=True,
+    )
+
+    num_samples, num_obs_per_sample, num_outputs = data.shape
 
     # Ensure integer cluster ids
     if cluster_labels.dtype.kind in ("f", "c"):
@@ -512,7 +744,7 @@ def run_one_record(rec: str, pred_dir: Path, out_dir: Path, label_map_json: Path
         with open(label_map_json, "r", encoding="utf-8") as f:
             index_to_symbol = json.load(f)
 
-    y_true_sym = labels_to_symbols(labels_true_raw, index_to_symbol=index_to_symbol)
+    y_true_sym = labels_to_symbols(y_true_sym, index_to_symbol=index_to_symbol)
 
     # Estimate priors (same as reload_and_plot.py)
     std, std_dif, bound_sigma, bound_gamma = compute_estimators_LDS(data)
@@ -523,6 +755,7 @@ def run_one_record(rec: str, pred_dir: Path, out_dir: Path, label_map_json: Path
     outputscale_ = 300.0
     ini_lengthscale = 3.0
     bound_lengthscale = (1.0, 20.0)
+    bound_sigma = (std*1e-5, std*1e-3)
 
     noise_warp = std * 0.1
     bound_noise_warp = (noise_warp * 0.1, noise_warp * 0.2)
@@ -560,20 +793,28 @@ def run_one_record(rec: str, pred_dir: Path, out_dir: Path, label_map_json: Path
     # ------------------------
     out_prefix = str(out_dir / f"Rec{rec}_")
 
-    main_model = print_results(sw_gp, y_true_sym, 0, error=False)
+    _print_buf = io.StringIO()
+    with redirect_stdout(_TeeStdout(sys.stdout, _print_buf)):
+        main_model = print_results(sw_gp, y_true_sym, 0, error=False)
+
+    print_results_stdout = _print_buf.getvalue()
     selected_gpmodels = sw_gp.selected_gpmodels()
 
     plot_models_plotly(
         sw_gp, selected_gpmodels, main_model, y_true_sym, 0,
-        lead=0, save=out_prefix + "Offline_Clusters_Lead_1.png",
+        lead=0, save=out_prefix + "Offline_Clusters_Lead_1.pdf",
         step=0.5, plot_latent=True
     )
     if num_outputs > 1:
         plot_models_plotly(
             sw_gp, selected_gpmodels, main_model, y_true_sym, 0,
-            lead=1, save=out_prefix + "Offline_Clusters_Lead_2.png",
+            lead=1, save=out_prefix + "Offline_Clusters_Lead_2.pdf",
             step=0.5, plot_latent=True
         )
+
+    plot_MDS_regions_transitions(sw_gp, main_model, y_true_sym, N_0=0, lead=0,
+                                 save=out_prefix + f"Rec{rec}_MDS_regions.html",
+                                 min_prob=0.10, top_k=2, pdf_path=out_prefix + f"Rec{rec}_MDS_regions.pdf")
 
     # ------------------------
     # 2) Metrics + full confusion (after mapping)
@@ -590,7 +831,13 @@ def run_one_record(rec: str, pred_dir: Path, out_dir: Path, label_map_json: Path
     comp = completeness_score(y_true_int, cluster_labels)
 
     # Cluster -> class mapping + macro-F1 on mapped labels
-    cl2c, y_pred_mapped_int, contingency = hungarian_cluster_to_class_map(y_true_int, cluster_labels)
+    if mapping == "hungarian":
+        cl2c, y_pred_mapped_int, contingency = hungarian_cluster_to_class_map(y_true_int, cluster_labels)
+        mapping_name = "hungarian"
+    else:
+        cl2c, y_pred_mapped_int, contingency = majority_cluster_to_class_map(y_true_int, cluster_labels)
+        mapping_name = "majority"
+
     macro_f1 = f1_score(y_true_int, y_pred_mapped_int, average="macro")
 
     # Full label confusion
@@ -619,18 +866,17 @@ def run_one_record(rec: str, pred_dir: Path, out_dir: Path, label_map_json: Path
     # ------------------------
     # 5) Warp plots
     # ------------------------
-    try:
-        compute_and_plot_warps(
-            sw_gp,
-            x_train=x_train.reshape(-1),
-            data=data,
-            cluster_labels=cluster_labels,
-            out_dir=out_dir,
-            lead=int(warp_lead),
-            max_per_cluster=int(max_warps_per_cluster),
-        )
-    except Exception as e:
-        print(f"[WARN] Warp plotting failed: {repr(e)}")
+    plot_warps_plotly_per_cluster(
+        sw_gp,
+        x_train=x_train,
+        data=data,
+        selected_gpmodels=selected_gpmodels,
+        main_model=main_model,
+        labels=y_true_sym,
+        out_dir=out_dir,
+        lead=int(warp_lead),
+        max_per_cluster=int(max_warps_per_cluster),
+    )
 
     # ------------------------
     # Write TXT report
@@ -655,6 +901,9 @@ def run_one_record(rec: str, pred_dir: Path, out_dir: Path, label_map_json: Path
     report.append(f"Clusters (unique in labels): {K_unique}")
     report.append(f"Clusters (non-empty in reloaded model): {K_nonempty}")
     report.append("")
+    report.append("Console output:")
+    report.append(print_results_stdout.rstrip())
+    report.append("")
     report.append("Metrics (partition-based):")
     report.append(f"  Purity:        {purity:.6f}")
     report.append(f"  NMI:           {nmi:.6f}")
@@ -663,7 +912,7 @@ def run_one_record(rec: str, pred_dir: Path, out_dir: Path, label_map_json: Path
     report.append(f"  Completeness:  {comp:.6f}")
     report.append(f"  Macro-F1 (after mapping): {macro_f1:.6f}")
     report.append("")
-    report.append("Cluster -> Label mapping (after Hungarian + majority fallback):")
+    report.append(f"Cluster -> Label mapping (method: {mapping_name}):")
     report.append(df_map.to_string(index=False))
     report.append("")
     report.append("Full confusion matrix (rows=true, cols=pred after mapping):")
@@ -708,10 +957,17 @@ def main():
                     help="Max beats per cluster for warp plotting.")
     ap.add_argument("--warp_lead", type=int, default=0,
                     help="Which lead to use for warp plots.")
+    ap.add_argument(
+        "--mapping",
+        type=str,
+        default="majority",
+        choices=["majority", "hungarian"],
+        help="How to map cluster ids to class labels for confusion/macro-F1 (default: majority)."
+    )
     args = ap.parse_args()
 
     repo_root = find_project_root()
-    pred_dir = Path(args.pred_dir) if args.pred_dir is not None else (repo_root / "results" / "cluster_labels" / "v1_UCR_ver")
+    pred_dir = Path(args.pred_dir) if args.pred_dir is not None else (repo_root / "results" / "cluster_labels" / "v2_UCR_ver")
     if not pred_dir.exists():
         # fallback
         pred_dir = repo_root / "results" / "cluster_labels"
@@ -728,6 +984,7 @@ def main():
         label_map_json=label_map_json,
         max_warps_per_cluster=args.max_warps_per_cluster,
         warp_lead=args.warp_lead,
+        mapping=args.mapping,
     )
 
 

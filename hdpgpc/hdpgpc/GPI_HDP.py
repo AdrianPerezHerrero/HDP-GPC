@@ -3167,6 +3167,7 @@ class GPI_HDP():
             for ld in range(self.n_outputs):
                 for m in range(M):
                     self.gpmodels[ld].append(self.gpmodel_deepcopy(gp))
+                    self.wp_sys[ld].append(self.create_wp_sys_default())
         self.M = M
         self.T = y_trains.shape[0]
         self.y_train = y_trains
@@ -3225,6 +3226,7 @@ class GPI_HDP():
                                               self.gpmodels, self.M, snr='saved', post=False)
         elbo_ = elbo_ + elbo_lin + q_obs
         print('\n-------ELBO:' + str(elbo_) + '-------')
+        self.model_type = [self.model_type[0]] * M
         self.elbo_last = elbo_
 
     def gpmodel_deepcopy(self, gpmodel):

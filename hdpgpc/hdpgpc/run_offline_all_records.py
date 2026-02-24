@@ -133,7 +133,7 @@ def run_one_record(data_dir: Path, rec: str, out_dir: Path, warp: bool = False):
         mode_warp="rough",
         bayesian_params=True,
         inducing_points=False,
-        reestimate_initial_params=True,
+        reestimate_initial_params=False,
         n_explore_steps=16,
         free_deg_MNIV=3,
         share_gp=True
@@ -178,7 +178,7 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     #recs = list_records(data_dir)
-    recs = ["104", "207", "105", "203", "217", "223"]
+    recs = ["104", "207", "105", "203", "217", "223", "213", "208"]
     if not recs:
         raise RuntimeError(f"No records found in {data_dir}. (Expected *.npy plus *_labels.npy)")
 

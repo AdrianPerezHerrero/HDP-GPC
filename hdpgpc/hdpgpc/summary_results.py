@@ -347,8 +347,8 @@ def main():
 
     repo_root = find_repo_root()
     data_dir = Path(args.data_dir) if args.data_dir else find_data_dir(repo_root)
-    pred_dir = Path(args.pred_dir) if args.pred_dir else (repo_root / "results" / "cluster_labels" / "v6_try")
-    out_dir = Path(args.out_dir) if args.out_dir else (repo_root / "results" / "eval_offline_v6_try")
+    pred_dir = Path(args.pred_dir) if args.pred_dir else (repo_root / "results" / "cluster_labels" / "final_ver")
+    out_dir = Path(args.out_dir) if args.out_dir else (repo_root / "results" / "eval_final_ver")
 
     ensure_dir(out_dir)
     per_rec_dir = out_dir / "per_record"

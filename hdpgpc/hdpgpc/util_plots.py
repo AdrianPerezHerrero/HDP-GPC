@@ -526,7 +526,7 @@ def plot_partial_models(sw_gp, selected_gpmodels, main_model, labels, N_0, time_
     else:
         fig.show(config=config)
 
-def plot_warp(sw_gp, selected_gpmodels, main_model, labels, N_0, save=None):
+def plot_warp(sw_gp, selected_gpmodels, main_model, labels, N_0, save=None, save_pdf=True, pdf_path=None, pdf_scale=2):
     num_models = len(selected_gpmodels)
     num_cols = int(np.ceil(np.sqrt(num_models)))
     num_rows = int(np.ceil(num_models / num_cols))
@@ -591,7 +591,24 @@ def plot_warp(sw_gp, selected_gpmodels, main_model, labels, N_0, save=None):
         dragmode='zoom',
         newshape_line_color='cyan')
     if save is not None:
+        # Save interactive HTML
         plot(fig, auto_open=False, filename=save, config=config)
+
+        # Also save a static PDF (requires kaleido)
+        if save_pdf:
+            from pathlib import Path
+
+            if pdf_path is None:
+                p = Path(save)
+                # if save is ".../name.html" -> pdf ".../name.pdf"
+                # if save has no suffix -> ".../name.pdf"
+                pdf_path_ = str(p.with_suffix(".pdf"))
+            else:
+                pdf_path_ = str(pdf_path)
+
+            # PDF export via kaleido (format inferred from extension)
+            fig.write_image(pdf_path_, format="pdf", engine="kaleido", scale=pdf_scale)
+
     else:
         fig.show(config=config)
 
@@ -661,6 +678,338 @@ def plot_MDS(sw_gp, main_model, labels, N_0, lead=0, save=None):
     else:
         fig.show(config=config)
         fig.show()
+
+def plot_MDS_regions_transitions(
+    sw_gp,
+    main_model,
+    labels,
+    N_0,
+    lead=0,
+    save=None,
+    save_pdf=True,          # <-- NEW
+    pdf_path=None,          # <-- NEW (optional override)
+    pdf_scale=2,            # <-- NEW (optional)
+    min_prob=0.08,
+    top_k=2,
+    region_alpha=0.14,
+    point_alpha=0.85,
+    point_size=6,
+    centroid_size=10,
+    show_points_true_labels=True,
+    show_centroids=True,
+    show_legend=False,
+):
+    """
+    Fancy MDS plot:
+      - Points: observations in MDS space (from KL distance matrix as in plot_MDS)
+      - Regions: per-cluster hull filled with the majority-label color (main_model[m])
+      - Arrows: cluster->cluster transitions using sw_gp.compute_Pi()
+
+    Parameters
+    ----------
+    main_model : list
+        Output from print_results(sw_gp, labels, N_0, ...). main_model[m] is the majority label in cluster m.
+    labels : array-like
+        Ground truth labels per sample (strings or ints) aligned with sw_gp.T.
+    min_prob : float
+        Minimum transition probability to draw an arrow.
+    top_k : int
+        Draw only the top_k outgoing transitions per cluster (excluding self-transition).
+    show_points_true_labels : bool
+        If True, point colors use the *true* label color. If False, use cluster majority-label color.
+    """
+
+    # --- helpers -------------------------------------------------------------
+    def _hex_to_rgb(hex_color: str):
+        h = hex_color.lstrip("#")
+        return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+
+    def _rgba(hex_color: str, a: float):
+        r, g, b = _hex_to_rgb(hex_color)
+        return f"rgba({r},{g},{b},{a})"
+
+    def col_fun(lab):
+        # same coloring logic used elsewhere in util_plots (plot_models/plot_warp/plot_MDS)
+        if type(labels[0]) is np.int32:
+            return to_hex(color.get(lab, 'b'))
+        else:
+            return to_hex(color.get(labels_trans.get(lab, 0), 'b'))
+
+    def convex_hull(points_2d: np.ndarray):
+        """
+        Monotone chain convex hull. Returns hull points in CCW order.
+        points_2d: (n,2)
+        """
+        pts = np.asarray(points_2d, dtype=float)
+        # remove duplicates
+        pts = np.unique(pts, axis=0)
+        if pts.shape[0] <= 2:
+            return pts
+
+        # sort by x, then y
+        pts = pts[np.lexsort((pts[:, 1], pts[:, 0]))]
+
+        def cross(o, a, b):
+            return (a[0]-o[0])*(b[1]-o[1]) - (a[1]-o[1])*(b[0]-o[0])
+
+        lower = []
+        for p in pts:
+            while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
+                lower.pop()
+            lower.append(tuple(p))
+
+        upper = []
+        for p in pts[::-1]:
+            while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
+                upper.pop()
+            upper.append(tuple(p))
+
+        hull = lower[:-1] + upper[:-1]
+        return np.asarray(hull, dtype=float)
+
+    def padded_box(points_2d: np.ndarray, pad_frac: float = 0.08):
+        pts = np.asarray(points_2d, dtype=float)
+        if pts.shape[0] == 1:
+            x, y = pts[0]
+            # tiny box around the point
+            dx = dy = 1.0
+        else:
+            xmin, ymin = np.min(pts, axis=0)
+            xmax, ymax = np.max(pts, axis=0)
+            dx = (xmax - xmin) if (xmax > xmin) else 1.0
+            dy = (ymax - ymin) if (ymax > ymin) else 1.0
+            x, y = 0.5*(xmin+xmax), 0.5*(ymin+ymax)
+
+        px = dx * pad_frac
+        py = dy * pad_frac
+        return np.asarray([
+            [x - 0.5*dx - px, y - 0.5*dy - py],
+            [x + 0.5*dx + px, y - 0.5*dy - py],
+            [x + 0.5*dx + px, y + 0.5*dy + py],
+            [x - 0.5*dx - px, y + 0.5*dy + py],
+        ], dtype=float)
+
+    # --- compute KL distance matrix (same logic as plot_MDS) ------------------
+    print("Compute distance matrix (KL) for MDS.")
+    x_bas = sw_gp.cond_to_torch(sw_gp.x_basis[0])
+    KL_dist = np.zeros((sw_gp.T, sw_gp.T))
+
+    for m, gp1 in enumerate(sw_gp.gpmodels[lead]):
+        print("Compute model " + str(m + 1))
+        for i, ind1 in enumerate(gp1.indexes):
+            for gp2 in sw_gp.gpmodels[lead]:
+                for j, ind2 in enumerate(gp2.indexes):
+                    if ind1 < ind2:
+                        KL_dist[ind1, ind2] = gp1.KL_divergence(i, gp2, j, smoothed=False, x_bas=x_bas)
+
+    for i in range(sw_gp.T):
+        for j in range(i, sw_gp.T):
+            KL_dist[j, i] = KL_dist[i, j]
+
+    print("Run MDS embedding.")
+    mds = MDS(dissimilarity='precomputed')
+    XY = mds.fit_transform(KL_dist)  # (T,2)
+
+    # --- derive cluster assignment per sample from gpmodel indexes ------------
+    cluster_of = -np.ones(sw_gp.T, dtype=int)
+    for m in range(sw_gp.M):
+        for idx in sw_gp.gpmodels[lead][m].indexes:
+            if 0 <= idx < sw_gp.T:
+                cluster_of[idx] = m
+
+    selected = [m for m in range(sw_gp.M) if len(sw_gp.gpmodels[lead][m].indexes) > 0]
+
+    # --- colors: points and regions ------------------------------------------
+    point_colors = []
+    region_colors = {}
+    for m in selected:
+        region_colors[m] = col_fun(main_model[m]) if (m < len(main_model)) else "#999999"
+
+    for i in range(sw_gp.T):
+        if cluster_of[i] == -1:
+            point_colors.append("rgba(0,0,0,0.25)")
+        else:
+            if show_points_true_labels:
+                point_colors.append(_rgba(col_fun(labels[i + N_0]), point_alpha))
+            else:
+                point_colors.append(_rgba(region_colors[cluster_of[i]], point_alpha))
+
+    # --- build figure ---------------------------------------------------------
+    fig = go.Figure()
+
+    # Regions (hulls)
+    centroids = {}
+    for m in selected:
+        idxs = np.asarray(sw_gp.gpmodels[lead][m].indexes, dtype=int)
+        pts = XY[idxs, :]
+
+        if pts.shape[0] >= 3:
+            poly = convex_hull(pts)
+        else:
+            poly = padded_box(pts)
+
+        # close polygon
+        poly_closed = np.vstack([poly, poly[0]])
+
+        col_hex = region_colors[m]
+        fig.add_trace(go.Scatter(
+            x=poly_closed[:, 0],
+            y=poly_closed[:, 1],
+            mode="lines",
+            line=dict(color=_rgba(col_hex, min(0.55, region_alpha + 0.25)), width=1.2, shape="spline", smoothing=1.3),
+            fill="toself",
+            fillcolor=_rgba(col_hex, region_alpha),
+            hoverinfo="skip",
+            showlegend=False,
+            name=f"Cluster {m+1}",
+        ))
+
+        centroids[m] = np.mean(pts, axis=0)
+
+    # Points
+    fig.add_trace(go.Scatter(
+        x=XY[:, 0],
+        y=XY[:, 1],
+        mode="markers",
+        marker=dict(size=point_size, color=point_colors, line=dict(width=0)),
+        hovertemplate="i=%{customdata[0]}<br>x=%{x:.3f}<br>y=%{y:.3f}<extra></extra>",
+        customdata=np.vstack([np.arange(sw_gp.T)]).T,
+        showlegend=False,
+        name="Observations"
+    ))
+
+    # Centroid markers (optional)
+    if show_centroids and len(centroids) > 0:
+        cx = []
+        cy = []
+        cc = []
+        ct = []
+        for m in selected:
+            cx.append(centroids[m][0])
+            cy.append(centroids[m][1])
+            cc.append(region_colors[m])
+            ct.append(f"cl{m+1} ({main_model[m]})")
+        fig.add_trace(go.Scatter(
+            x=cx, y=cy,
+            mode="markers+text",
+            marker=dict(size=centroid_size, color=cc, line=dict(width=2, color="rgba(255,255,255,0.9)")),
+            text=[f"{m+1}" for m in selected],
+            textposition="middle center",
+            hovertext=ct,
+            hoverinfo="text",
+            showlegend=False,
+            name="Centroids"
+        ))
+
+    # --- transitions: arrows from compute_Pi() -------------------------------
+    # try:
+    #     Pi = sw_gp.compute_Pi()
+    #     if isinstance(Pi, torch.Tensor):
+    #         Pi = Pi.detach().cpu().numpy()
+    #     else:
+    #         Pi = np.asarray(Pi)
+    #
+    #     # compute_Pi may return (M+1)x(M+1); keep only active M
+    #     M = sw_gp.M
+    #     if Pi.shape[0] >= M and Pi.shape[1] >= M:
+    #         Pi = Pi[:M, :M]
+    #
+    #     # normalize rows defensively
+    #     Pi = Pi / np.maximum(Pi.sum(axis=1, keepdims=True), 1e-12)
+    #
+    #     annotations = []
+    #     edge_text_x = []
+    #     edge_text_y = []
+    #     edge_text = []
+    #     edge_text_col = []
+    #
+    #     for i in selected:
+    #         if i not in centroids:
+    #             continue
+    #         row = Pi[i].copy()
+    #         row[i] = -1.0  # ignore self for drawing
+    #         # choose top_k
+    #         js = np.argsort(row)[::-1][:max(1, int(top_k))]
+    #         for j in js:
+    #             p = float(Pi[i, j])
+    #             if (j not in centroids) or (p < float(min_prob)):
+    #                 continue
+    #
+    #             x0, y0 = centroids[i]
+    #             x1, y1 = centroids[j]
+    #
+    #             # arrow style scales with probability
+    #             aw = 1.0 + 6.0 * p
+    #             acol = _rgba(region_colors[i], min(0.75, 0.15 + 0.9 * p))
+    #
+    #             annotations.append(dict(
+    #                 x=x1, y=y1,
+    #                 ax=x0, ay=y0,
+    #                 xref="x", yref="y", axref="x", ayref="y",
+    #                 showarrow=True,
+    #                 arrowhead=3,
+    #                 arrowwidth=aw,
+    #                 arrowcolor=acol,
+    #                 opacity=1.0,
+    #                 text="",  # keep arrow clean
+    #             ))
+    #
+    #             # probability label at midpoint
+    #             xm, ym = 0.5*(x0 + x1), 0.5*(y0 + y1)
+    #             edge_text_x.append(xm)
+    #             edge_text_y.append(ym)
+    #             edge_text.append(f"{p:.2f}")
+    #             edge_text_col.append(acol)
+    #
+    #     if edge_text:
+    #         fig.add_trace(go.Scatter(
+    #             x=edge_text_x, y=edge_text_y,
+    #             mode="text",
+    #             text=edge_text,
+    #             textfont=dict(size=11, color=edge_text_col),
+    #             hoverinfo="skip",
+    #             showlegend=False,
+    #             name="Transition probs"
+    #         ))
+    #
+    #     fig.update_layout(annotations=annotations)
+    #
+    # except Exception as e:
+    #     print(f"[WARN] Transition arrows skipped: {repr(e)}")
+
+    # --- minimalist layout ----------------------------------------------------
+    fig.update_layout(
+        template="plotly_white",
+        showlegend=bool(show_legend),
+        margin=dict(l=10, r=10, t=10, b=10),
+        dragmode="pan",
+    )
+    fig.update_xaxes(visible=False, showgrid=False, zeroline=False)
+    fig.update_yaxes(visible=False, showgrid=False, zeroline=False)
+
+    if save is not None:
+        # Save interactive HTML
+        plot(fig, auto_open=False, filename=save, config=config)
+
+        # Also save a static PDF (requires kaleido)
+        if save_pdf:
+            try:
+                from pathlib import Path
+
+                if pdf_path is None:
+                    p = Path(save)
+                    # if save is ".../name.html" -> pdf ".../name.pdf"
+                    # if save has no suffix -> ".../name.pdf"
+                    pdf_path_ = str(p.with_suffix(".pdf"))
+                else:
+                    pdf_path_ = str(pdf_path)
+
+                # PDF export via kaleido (format inferred from extension)
+                fig.write_image(pdf_path_, format="pdf", engine="kaleido", scale=pdf_scale)
+            except Exception as e:
+                print(f"[WARN] Could not export PDF (requires kaleido). Error: {repr(e)}")
+    else:
+        fig.show(config=config)
 
 
 def plot_MDS_plotly(sw_gp, main_model, labels, N_0, lead=0, save=None):
