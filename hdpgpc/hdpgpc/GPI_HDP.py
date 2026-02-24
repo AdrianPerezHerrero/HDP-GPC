@@ -270,16 +270,16 @@ class GPI_HDP():
         # self.kappa = 0.0
 
         # Balanced scheme
-        # self.gamma = 0.1
-        # self.transAlpha = 0.1
-        # self.startAlpha = 0.1
-        # self.kappa = 0.0
+        self.gamma = 0.1
+        self.transAlpha = 0.1
+        self.startAlpha = 0.1
+        self.kappa = 0.0
 
         # More clusters scheme
-        self.gamma = 100.0
-        self.transAlpha = 0.01
-        self.startAlpha = 0.01
-        self.kappa = 0.0
+        # self.gamma = 10.0
+        # self.transAlpha = 10.0
+        # self.startAlpha = 0.01
+        # self.kappa = 0.0
 
         # Model associated with each state
         # Default hyperparameters of GP defining the model.
