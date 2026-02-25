@@ -784,7 +784,7 @@ def run_one_record(rec: str, pred_dir: Path, out_dir: Path, label_map_json: Path
     )
 
     t0 = time.time()
-    sw_gp.reload_model_from_labels(x_trains, data, cluster_labels, M)
+    sw_gp.reload_model_from_labels(x_trains, data, cluster_labels, M, warp=True)
     dt_min = (time.time() - t0) / 60.0
     print(f"[OK] {rec}: reload_model_from_labels done in {dt_min:.2f} min (M={M}).")
 
@@ -949,7 +949,7 @@ def main():
     ap.add_argument("record", type=str, help="MIT-BIH record id (e.g., 100)")
     ap.add_argument("--pred_dir", type=str, default=None,
                     help="Directory containing cluster_labels_<rec>_offline.npy etc.")
-    ap.add_argument("--out_dir", type=str, default="results/eval_record_checks",
+    ap.add_argument("--out_dir", type=str, default="results/eval_record_warp",
                     help="Output directory root.")
     ap.add_argument("--label_map_json", type=str, default=None,
                     help="Optional JSON file mapping integer label->symbol (list of strings).")
@@ -967,7 +967,7 @@ def main():
     args = ap.parse_args()
 
     repo_root = find_project_root()
-    pred_dir = Path(args.pred_dir) if args.pred_dir is not None else (repo_root / "results" / "cluster_labels" / "v2_UCR_ver")
+    pred_dir = Path(args.pred_dir) if args.pred_dir is not None else (repo_root / "results" / "cluster_labels" / "v8_UCR_ver_warp")
     if not pred_dir.exists():
         # fallback
         pred_dir = repo_root / "results" / "cluster_labels"
