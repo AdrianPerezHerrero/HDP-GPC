@@ -49,7 +49,7 @@ def main():
                     help="Explicit record IDs (e.g. 100 101 102). If omitted, runs all.")
     ap.add_argument("--pred_dir", type=str, default=None,
                     help="Directory containing cluster_labels_<rec>_offline.npy etc.")
-    ap.add_argument("--out_dir", type=str, default="results/eval_final_ver",
+    ap.add_argument("--out_dir", type=str, default="results/eval_final_ver_warp",
                     help="Output directory root.")
     ap.add_argument("--label_map_json", type=str, default=None,
                     help="Optional JSON list mapping integer label->symbol.")

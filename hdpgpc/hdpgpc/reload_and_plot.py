@@ -207,7 +207,7 @@ def run_one_record(hdpgpc_dir: Path, data_dir: Path, pred_dir: Path, rec: str):
     print(f"[OK] {rec}: reload_model_from_labels done in {dt_min:.2f} min (M={M}).")
 
     # Plot results (same as your snippet)
-    results_dir = hdpgpc_dir / "results" / "eval_offline_v2_UCR" / "plots"
+    results_dir = hdpgpc_dir / "results" / "eval_final_ver" / "plots"
     results_dir.mkdir(parents=True, exist_ok=True)
 
     out_prefix = str(results_dir / f"Rec{rec}_")
@@ -217,13 +217,13 @@ def run_one_record(hdpgpc_dir: Path, data_dir: Path, pred_dir: Path, rec: str):
 
     plot_models_plotly(
         sw_gp, selected_gpmodels, main_model, labels_true, 0,
-        lead=0, save=out_prefix + "Offline_Clusters_Lead_1.png",
+        lead=0, save=out_prefix + "Offline_Clusters_Lead_1.pdf",
         step=0.5, plot_latent=True
     )
     if num_outputs > 1:
         plot_models_plotly(
             sw_gp, selected_gpmodels, main_model, labels_true, 0,
-            lead=1, save=out_prefix + "Offline_Clusters_Lead_2.png",
+            lead=1, save=out_prefix + "Offline_Clusters_Lead_2.pdf",
             step=0.5, plot_latent=True
         )
 
@@ -240,7 +240,7 @@ def main():
     data_dir = find_data_dir(hdpgpc_dir)
 
     # Where you saved cluster_labels_...npy
-    pred_dir = project_root / "results" / "cluster_labels" / "v2_UCR_ver"
+    pred_dir = project_root / "results" / "cluster_labels" / "final_ver"
     if not pred_dir.exists():
         # fallback: maybe user saved under hdpgpc/results/cluster_labels
         pred_dir = hdpgpc_dir / "results" / "cluster_labels"

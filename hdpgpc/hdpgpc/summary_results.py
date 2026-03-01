@@ -105,6 +105,33 @@ def squeeze_to_1d(arr: np.ndarray) -> np.ndarray:
     # If it's higher-dim, last resort: flatten
     return arr.reshape(-1)
 
+# -----------------------------
+# AAMI 5-class mapping (Table 1 in Das & Ari 2014)
+# -----------------------------
+AAMI_LABELS = ["N", "S", "V", "F", "Q"]
+
+# Mapping from MIT-BIH beat symbols -> AAMI class
+# Source: Table 1 in the provided paper (ECG Beats Classification Using Mixture of Features). :contentReference[oaicite:3]{index=3}
+AAMI_MAP = {
+    # Normal (N)
+    "N": "N", "L": "N", "R": "N", "e": "N", "j": "N",
+    # Supraventricular ectopic (S)
+    "A": "S", "a": "S", "J": "S", "S": "S",
+    # Ventricular ectopic (V)
+    "V": "V", "E": "V",
+    # Fusion (F)
+    "F": "F",
+    # Unknown (Q)
+    "/": "Q", "f": "Q", "Q": "Q",
+}
+
+def to_aami(y: np.ndarray) -> np.ndarray:
+    """
+    Map MIT-BIH symbols (or any labels convertible to str) to AAMI 5 classes.
+    Unknown symbols are mapped to 'Q' by default.
+    """
+    y = squeeze_to_1d(y)
+    return np.asarray([AAMI_MAP.get(str(v), "Q") for v in y], dtype=str)
 
 def load_true_labels(path: Path) -> np.ndarray:
     y = np.load(path, allow_pickle=True)
@@ -281,6 +308,23 @@ def eval_record(
     labels_sorted = list(np.unique(y_true))
     cm = confusion_matrix(y_true, y_pred_mapped, labels=labels_sorted)
 
+    # -----------------------------
+    # AAMI confusion matrix (per record)
+    # -----------------------------
+    y_true_aami = to_aami(y_true)
+    y_pred_aami = to_aami(y_pred_mapped)
+
+    cm_aami = confusion_matrix(y_true_aami, y_pred_aami, labels=AAMI_LABELS)
+    np.save(out_dir / f"confusion_matrix_aami_{rec}.npy", cm_aami)
+
+    if make_plots:
+        maybe_plot_cm(
+            cm_aami,
+            AAMI_LABELS,
+            out_dir / f"confusion_matrix_aami_{rec}.png",
+            title=f"Record {rec} AAMI confusion matrix ({mapping_mode} mapping)",
+        )
+
     acc = float(accuracy_score(y_true, y_pred_mapped))
     f1_macro = float(f1_score(y_true, y_pred_mapped, labels=labels_sorted, average="macro", zero_division=0))
     f1_weighted = float(f1_score(y_true, y_pred_mapped, labels=labels_sorted, average="weighted", zero_division=0))
@@ -326,6 +370,8 @@ def eval_record(
         },
         "confusion_matrix_labels": [str(x) for x in labels_sorted],
         "confusion_matrix": cm.tolist(),
+        "aami_confusion_matrix_labels": AAMI_LABELS,
+        "aami_confusion_matrix": cm_aami.tolist(),
     }
 
     with open(out_dir / f"summary_{rec}.json", "w", encoding="utf-8") as f:
@@ -429,8 +475,26 @@ def main():
     y_pred_all = np.concatenate(y_pred_all)
 
     labels_sorted = list(np.unique(y_true_all))
+    labels_sorted = ["N", "L", "R", "a", "V", "F", "J", "A", "S", "E", "j", "/", "e", "f", "Q", "!"]
     cm_all = confusion_matrix(y_true_all, y_pred_all, labels=labels_sorted)
     np.save(out_dir / "confusion_matrix_all_records.npy", cm_all)
+
+    # -----------------------------
+    # Global AAMI confusion matrix (all records)
+    # -----------------------------
+    y_true_all_aami = to_aami(y_true_all)
+    y_pred_all_aami = to_aami(y_pred_all)
+
+    cm_all_aami = confusion_matrix(y_true_all_aami, y_pred_all_aami, labels=AAMI_LABELS)
+    np.save(out_dir / "confusion_matrix_all_records_aami.npy", cm_all_aami)
+
+    if args.plot:
+        maybe_plot_cm(
+            cm_all_aami,
+            AAMI_LABELS,
+            out_dir / "confusion_matrix_all_records_aami.png",
+            title=f"All records AAMI confusion matrix ({args.mapping} mapping)",
+        )
 
     if args.plot:
         maybe_plot_cm(
@@ -481,6 +545,8 @@ def main():
         },
         "failures": [{"record": r, "error": e} for r, e in failures],
         "per_record_summaries_dir": str(per_rec_dir.resolve()),
+        "global_aami_confusion_matrix_labels": AAMI_LABELS,
+        "global_aami_confusion_matrix": cm_all_aami.tolist(),
     }
 
     with open(out_dir / "summary_all_records.json", "w", encoding="utf-8") as f:
