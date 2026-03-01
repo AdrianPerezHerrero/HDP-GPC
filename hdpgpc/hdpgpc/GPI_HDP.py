@@ -580,7 +580,7 @@ class GPI_HDP():
         if startTheta is None:
             startTheta = self.startTheta
         if liks is None:
-            liks = np.zeros(M)
+            liks = np.zeros(q.shape[1])
         digammaSumTransTheta = digamma(torch.sum(self.cond_cpu(transTheta[:M, :M + 1]), axis=1))
         transPi = digamma(self.cond_cpu(transTheta[:M, :M])) - digammaSumTransTheta[:, None]
         self.trans_A = transPi
@@ -3157,7 +3157,7 @@ class GPI_HDP():
         with open(st, 'wb') as inp:
             plk.dump(self, inp)
 
-    def reload_model_from_labels(self, x_trains, y_trains, labels, M):
+    def reload_model_from_labels(self, x_trains, y_trains, labels, M, warp=False):
         assert y_trains.shape[2] == self.n_outputs
         y_trains = self.cond_cuda(self.cond_to_torch(y_trains))
         x_trains = self.cond_cuda(self.cond_to_torch(x_trains))
@@ -3173,6 +3173,7 @@ class GPI_HDP():
         self.y_train = y_trains
         self.x_train = x_trains
         self.y = y_trains
+        self.model_type = [self.model_type[0]] * M
         resp = torch.zeros(y_trains.shape[0], M)
         resp[torch.arange(y_trains.shape[0]), labels] = 1.0
         respPair = self.cond_cuda(torch.zeros((y_trains.shape[0], M, M)))
@@ -3190,6 +3191,19 @@ class GPI_HDP():
                                                                      resp[:, m])
                 snr[:, m, ld] = self.compute_snr(y_trains[:, :, ld], gp)
                 self.gpmodels[ld][m] = gp
+        if warp:
+            q, q_lat, warp_computed, y_trains = self.compute_warp_actual_state(x_trains, y_trains, q=q,
+                                                                               q_lat=q_lat)
+            for ld in range(self.n_outputs):
+                for m in range(M):
+                    gp = self.gpmodel_deepcopy(self.gpmodels[0][0])
+                    if gp.fitted:
+                        gp.reinit_LDS(save_last=False)
+                        gp.reinit_GP(save_last=False)
+                    q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains[:, :, [ld]],
+                                                                         resp[:, m])
+                    snr[:, m, ld] = self.compute_snr(y_trains[:, :, ld], gp)
+                    self.gpmodels[ld][m] = gp
         self.q.append(q)
         resp__ = torch.clone(resp)
         respPair__ = torch.clone(respPair)
@@ -3226,7 +3240,6 @@ class GPI_HDP():
                                               self.gpmodels, self.M, snr='saved', post=False)
         elbo_ = elbo_ + elbo_lin + q_obs
         print('\n-------ELBO:' + str(elbo_) + '-------')
-        self.model_type = [self.model_type[0]] * M
         self.elbo_last = elbo_
 
     def gpmodel_deepcopy(self, gpmodel):
