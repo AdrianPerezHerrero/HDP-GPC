@@ -89,14 +89,14 @@ def run_one_record(data_dir: Path, rec: str, out_dir: Path, warp: bool = False):
 
     # Hyperparameters (copied from test_offline_multi_output_local.py)
     M = 2
-    sigma = std * 0.5
+    sigma = std * 1.0
     gamma = std_dif * 1.0
     outputscale_ = 300.0
     ini_lengthscale = 3.0
     bound_lengthscale = (1.0, 20.0)
 
-    #bound_sigma = (std * 1e-7, std * 1e-5)
-    bound_sigma = (std * 1e-7, std * 1.0)
+    bound_sigma = (std * 1e-7, std * 1e-5)
+    #bound_sigma = (std * 1e-7, std * 1.0)
     # Warp priors
     noise_warp = std * 0.1
     bound_noise_warp = (noise_warp * 0.1, noise_warp * 0.2)
@@ -134,16 +134,16 @@ def run_one_record(data_dir: Path, rec: str, out_dir: Path, warp: bool = False):
         bayesian_params=True,
         inducing_points=False,
         reestimate_initial_params=False,
-        n_explore_steps=16,
+        n_explore_steps=5,
         free_deg_MNIV=3,
         share_gp=True
     )
 
     start_t = time.time()
-    #sw_gp.include_batch(x_trains, data, warp=warp)
-    for i in range(data.shape[0]):
-        print("Sample:", i, "/", str(data.shape[0] - 1), "label:", labels[i])
-        sw_gp.include_sample(x_train, data[i], with_warp=warp)
+    sw_gp.include_batch(x_trains, data, warp=warp)
+    # for i in range(data.shape[0]):
+    #     print("Sample:", i, "/", str(data.shape[0] - 1), "label:", labels[i])
+    #     sw_gp.include_sample(x_train, data[i], with_warp=warp)
     elapsed_min = (time.time() - start_t) / 60.0
 
     # Extract and save cluster labels
@@ -177,12 +177,12 @@ def main():
     data_dir = find_data_dir(repo_root)
 
     # Save under results/cluster_labels by default (adjust to your preference)
-    out_dir = repo_root / "results" / "cluster_labels" / "v9_UCR_ver_online"
+    out_dir = repo_root / "results" / "cluster_labels" / "v1_UCR_new_ver"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     recs = list_records(data_dir)
     #recs = ["104", "207", "105", "203", "217", "223", "213", "208"]
-    recs = ["100", "102"]
+    #recs = ["100", "102"]
     if not recs:
         raise RuntimeError(f"No records found in {data_dir}. (Expected *.npy plus *_labels.npy)")
 
