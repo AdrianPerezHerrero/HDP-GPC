@@ -840,6 +840,8 @@ class GPI_HDP():
                 elbo_ = self.calcELBO_NonlinearTerms(resp=self.cond_to_numpy(self.cond_cpu(resp)),
                                                      respPair=self.cond_to_numpy(self.cond_cpu(respPair)))
                 print('\n-------End Lower Bound Iteration ' + str(iteration) + '-------')
+                if iteration == 14:
+                    print("STOP")
                 q_obs, elbo_lin = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat),
                                                       self.gpmodels, self.M, snr='saved', post=False)
                 elbo_ = elbo_ + elbo_lin + q_obs
@@ -1433,6 +1435,7 @@ class GPI_HDP():
                 for l_ in last_indexes:
                     if not l_ in potential_ind[f_ind_new.item()]:
                         some_new_index = True
+                        break
                 if some_new_index:
                     if not empty_estimation:
                         q_simple_ = torch.clone(q_def)
@@ -1624,18 +1627,45 @@ class GPI_HDP():
                             self.model_type.append(self.model_type_def)
                             # pos_new = reorder[m].long()
                             indexes = torch.where(resp_temp[:, pos_new] == 1.0)[0]
-                            if len(indexes) > 0:
-                                # f_ind_old[-1] = indexes[torch.argmax(self.weight_mean(q_simple_, snr_aux)[indexes, pos_new]).long()]
-                                f_ind_old[-1] = indexes[
-                                    torch.argmax(self.weight_mean(q, snr_aux)[indexes, pos_new]).long()]
-                                # f_ind_old[-1] = f_ind_new
-                            else:
-                                f_ind_old[-1] = f_ind_new  # if reorder[m] == M-1 else f_ind_old[m]
-                            if torch.unique(f_ind_old).shape[0] < f_ind_old.shape[0]:
-                                print("Repetition of f_ind detected.")
-                                f_ind_old[pos_new] = indexes[
-                                    torch.argmax(self.weight_mean(q, snr_aux)[indexes, -1]).long()]
-                            self.f_ind_old = torch.clone(f_ind_old[reorder])
+                            # if len(indexes) > 0:
+                            #     # f_ind_old[-1] = indexes[torch.argmax(self.weight_mean(q_simple_, snr_aux)[indexes, pos_new]).long()]
+                            #     # f_ind_old[-1] = indexes[
+                            #     #     torch.argmax(self.weight_mean(q, snr_aux)[indexes, pos_new]).long()]
+                            #     f_ind_old[-1] = f_ind_new
+                            # else:
+                            #     f_ind_old[-1] = f_ind_new  # if reorder[m] == M-1 else f_ind_old[m]
+                            # if torch.unique(f_ind_old).shape[0] < f_ind_old.shape[0]:
+                            #     print("Repetition of f_ind detected.")
+                            #     indexes = torch.where(resp_temp[:, pos_new] == 1.0)[0]
+                            #     indexes = indexes[indexes!=f_ind_new]
+                            #     f_ind_old[-1] = indexes[
+                            #         torch.argmax(self.weight_mean(q, snr_aux)[indexes, pos_new]).long()]
+                            # self.f_ind_old = torch.clone(f_ind_old[reorder])
+                            f_ind_old_new = torch.full_like(f_ind_old, -1)
+                            used_representers = set()
+
+                            for k in range(M):
+                                # Samples assigned to cluster k
+                                indexes_k = torch.where(resp_temp[:, k] == 1.0)[0]
+
+                                # Rank candidates by weight, best first
+                                order = torch.argsort(self.weight_mean(q_simple_, snr_aux)[indexes_k, k], descending=True)
+                                sorted_candidates = indexes_k[order]
+
+                                candidate = None
+                                for idx in sorted_candidates:
+                                    idx_val = int(idx.item())
+                                    if idx_val not in used_representers:
+                                        candidate = idx_val
+                                        break
+
+                                # Fallback if all candidates were already used
+                                if candidate is None:
+                                    candidate = int(sorted_candidates[0].item())
+
+                                f_ind_old_new[k] = candidate
+                                used_representers.add(candidate)
+                            self.f_ind_old = torch.clone(f_ind_old_new)
                             if update_snr:
                                 self.snr_norm = self.normalize_snr(snr_aux)
                             else:
