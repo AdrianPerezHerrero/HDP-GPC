@@ -29,6 +29,7 @@ from sklearn.metrics import (
 from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader, TensorDataset
+from hdpgpc.get_data import included_labels as MIT_INCLUDED_LABELS
 
 # More stable in lightweight CPU environments.
 torch.set_num_threads(1)
@@ -109,15 +110,117 @@ class RecordData:
 
 def load_record(data_dir: Path, rec: str, channel: int = 0) -> RecordData:
     data = np.load(data_dir / f"{rec}.npy")
-    y = np.load(data_dir / f"{rec}_labels.npy").astype(np.int64)
+    y = np.load(data_dir / f"{rec}_labels.npy")
+    data, y_true_sym, align_info = align_like_get_data(
+        data=data,
+        labels_true=y,
+        included_labels=MIT_INCLUDED_LABELS,  # from get_data.py :contentReference[oaicite:12]{index=12}
+        drop_zero_beats=True,
+    )
     if data.ndim != 3:
         raise ValueError(f"Expected data shape (n_samples, length, n_outputs), got {data.shape}")
     if channel >= data.shape[2]:
         raise ValueError(f"Requested channel {channel} but data only has {data.shape[2]} channels")
     X = data[:, :, channel].astype(np.float32)
     X = znorm_per_series(X)
-    return RecordData(rec=rec, X=X, y=y)
+    return RecordData(rec=rec, X=X, y=y_true_sym)
 
+def align_like_get_data(
+    data: np.ndarray,
+    labels_true: np.ndarray,
+    included_labels=MIT_INCLUDED_LABELS,
+    drop_zero_beats: bool = True,
+    eps_energy: float = 1e-12,
+):
+    """
+    Enforce (data, labels_true, cluster_labels) alignment using the same *practical* criteria
+    that the get_data.py pipeline implies:
+      - labels filtered to included_labels
+      - beats that are effectively 'dummy/zero' (from take_standard_labels-style masking) can be dropped
+      - tail mismatches (labels longer than extracted data) are trimmed, mimicking the extraction skip
+        when annotation[i] + samples[1] - 87 exceeds signal length :contentReference[oaicite:5]{index=5}
+
+    Returns: data_f, labels_f, clusters_f, info_dict
+    """
+    info = {}
+
+    data = np.asarray(data)
+    labels_true = np.asarray(labels_true)
+
+    n_data = int(data.shape[0])
+    n_lab = int(labels_true.shape[0])
+    info["n_data_in"] = n_data
+    info["n_labels_in"] = n_lab
+
+    # --- Step 0: basic length reconciliation (before filtering)
+    # 0.a) If labels are longer than data, trim labels (this matches get_data tail skip behaviour)
+    # get_data can skip appending a beat if it falls outside the signal end, but labels are kept unless trimmed :contentReference[oaicite:6]{index=6}
+    if n_lab > n_data:
+        labels_true = labels_true[:n_data]
+        n_lab = n_data
+        info["trim_labels_to_data"] = True
+    else:
+        info["trim_labels_to_data"] = False
+
+    # 0.b) If data is longer than labels, try to drop "zero-energy" beats (often produced by take_standard_labels) :contentReference[oaicite:7]{index=7}
+    if n_data > n_lab:
+        if data.ndim == 3:
+            energy = np.sum(np.abs(data), axis=(1, 2))
+        else:
+            energy = np.sum(np.abs(data), axis=1)
+
+        nonzero_mask = energy > eps_energy
+        if int(nonzero_mask.sum()) == n_lab:
+            # assume labels correspond to the non-zero beats in order
+            data = data[nonzero_mask]
+            n_data = int(data.shape[0])
+            info["drop_zero_to_match_labels"] = True
+        else:
+            # fallback: hard-trim everything to min common length
+            n = min(n_data, n_lab)
+            data = data[:n]
+            labels_true = labels_true[:n]
+            n_data = n_lab = n_clu = n
+            info["drop_zero_to_match_labels"] = False
+            info["hard_trim_to_min_len"] = True
+    else:
+        info["drop_zero_to_match_labels"] = False
+        info["hard_trim_to_min_len"] = False
+
+    # 0.c) If cluster_labels still mismatched, hard-trim to min
+    n = min(int(data.shape[0]), int(labels_true.shape[0]))
+    if (data.shape[0] != n) or (labels_true.shape[0] != n):
+        data = data[:n]
+        labels_true = labels_true[:n]
+        info["hard_trim_to_min_len_2"] = True
+    else:
+        info["hard_trim_to_min_len_2"] = False
+
+    # --- Step 1: label filtering (same included_labels list as get_data.py) :contentReference[oaicite:8]{index=8}
+    labels_str = labels_true.astype(str)
+    inc_mask = np.isin(labels_str, np.asarray(included_labels, dtype=str))
+
+    data = data[inc_mask]
+    labels_str = labels_str[inc_mask]
+    info["after_included_labels"] = int(data.shape[0])
+
+    # --- Step 2: optional removal of near-zero beats (robust to take_standard_labels masking) :contentReference[oaicite:9]{index=9}
+    if drop_zero_beats:
+        if data.ndim == 3:
+            energy2 = np.sum(np.abs(data), axis=(1, 2))
+        else:
+            energy2 = np.sum(np.abs(data), axis=1)
+        nz_mask = energy2 > eps_energy
+        data = data[nz_mask]
+        labels_str = labels_str[nz_mask]
+        info["after_drop_zero_beats"] = int(data.shape[0])
+    else:
+        info["after_drop_zero_beats"] = int(data.shape[0])
+
+    info["n_data_out"] = int(data.shape[0])
+    info["n_labels_out"] = int(labels_str.shape[0])
+
+    return data, labels_str, info
 
 class ConvAutoencoder1D(nn.Module):
     def __init__(self, input_length: int, latent_dim: int = 16):
@@ -241,16 +344,27 @@ def relabel_to_contiguous(y: np.ndarray) -> np.ndarray:
     mapping = {u: i for i, u in enumerate(uniq)}
     return np.array([mapping[v] for v in y], dtype=np.int64)
 
+def map_clusters_to_majority_labels(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray:
+    """
+    Map each discovered cluster id to the most prevalent ground-truth label
+    inside that cluster.
+    """
+    yt = np.asarray(y_true)
+    yp = np.asarray(y_pred)
+    mapped = np.empty_like(yt)
+
+    for cluster_id in np.unique(yp):
+        idx = np.where(yp == cluster_id)[0]
+        vals, counts = np.unique(yt[idx], return_counts=True)
+        majority_label = vals[np.argmax(counts)]
+        mapped[idx] = majority_label
+
+    return mapped
 
 def cluster_accuracy(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    yt = relabel_to_contiguous(np.asarray(y_true))
-    yp = relabel_to_contiguous(np.asarray(y_pred))
-    n = max(yt.max(), yp.max()) + 1
-    contingency = np.zeros((n, n), dtype=np.int64)
-    for a, b in zip(yt, yp):
-        contingency[a, b] += 1
-    row_ind, col_ind = linear_sum_assignment(contingency.max() - contingency)
-    return float(contingency[row_ind, col_ind].sum()) / float(len(yt))
+    yt = np.asarray(y_true)
+    yp_majority = map_clusters_to_majority_labels(yt, y_pred)
+    return float(np.mean(yt == yp_majority))
 
 
 def safe_silhouette(X: np.ndarray, y_pred: np.ndarray) -> float:
@@ -507,17 +621,17 @@ def build_argparser() -> argparse.ArgumentParser:
     p.add_argument("--data-dir", type=str, default=None, help="Optional explicit directory with <rec>.npy and <rec>_labels.npy")
     p.add_argument("--methods", nargs="+", default=["cae-dpgmm", "cae-dbscan", "dec"], choices=["cae-dpgmm", "cae-dbscan", "dec"])
     p.add_argument("--channel", type=int, default=0)
-    p.add_argument("--latent-dim", type=int, default=16)
+    p.add_argument("--latent-dim", type=int, default=5)
     p.add_argument("--batch-size", type=int, default=128)
-    p.add_argument("--ae-epochs", type=int, default=25)
-    p.add_argument("--ae-lr", type=float, default=1e-3)
-    p.add_argument("--dec-epochs", type=int, default=20)
-    p.add_argument("--dec-lr", type=float, default=1e-4)
+    p.add_argument("--ae-epochs", type=int, default=300)
+    p.add_argument("--ae-lr", type=float, default=1e-4)
+    p.add_argument("--dec-epochs", type=int, default=300)
+    p.add_argument("--dec-lr", type=float, default=1e-5)
     p.add_argument("--weight-decay", type=float, default=1e-5)
-    p.add_argument("--max-components", type=int, default=20)
-    p.add_argument("--dp-alpha", type=float, default=0.5)
+    p.add_argument("--max-components", type=int, default=50)
+    p.add_argument("--dp-alpha", type=float, default=0.01)
     p.add_argument("--dec-k", type=str, default="auto", help="auto | oracle | integer")
-    p.add_argument("--max-dec-k", type=int, default=10)
+    p.add_argument("--max-dec-k", type=int, default=20)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--cpu", action="store_true")
     p.add_argument("--quiet", action="store_true")
