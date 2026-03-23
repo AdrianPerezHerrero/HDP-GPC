@@ -772,12 +772,13 @@ def plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, N_0, title=
         ax.fill_between(x_, neg_lim, mean + 1.9 * noise_ob, color=col_fun(main_model[i]), alpha=0.3)
 
         # Latent mean
-        mean_latent = gp.f_star_sm[-1].cpu().T[0]
-        noise_lat = 1.9 * np.sqrt(np.diag(gp.Gamma[-1].cpu()))
-        neg_lim = mean_latent - noise_lat
-        neg_lim[neg_lim < 0.0] = 0.0
-        # ax.plot(x_b.cpu(), mean_latent, color='grey', linewidth=1.5, label=f'Latent GP Mean [{m + 1}]')
-        ax.fill_between(x_b.cpu(), neg_lim, mean_latent+noise_lat, color=col_fun(main_model[i]), alpha=0.22)
+        if plot_latent:
+            mean_latent = gp.f_star_sm[-1].cpu().T[0]
+            noise_lat = 1.9 * np.sqrt(np.diag(gp.Gamma[-1].cpu()))
+            neg_lim = mean_latent - noise_lat
+            neg_lim[neg_lim < 0.0] = 0.0
+            ax.plot(x_b.cpu(), mean_latent, color='grey', linewidth=1.5, label=f'Latent GP Mean [{m + 1}]')
+            ax.fill_between(x_b.cpu(), neg_lim, mean_latent+noise_lat, color=col_fun(main_model[i]), alpha=0.22)
 
         #Experimental mean
         mean = np.mean(np.array(gp.y_train), axis=0)
