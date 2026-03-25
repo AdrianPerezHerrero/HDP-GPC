@@ -526,7 +526,7 @@ def plot_partial_models(sw_gp, selected_gpmodels, main_model, labels, N_0, time_
     else:
         fig.show(config=config)
 
-def plot_warp(sw_gp, selected_gpmodels, main_model, labels, N_0, save=None):
+def plot_warp(sw_gp, selected_gpmodels, main_model, labels, N_0, lead, save=None):
     num_models = len(selected_gpmodels)
     num_cols = int(np.ceil(np.sqrt(num_models)))
     num_rows = int(np.ceil(num_models / num_cols))
@@ -542,13 +542,13 @@ def plot_warp(sw_gp, selected_gpmodels, main_model, labels, N_0, save=None):
         else:
             return to_hex(color.get(labels_trans.get(lab, 0), 'b'))
     for i, m in enumerate(selected_gpmodels):
-        t = len(sw_gp.gpmodels[m].indexes[1:])
+        t = len(sw_gp.gpmodels[lead][m].indexes[1:])
         r = int(np.floor(i / num_cols) + 1)
         c = i % num_cols + 1
         p = 1
-        for jx, j in enumerate(sw_gp.gpmodels[m].indexes[1:]):
+        for jx, j in enumerate(sw_gp.gpmodels[lead][m].indexes[1:]):
             x_w_ = sw_gp.x_w[j][m].T[0]
-            x_t = sw_gp.gpmodels[m].x_train[p].T[0]
+            x_t = sw_gp.gpmodels[lead][m].x_train[p].T[0]
             p = p + 1
             if type(x_w_) is torch.Tensor:
                 x_w_ = x_w_.detach()
@@ -560,7 +560,7 @@ def plot_warp(sw_gp, selected_gpmodels, main_model, labels, N_0, save=None):
                                      line=dict(color=col_fun(labels[j + N_0]), width=1.2),
                                      mode='lines', name=' [' + str(m + 1) + '] - ' + str(j)), row=r, col=c)
     for i, m in enumerate(selected_gpmodels):
-        gp = sw_gp.wp_sys[m].warp_gp
+        gp = sw_gp.wp_sys[lead][m]
         x_ = gp.x_basis.T[0]
         if torch.cuda.is_available():
             x_ = x_.cpu()
