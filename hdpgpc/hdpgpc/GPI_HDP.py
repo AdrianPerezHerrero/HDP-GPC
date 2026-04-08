@@ -838,13 +838,9 @@ class GPI_HDP():
                 if (torch.where(resp_group==0.0)[0].shape[0] > 1.0 or
                         (len(self.resp_assigned) >1 and (self.resp_assigned[-2].shape[0] == self.resp_assigned[-1].shape[0])
                          and torch.all(self.resp_assigned[-2] == self.resp_assigned[-1]))):
-                    if warp:
-                        self.y_w = y_trains_w
-                        self.y_train = y_trains_w
                     break
                 else:
                     elbo = elbo_
-                    self.y_train = y_trains
             else:
                 break
 
@@ -1096,7 +1092,7 @@ class GPI_HDP():
         resp_per_group = torch.sum(resp, axis=0)
         if resp_per_group.shape[0] == 1.0 or resp_per_group[-2] >= 1.0 or not self.gpmodels[0][0].fitted:
             resp, respPair, q, q_lat, snr, y_trains_w, reallocate = self.estimate_q_first(M, x_trains=x_trains, y_trains=y_trains,
-                                         y_trains_w=y_trains_w, resp=resp, respPair=respPair, q_=q, q_lat_=q_lat, snr_=snr,
+                                         y_trains_w_=y_trains_w, resp=resp, respPair=respPair, q_=q, q_lat_=q_lat, snr_=snr,
                                          startPi=startPi, transPi=transPi, reallocate_=reallocate, reparam=reparam)
             if resp.shape[1] > self.M:
                 q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat),
@@ -1112,7 +1108,7 @@ class GPI_HDP():
         if not reallocate:
             while True:
                 M = resp.shape[1]
-                resp, respPair, q, q_lat, snr, y_trains_w, gpmodels = self.estimate_q_all( M, x_trains=x_trains, y_trains=y_trains, y_trains_w=y_trains_w,
+                resp, respPair, q, q_lat, snr, y_trains_w, gpmodels = self.estimate_q_all( M, x_trains=x_trains, y_trains=y_trains, y_trains_w_=y_trains_w,
                                                resp=resp, respPair=respPair, q_=q, q_lat_=q_lat, snr_=snr, startPi=startPi, transPi=transPi,
                                                reparam=reparam)
                 self.gpmodels = gpmodels
@@ -1137,7 +1133,7 @@ class GPI_HDP():
         #self.update_initial_sigma()
         return resp, respPair, q, q_lat, snr, y_trains_w, reallocate
 
-    def estimate_q_first(self, M, x_trains, y_trains, y_trains_w, resp, respPair, q_, q_lat_, snr_, startPi, transPi, reallocate_=False, reparam=False):
+    def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q_, q_lat_, snr_, startPi, transPi, reallocate_=False, reparam=False):
         """ Smart and complex computation of new group assignation and compare with the last iteration then decides if generate group or not.
             First, it computes if a reallocation of the samples is better, if not, proposes a new birth group and computes the ELBO to measure the goodness.
         """
@@ -1146,10 +1142,8 @@ class GPI_HDP():
             x_trains=x_trains,
             y_trains=y_trains,
             resp_temp=resp,
-            f_ind_old=self.f_ind_old,  # current references
-            train_iter=50,
+            f_ind_old=self.f_ind_old,
         )
-        y_trains_w_ = torch.clone(y_trains_w)
         if torch.mean(q_) == 0.0:
             snr_ = torch.zeros(y_trains.shape[0], M, self.n_outputs)
             for ld in range(self.n_outputs):
@@ -1163,10 +1157,10 @@ class GPI_HDP():
                         if gp.fitted:
                             gp.reinit_LDS(save_last=False)
                             gp.reinit_GP(save_last=False)
-                q_[:, 0, ld], q_lat_[:, 0, ld]= gp.full_pass_weighted(x_trains, y_trains_w[:, :, [ld]], resp[:, 0],
+                q_[:, 0, ld], q_lat_[:, 0, ld]= gp.full_pass_weighted(x_trains, y_trains_w[:, :, [ld], 0], resp[:, 0],
                                                      snr=self.snr_norm[:, ld])
                 q_[:, 0, ld] = q_[:, 0, ld] + liks[:, 0, ld]
-                snr_[:, 0, ld] = self.compute_snr(y_trains[:, :, ld], gp)
+                snr_[:, 0, ld] = self.compute_snr(y_trains_w[:, :, ld, 0], gp)
                 self.gpmodels[ld][0] = gp
         reallocate = False
 
@@ -1190,8 +1184,8 @@ class GPI_HDP():
                     gp.reinit_LDS(save_last=False)
                     gp.reinit_GP(save_last=False)
                 if len(indexes_[m]) > 0:
-                    gp.include_weighted_sample(0, x_trains[f_ind_old[m]], x_trains[f_ind_old[m]], y_trains_w[f_ind_old[m],:,[ld]], h=1.0)
-                q_simple[:, m, ld] = gp.compute_sq_err_all(x_trains, y_trains_w[:,:, [ld]])
+                    gp.include_weighted_sample(0, x_trains[f_ind_old[m]], x_trains[f_ind_old[m]], y_trains[f_ind_old[m],:,[ld]], h=1.0)
+                q_simple[:, m, ld] = gp.compute_sq_err_all(x_trains, y_trains_w[:,:, [ld],m])
                 q_simple[:, m, ld] = q_simple[:, m, ld] + liks[:, m, ld]
                 snr_temp[:, m, ld] = self.compute_snr(y_trains[:,:,ld], gp)
 
@@ -1215,15 +1209,6 @@ class GPI_HDP():
             reorder = torch.argsort(resp_per_group_temp, descending=True)
             resp_temp = resp_temp[:, reorder]
 
-            # after resp_temp = resp_temp[:, reorder] (or clone thereof)
-            y_trains_w, x_w, liks = self.warp_batch_by_resp_amtgp_cached(
-                x_trains=x_trains,
-                y_trains=y_trains,
-                resp_temp=resp_temp,
-                f_ind_old=self.f_ind_old,  # current references
-                train_iter=50,
-            )
-
             #First, try to reallocate beats, if this not works then generate new group.
             q = torch.clone(q_)
             q_lat = torch.clone(q_lat_)
@@ -1239,12 +1224,12 @@ class GPI_HDP():
                         if gp.fitted:
                             gp.reinit_LDS(save_last=False)
                             gp.reinit_GP(save_last=False)
-                        q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains_w[:,:,[ld]],
+                        q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains_w[:,:,[ld],reorder[m]],
                                                             resp_temp[:, m], q=q[:,reorder[m], ld],
                                                             q_lat=q_lat[:, reorder[m], ld],
                                                             snr=self.snr_norm[:,ld])
                         q[:, m, ld] = q[:, m, ld] + liks[:, reorder[m], ld]
-                        snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp)
+                        snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld, reorder[m]], gp)
                     else:
                         q[:, m, ld] = torch.clone(q_[:, reorder[m], ld])
                         snr_aux[:, m, ld] = torch.clone(snr_[:, reorder[m], ld])
@@ -1258,7 +1243,7 @@ class GPI_HDP():
                 resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, gpmodels_temp = self.estimate_q_all(M,
                                                                                                              x_trains=x_trains,
                                                                                                              y_trains=y_trains,
-                                                                                                             y_trains_w=y_trains_w,
+                                                                                                             y_trains_w_=y_trains_w,
                                                                                                              resp=resp_temp,
                                                                                                              respPair=respPair_temp,
                                                                                                              q_=q,
@@ -1296,14 +1281,43 @@ class GPI_HDP():
                     print("Reallocating beats into existing groups.")
                     reallocate = True
                     self.gpmodels = gpmodels_temp
-                    self.f_ind_old = f_ind_old[reorder]
-                    self.x_w = x_w
-                    self.liks = liks
+                    self.x_w = x_w[:, :, :, reorder]
+                    self.liks = liks[:, reorder, :]
+                    y_trains_w = y_trains_w[:, :, :, reorder]
+                    self.y_w = y_trains_w
+                    self.y_train = self.select_assigned_warp(y_trains_w, resp_temp)
+                    f_ind_old_new = torch.full_like(f_ind_old, -1)
+                    used_representers = set()
+
+                    for k in range(M):
+                        # Samples assigned to cluster k
+                        indexes_k = torch.where(resp_temp[:, k] == 1.0)[0]
+
+                        # Rank candidates by weight, best first
+                        order = torch.argsort(self.weight_mean(q_simple, snr_aux)[indexes_k, k],
+                                              descending=True)
+                        sorted_candidates = indexes_k[order]
+
+                        candidate = None
+                        for idx in sorted_candidates:
+                            idx_val = int(idx.item())
+                            if idx_val not in used_representers:
+                                candidate = idx_val
+                                break
+
+                        # Fallback if all candidates were already used
+                        if candidate is None:
+                            candidate = int(sorted_candidates[0].item())
+
+                        f_ind_old_new[k] = candidate
+                        used_representers.add(candidate)
+                    self.f_ind_old = torch.clone(f_ind_old_new)
+
                     if update_snr:
                         self.snr_norm = self.normalize_snr(snr_aux)
                     else:
                         snr_aux = snr_
-                    return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w_, reallocate
+                    return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, reallocate
                 else:
                     print("Not reallocating, trying to generate new group.")
             else:
@@ -1413,8 +1427,7 @@ class GPI_HDP():
                         x_trains=x_trains,
                         y_trains=y_trains,
                         resp_temp=resp_,
-                        f_ind_old=f_ind_old_temp,  # current references
-                        train_iter=50,
+                        f_ind_old=f_ind_old_temp
                     )
                     q_simple_ = torch.clone(q_def)
                     q, q_lat, snr_aux = torch.clone(q_def), torch.clone(q_lat_def), torch.clone(snr_aux_def)
@@ -1427,10 +1440,10 @@ class GPI_HDP():
                         if gp.fitted:
                             gp.reinit_LDS(save_last=False)
                             gp.reinit_GP(save_last=False)
-                        gp.include_weighted_sample(0, x_trains[f_ind_new], x_trains[f_ind_new], y_trains_w[f_ind_new,:,[ld]], h=1.0)
-                        q_simple_[:, -1, ld] = gp.compute_sq_err_all(x_trains, y_trains_w[:,:,[ld]])
+                        gp.include_weighted_sample(0, x_trains[f_ind_new], x_trains[f_ind_new], y_trains[f_ind_new,:,[ld]], h=1.0)
+                        q_simple_[:, -1, ld] = gp.compute_sq_err_all(x_trains, y_trains_w[:,:,[ld],-1])
                         q_simple_[:, -1, ld] = q_simple_[:, -1, ld] + liks[:, -1, ld]
-                        snr_aux[:, -1, ld] = self.compute_snr(y_trains_w[:, :, ld], gp)
+                        snr_aux[:, -1, ld] = self.compute_snr(y_trains_w[:, :, ld,-1], gp)
                     # Compute resp
                     q_mean = self.weight_mean(q_simple_, snr_aux)
                     q_norm, _ = self.LogLik(q_mean)
@@ -1449,15 +1462,6 @@ class GPI_HDP():
                     #reorder = torch.arange(resp_per_group_temp.shape[0])
                     resp_temp = resp_temp[:, reorder]
 
-                    # after resp_temp = resp_temp[:, reorder] (or clone thereof)
-                    y_trains_w, x_w, liks = self.warp_batch_by_resp_amtgp_cached(
-                        x_trains=x_trains,
-                        y_trains=y_trains,
-                        resp_temp=resp_temp,
-                        f_ind_old=f_ind_old_temp,  # current references
-                        train_iter=50,
-                    )
-
                     # Compute chosen model conditioned on new resp
                     # Update all models conditioned on new resp if it has changed
                     gpmodels_temp = [[] for _ in range(self.n_outputs)]
@@ -1473,13 +1477,13 @@ class GPI_HDP():
                                     gp.reinit_LDS(save_last=False)
                                     gp.reinit_GP(save_last=False)
                                 q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains,
-                                                                                     y_trains_w[:, reorder, [ld]],
+                                                                                     y_trains_w[:, :, [ld], reorder[m]],
                                                                                      resp_temp[:, m],
                                                                                      q=q__[:, reorder[m], ld],
                                                                                      q_lat=q_lat__[:, reorder[m], ld],
                                                                                      snr=self.snr_norm[:, ld])
                                 q[:, m, ld] = q[:, m, ld] + liks[:, reorder[m], ld]
-                                snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, reorder, ld], gp)
+                                snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld, reorder[m]], gp)
                             else:
                                 gp = self.gpmodel_deepcopy(self.gpmodels[ld][reorder[m]])
                                 if not torch.equal(resp[:, reorder[m]].long(), resp_temp[:, m].long()):
@@ -1487,13 +1491,13 @@ class GPI_HDP():
                                         gp.reinit_LDS(save_last=False)
                                         gp.reinit_GP(save_last=False)
                                     q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains,
-                                                                                         y_trains_w[:, reorder, [ld]],
+                                                                                         y_trains_w[:, :, [ld], reorder[m]],
                                                                                          resp_temp[:, m],
                                                                                          q=q__[:, reorder[m], ld],
                                                                                          q_lat=q_lat__[:, reorder[m], ld],
                                                                                          snr=self.snr_norm[:, ld])
                                     q[:, m, ld] = q[:, m, ld] + liks[:, reorder[m], ld]
-                                    snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, reorder, ld], gp)
+                                    snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld, reorder[m]], gp)
                                 else:
                                     q[:, m, ld] = torch.clone(q__[:, reorder[m], ld])
                                     q_lat[:, m, ld] = torch.clone(q_lat__[:, reorder[m], ld])
@@ -1519,13 +1523,17 @@ class GPI_HDP():
                             reallocate = True
                             for ld in range(self.n_outputs):
                                 gpmodels_temp[ld] = gpmodels_temp[ld][:-1]
-                            self.gpmodels = gpmodels_temp
-                            self.f_ind_old = f_ind_old[reorder]
-                            if update_snr:
-                                self.snr_norm = self.normalize_snr(snr_aux)
+                                self.wp_sys[ld] = self.wp_sys[ld][:-1]
                             resp_temp, respPair_temp, q, q_lat, snr_aux = self.remove_last_group(resp_temp,
                                                                                                  respPair_temp, q,
                                                                                                  q_lat, snr_aux)
+                            self.gpmodels = gpmodels_temp
+                            self.f_ind_old = f_ind_old[reorder]
+                            y_trains_w = y_trains_w[:,:,:,reorder]
+                            self.y_w = y_trains_w
+                            self.y_train = self.select_assigned_warp(y_trains_w, resp_temp)
+                            if update_snr:
+                                self.snr_norm = self.normalize_snr(snr_aux)
                             return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, reallocate
                         else:
                             print("Bad estimation")
@@ -1535,7 +1543,7 @@ class GPI_HDP():
                         resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, gpmodels_temp = self.estimate_q_all(M,
                                                                                                                  x_trains=x_trains,
                                                                                                                  y_trains=y_trains,
-                                                                                                                 y_trains_w=y_trains_w,
+                                                                                                                 y_trains_w_=y_trains_w,
                                                                                                                  resp=resp_temp,
                                                                                                                  respPair=respPair_temp,
                                                                                                                  q_=q,
@@ -1574,21 +1582,39 @@ class GPI_HDP():
                         if q_bas + elbo_bas < q_bas_post + elbo_post:
                             print("Chosen to divide: "+str(m_chosen)+" with beat "+str(f_ind_new.item()))
                             self.gpmodels = gpmodels_temp
-                            self.x_w = x_w
-                            self.liks = liks
-                            pos_new = torch.where(reorder == M-1)[0].long()
                             for ld in range(self.n_outputs):
                                 self.wp_sys[ld].append(self.create_wp_sys_default())
-                            self.model_type.append(self.model_type_def)
-                            #pos_new = reorder[m].long()
-                            indexes = torch.where(resp_temp[:, pos_new] == 1.0)[0]
-                            if len(indexes) > 0:
-                                #f_ind_old[-1] = indexes[torch.argmax(self.weight_mean(q_simple_, snr_aux)[indexes, pos_new]).long()]
-                                f_ind_old[-1] = indexes[torch.argmax(self.weight_mean(q, snr_aux)[indexes, pos_new]).long()]
-                                #f_ind_old[-1] = f_ind_new
-                            else:
-                                f_ind_old[-1] = f_ind_new #if reorder[m] == M-1 else f_ind_old[m]
-                            self.f_ind_old = torch.clone(f_ind_old[reorder])
+                            self.x_w = x_w[:,:,:,reorder]
+                            self.liks = liks[:,reorder,:]
+                            y_trains_w = y_trains_w[:,:,:,reorder]
+                            self.y_w = y_trains_w
+                            self.y_train = self.select_assigned_warp(y_trains_w, resp_temp)
+                            f_ind_old_new = torch.full_like(f_ind_old, -1)
+                            used_representers = set()
+
+                            for k in range(M):
+                                # Samples assigned to cluster k
+                                indexes_k = torch.where(resp_temp[:, k] == 1.0)[0]
+
+                                # Rank candidates by weight, best first
+                                order = torch.argsort(self.weight_mean(q_simple_, snr_aux)[indexes_k, k],
+                                                      descending=True)
+                                sorted_candidates = indexes_k[order]
+
+                                candidate = None
+                                for idx in sorted_candidates:
+                                    idx_val = int(idx.item())
+                                    if idx_val not in used_representers:
+                                        candidate = idx_val
+                                        break
+
+                                # Fallback if all candidates were already used
+                                if candidate is None:
+                                    candidate = int(sorted_candidates[0].item())
+
+                                f_ind_old_new[k] = candidate
+                                used_representers.add(candidate)
+                            self.f_ind_old = torch.clone(f_ind_old_new)
                             if update_snr:
                                 self.snr_norm = self.normalize_snr(snr_aux)
                             else:
@@ -2606,7 +2632,7 @@ class GPI_HDP():
             q_new = gpmodel.log_sq_error(x_train, y, mean=mean_[-1], cov=cov_[-1], C=C_[-1], Sigma=Sigma_[-1], i=-1)#, first=True)
         return q_new
 
-    def estimate_q_all(self, M, x_trains, y_trains, y_trains_w, resp, respPair, q_, q_lat_, snr_, startPi, transPi,
+    def estimate_q_all(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q_, q_lat_, snr_, startPi, transPi,
                        gpmodels=None, reparam=False, post=True, f_ind_old=None):
         """ Internal method to converge the ELBO using the most recent assignation of the examples.
         """
@@ -2634,10 +2660,8 @@ class GPI_HDP():
         y_trains_w, x_w, liks = self.warp_batch_by_resp_amtgp_cached(
             x_trains=x_trains,
             y_trains=y_trains,
-            resp_temp=resp_temp,
-            gpmodels=gpmodels,  # the argument of estimate_q_all
-            f_ind_old=f_ind_old,  # current references
-            train_iter=50,
+            resp_temp=resp_temp,  # the argument of estimate_q_all
+            f_ind_old=f_ind_old
         )
 
         q__ = None
@@ -2664,13 +2688,13 @@ class GPI_HDP():
                         else:
                             # No added indexes so createtemp
                             gp = self.create_gp_default(i=reorder[m])
-                        q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains_w[:, :, [ld]],
+                        q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains_w[:, :, [ld], reorder[m]],
                                                                              resp_temp[:, m],
                                                                              q=q_[:, reorder[m], ld],
                                                                              q_lat=q_lat[:, reorder[m], ld],
                                                                              snr=self.snr_norm[:, ld])
                         q[:, m, ld] = q[:, m, ld] + liks[:, reorder[m], ld]
-                        snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp)
+                        snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld, reorder[m]], gp)
                     else:
                         q[:, m, ld] = q_[:, reorder[m], ld]
                         q_lat[:, m, ld] = q_lat_[:, reorder[m], ld]
@@ -2679,13 +2703,13 @@ class GPI_HDP():
                     # New GP to add
                     gp = self.create_gp_default(i=reorder[m])
                     if len(indexes_[ld][m]) > 0.0:
-                        q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains_w[:, :, [ld]],
+                        q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains_w[:, :, [ld], reorder[m]],
                                                                              resp_temp[:, m],
                                                                              q=q_[:, reorder[m], ld],
                                                                              q_lat=q_lat[:, reorder[m], ld],
                                                                              snr=self.snr_norm[:, ld])
                         q[:, m, ld] = q[:, m, ld] + liks[:, reorder[m], ld]
-                        snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld], gp)
+                        snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld, reorder[m]], gp)
                     else:
                         q[:, m, ld] = q_[:, m, ld]
                         q_lat[:, m, ld] = q_lat_[:, m, ld]
@@ -2713,6 +2737,7 @@ class GPI_HDP():
                 # self.gpmodels = gpmodels_temp
                 self.x_w = x_w
                 self.liks = liks
+                y_trains_w = y_trains_w[:,:,:,reorder]
                 if reorder.shape[0] == self.f_ind_old.shape[0]:
                     self.f_ind_old = self.f_ind_old[reorder]
                 if update_snr:
@@ -2721,10 +2746,10 @@ class GPI_HDP():
                     snr_aux = snr_
                 return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, gpmodels_temp
             else:
-                return resp, respPair, q_, q_lat_, snr_, y_trains_w, gpmodels
+                return resp, respPair, q_, q_lat_, snr_, y_trains_w_, gpmodels
         else:
             print("Bad estimation")
-            return resp, respPair, q_, q_lat_, snr_, y_trains_w, gpmodels
+            return resp, respPair, q_, q_lat_, snr_, y_trains_w_, gpmodels
 
     def cluster_new_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp=False):
         if not learning:
@@ -3078,102 +3103,6 @@ class GPI_HDP():
             gpmodels=None,
             f_ind_old: torch.Tensor = None,
             train_iter: int = 50,
-            batch_size: int = 128,  # NEW: chunk size for warping all samples
-    ):
-        import torch
-
-        x_trains = self.cond_cuda(self.cond_to_torch(x_trains))
-        y_trains = self.cond_cuda(self.cond_to_torch(y_trains))
-        resp_temp = self.cond_cuda(self.cond_to_torch(resp_temp))
-
-        if gpmodels is None:
-            gpmodels = self.gpmodels
-        if f_ind_old is None:
-            f_ind_old = self.f_ind_old
-
-        N, T, D_out = y_trains.shape
-        M = resp_temp.shape[1]
-        assert D_out == self.n_outputs
-
-        # Assigned component (still used to produce y_trains_w / x_w as (N,T,n_outputs))
-        z = torch.argmax(resp_temp, dim=1)  # (N,)
-
-        # Outputs:
-        y_trains_w = torch.clone(y_trains)  # (N,T,n_outputs) assigned only
-        x_w = torch.zeros_like(y_trains, dtype=torch.float64)  # (N,T,n_outputs) assigned only
-        liks_full = torch.zeros((N, M, self.n_outputs), device=self.device, dtype=torch.float64)  # FULL (N,M,n_out)
-
-        def _base_score_batch(ld, x0, xwB_2d):
-            """Compute baseline normalization baseB for a batch, fallback if no batch method."""
-            base_gp = self.wp_sys[ld][-1].warp_gp
-            if hasattr(base_gp, "log_sq_error_batch"):
-                return base_gp.log_sq_error_batch(x0, xwB_2d)
-            # fallback: loop
-            out = torch.zeros((xwB_2d.shape[0],), device=xwB_2d.device, dtype=torch.float64)
-            for i in range(xwB_2d.shape[0]):
-                out[i] = base_gp.log_sq_error(x0, self.cond_cuda(self.cond_to_torch(xwB_2d[i][:, None]))).reshape(())
-            return out
-
-        for ld in range(self.n_outputs):
-            for m in range(M):
-                # map column m -> old index
-                state_raw = m
-
-                # robust indexing (your “small changes”)
-                state_idx_gp = min(state_raw, len(gpmodels[ld]) - 1)
-                state_idx_wp = min(state_raw, len(self.wp_sys[ld]) - 1)
-                state_idx_f = min(state_raw, int(f_ind_old.shape[0]) - 1)
-
-                ref = int(f_ind_old[state_idx_f].item())
-
-                x0 = x_trains[ref]  # (T,)
-                y_model = y_trains[ref, :, [ld]]  # (T,1)
-
-                gp = gpmodels[ld][state_idx_gp]
-                theta = gp.gp.kernel.get_params()["k1__k2__length_scale"]
-
-                noise_scalar = torch.mean(torch.diag(gp.Sigma[-1])).detach()
-                noise_vec = noise_scalar * torch.ones(T, device=x0.device, dtype=x0.dtype)
-
-                warper = self.wp_sys[ld][state_idx_wp]
-
-                # compute warps for ALL samples vs this reference, in chunks
-                for s in range(0, N, batch_size):
-                    idx = torch.arange(s, min(s + batch_size, N), device=self.device)
-                    yB = y_trains[idx, :, [ld]]  # (B,T,1)
-
-                    xwB, ywB, likB, _ = warper.compute_warp_batch(
-                        x0, yB, y_model,
-                        theta=theta,
-                        noise=noise_vec,
-                        train_iter=train_iter,
-                        verbose=False,
-                    )  # xwB:(B,T,1), ywB:(B,T,1), likB:(B,)
-
-                    baseB = _base_score_batch(ld, x0, xwB[:, :, 0])
-                    likTot = likB + baseB
-
-                    # FULL likelihood matrix for competition
-                    liks_full[idx, m, ld] = likTot
-
-                    # Keep the assigned warped signals only (for compatibility with full_pass_weighted usage)
-                    idx_ass = idx[z[idx] == m]
-                    if idx_ass.numel() > 0:
-                        # positions inside the chunk
-                        mask = (z[idx] == m)
-                        y_trains_w[idx_ass, :, ld] = ywB[mask, :, 0]
-                        x_w[idx_ass, :, ld] = xwB[mask, :, 0]
-
-        return y_trains_w, x_w, liks_full
-
-    def warp_batch_by_resp_amtgp_cached(
-            self,
-            x_trains,
-            y_trains,
-            resp_temp,  # (N,M)
-            gpmodels=None,
-            f_ind_old=None,
-            train_iter: int = 50,
             batch_size: int = 128,
     ):
         import torch
@@ -3191,21 +3120,9 @@ class GPI_HDP():
         M = resp_temp.shape[1]
         assert D_out == self.n_outputs
 
-        # Assigned component for compatibility outputs
-        z = torch.argmax(resp_temp, dim=1)
-
-        # initialize cache dict once
-        if not hasattr(self, "_warp_cache_full"):
-            self._warp_cache_full = {}
-            self._warp_cache_full_shape = None
-
-        # if shape changes, clear
-        if self._warp_cache_full_shape != (N, T, self.n_outputs):
-            self._warp_cache_full.clear()
-            self._warp_cache_full_shape = (N, T, self.n_outputs)
-
-        y_trains_w = torch.clone(y_trains)
-        x_w = torch.zeros_like(y_trains, dtype=torch.float64)
+        # NEW: keep one warped version per cluster
+        y_trains_w = y_trains.unsqueeze(-1).repeat(1, 1, 1, M)  # (N,T,D,M)
+        x_w = torch.zeros((N, T, self.n_outputs, M), device=self.device, dtype=torch.float64)
         liks_full = torch.zeros((N, M, self.n_outputs), device=self.device, dtype=torch.float64)
 
         def _base_score_batch(ld, x0, xwB_2d):
@@ -3214,52 +3131,147 @@ class GPI_HDP():
                 return base_gp.log_sq_error_batch(x0, xwB_2d)
             out = torch.zeros((xwB_2d.shape[0],), device=xwB_2d.device, dtype=torch.float64)
             for i in range(xwB_2d.shape[0]):
-                out[i] = base_gp.log_sq_error(x0, self.cond_cuda(self.cond_to_torch(xwB_2d[i][:, None]))).reshape(())
+                out[i] = base_gp.log_sq_error(
+                    x0,
+                    self.cond_cuda(self.cond_to_torch(xwB_2d[i][:, None]))
+                ).reshape(())
+            return out
+
+        for ld in range(self.n_outputs):
+            for m in range(M):
+                # Important: columns of resp_temp are already the active cluster order
+                state_raw = m
+
+                state_idx_gp = min(state_raw, len(gpmodels[ld]) - 1)
+                state_idx_wp = min(state_raw, len(self.wp_sys[ld]) - 1)
+                state_idx_f = min(state_raw, int(f_ind_old.shape[0]) - 1)
+
+                ref = int(f_ind_old[state_idx_f].item())
+
+                x0 = x_trains[ref]  # (T,)
+                y_model = y_trains[ref, :, [ld]]  # (T,1)
+
+                gp = gpmodels[ld][state_idx_gp]
+                theta = gp.gp.kernel.get_params()["k1__k2__length_scale"]
+
+                noise_scalar = torch.mean(torch.diag(gp.Sigma[-1])).detach()
+                noise_vec = noise_scalar * torch.ones(T, device=x0.device, dtype=x0.dtype)
+
+                warper = self.wp_sys[ld][state_idx_wp]
+
+                for s in range(0, N, batch_size):
+                    idx = torch.arange(s, min(s + batch_size, N), device=self.device)
+                    yB = y_trains[idx, :, [ld]]  # (B,T,1)
+
+                    xwB, ywB, likB, _ = warper.compute_warp_batch(
+                        x0, yB, y_model,
+                        theta=theta,
+                        noise=noise_vec,
+                        train_iter=train_iter,
+                        verbose=False,
+                    )
+
+                    baseB = _base_score_batch(ld, x0, xwB[:, :, 0])
+                    likTot = likB + baseB
+
+                    # FULL competition term
+                    liks_full[idx, m, ld] = likTot
+
+                    # NEW: store warped batch for THIS cluster m
+                    y_trains_w[idx, :, ld, m] = ywB[:, :, 0]
+                    x_w[idx, :, ld, m] = xwB[:, :, 0]
+
+        return y_trains_w, x_w, liks_full
+
+    def warp_batch_by_resp_amtgp_cached(
+            self,
+            x_trains,
+            y_trains,
+            resp_temp,  # (N,M)
+            f_ind_old=None,
+            train_iter: int = 50,
+            batch_size: int = 128,
+    ):
+
+        x_trains = self.cond_cuda(self.cond_to_torch(x_trains))
+        y_trains = self.cond_cuda(self.cond_to_torch(y_trains))
+        resp_temp = self.cond_cuda(self.cond_to_torch(resp_temp))
+
+        if f_ind_old is None:
+            f_ind_old = self.f_ind_old
+
+        N, T, D_out = y_trains.shape
+        M = resp_temp.shape[1]
+        assert D_out == self.n_outputs
+
+        if not hasattr(self, "_warp_cache_full"):
+            self._warp_cache_full = {}
+        #     self._warp_cache_full_shape = None
+        #
+        # if self._warp_cache_full_shape != (N, T, self.n_outputs, M):
+        #     self._warp_cache_full.clear()
+        #     self._warp_cache_full_shape = (N, T, self.n_outputs, M)
+
+        y_trains_w = y_trains.unsqueeze(-1).repeat(1, 1, 1, M)  # (N,T,D,M)
+        x_w = torch.zeros((N, T, self.n_outputs, M), device=self.device, dtype=torch.float64)
+        liks_full = torch.zeros((N, M, self.n_outputs), device=self.device, dtype=torch.float64)
+
+        def _theta_to_key(theta):
+            arr = np.atleast_1d(np.array(theta, dtype=np.float64)).ravel()
+            return tuple(arr.tolist())
+
+        def _base_score_batch(ld, x0, xwB_2d):
+            base_gp = self.wp_sys[ld][-1].warp_gp
+            if hasattr(base_gp, "log_sq_error_batch"):
+                return base_gp.log_sq_error_batch(x0, xwB_2d)
+            out = torch.zeros((xwB_2d.shape[0],), device=xwB_2d.device, dtype=torch.float64)
+            for i in range(xwB_2d.shape[0]):
+                out[i] = base_gp.log_sq_error(
+                    x0,
+                    self.cond_cuda(self.cond_to_torch(xwB_2d[i][:, None]))
+                ).reshape(())
             return out
 
         for ld in range(self.n_outputs):
             for m in range(M):
                 state_raw = m
-                state_idx_gp = min(state_raw, len(gpmodels[ld]) - 1)
+
                 state_idx_wp = min(state_raw, len(self.wp_sys[ld]) - 1)
                 state_idx_f = state_raw
 
                 ref = int(f_ind_old[state_idx_f].item())
 
-                gp = gpmodels[ld][state_idx_gp]
-                theta = gp.gp.kernel.get_params()["k1__k2__length_scale"]
 
-                # cache key: same ref + same warper + same shapes + same train_iter
-                key = (ld, state_idx_wp, ref, N, T, int(train_iter))
+                key = (ld, ref)
 
                 if key in self._warp_cache_full:
-                    # cached arrays are stored on correct device/dtype already
                     xw_all_2d, yw_all_2d, lik_all = self._warp_cache_full[key]
                 else:
                     x0 = x_trains[ref]
                     y_model = y_trains[ref, :, [ld]]
 
-                    noise_scalar = torch.mean(torch.diag(gp.Sigma[-1])).detach()
+                    noise_scalar = np.sqrt(self.ini_sigma_def)
                     noise_vec = noise_scalar * torch.ones(T, device=x0.device, dtype=x0.dtype)
 
                     warper = self.wp_sys[ld][state_idx_wp]
 
-                    # allocate full arrays for this (ld,m)
                     xw_all_2d = torch.zeros((N, T), device=self.device, dtype=torch.float64)
                     yw_all_2d = torch.zeros((N, T), device=self.device, dtype=torch.float64)
                     lik_all = torch.zeros((N,), device=self.device, dtype=torch.float64)
 
+                    #batch_size = N
                     for s in range(0, N, batch_size):
                         idx = torch.arange(s, min(s + batch_size, N), device=self.device)
                         yB = y_trains[idx, :, [ld]]
 
                         xwB, ywB, likB, _ = warper.compute_warp_batch(
                             x0, yB, y_model,
-                            theta=theta,
+                            theta=self.kernel_def.get_params()["k1__k2__length_scale"],
                             noise=noise_vec,
                             train_iter=train_iter,
                             verbose=False,
                         )
+
                         baseB = _base_score_batch(ld, x0, xwB[:, :, 0])
                         likTot = likB + baseB
 
@@ -3269,16 +3281,19 @@ class GPI_HDP():
 
                     self._warp_cache_full[key] = (xw_all_2d, yw_all_2d, lik_all)
 
-                # fill full liks tensor for competition
                 liks_full[:, m, ld] = lik_all
-
-                # fill assigned outputs only
-                idx_ass = torch.where(z == m)[0]
-                if idx_ass.numel() > 0:
-                    y_trains_w[idx_ass, :, ld] = yw_all_2d[idx_ass, :]
-                    x_w[idx_ass, :, ld] = xw_all_2d[idx_ass, :]
+                y_trains_w[:, :, ld, m] = yw_all_2d
+                x_w[:, :, ld, m] = xw_all_2d
 
         return y_trains_w, x_w, liks_full
+
+    def select_assigned_warp(self, y_trains_w, resp):
+        # y_trains_w: (N,T,D,M)
+        if y_trains_w.ndim == 3:
+            return y_trains_w
+        z = torch.argmax(resp, dim=1)  # (N,)
+        idx = z[:, None, None, None].expand(-1, y_trains_w.shape[1], y_trains_w.shape[2], 1)
+        return torch.gather(y_trains_w, 3, idx).squeeze(3)  # (N,T,D)
 
     def compute_trans_A(self, M):
         digammaSumTransTheta = torch.log(

@@ -289,7 +289,7 @@ class Warping_system:
                  cuda: bool = False,
                  bayesian: bool = True,
                  mode: str = "balanced",
-                 n_ctrl: int = 5,
+                 n_ctrl: int = 8,
                  lr: float = 5e-2,
                  lambda_smooth: float = 200.0,
                  lambda_amp: float = 1e-3):
