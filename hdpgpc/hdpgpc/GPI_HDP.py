@@ -1210,7 +1210,7 @@ class GPI_HDP():
             while True:
                 M = resp.shape[1]
                 resp, respPair, q, q_lat, snr, y_trains_w, gpmodels = self.estimate_q_all( M, x_trains=x_trains, y_trains=y_trains, y_trains_w_=y_trains_w,
-                                               resp=resp, respPair=respPair, q_=q, q_lat_=q_lat, snr_=snr, startPi=startPi, transPi=transPi,
+                                               resp=resp, respPair=respPair, q_=q, q_lat_=q_lat, snr_=snr, startPi=startPi, transPi=transPi, q_def=q_def__, elbo_def=elbo_def__,
                                                reparam=reparam)
                 self.gpmodels = gpmodels
                 if resp.shape[1] > self.M:
@@ -1238,7 +1238,7 @@ class GPI_HDP():
         """ Smart and complex computation of new group assignation and compare with the last iteration then decides if generate group or not.
             First, it computes if a reallocation of the samples is better, if not, proposes a new birth group and computes the ELBO to measure the goodness.
         """
-
+        empty_estimation = False
         y_trains_w, x_w, liks = self.warp_batch_by_resp_amtgp_cached(
             x_trains=x_trains,
             y_trains=y_trains,
@@ -1572,9 +1572,10 @@ class GPI_HDP():
                                 gp.reinit_LDS(save_last=False)
                                 gp.reinit_GP(save_last=False)
                             gp.include_weighted_sample(0, x_trains[f_ind_new], x_trains[f_ind_new],
-                                                       y_trains_w[f_ind_new, :, [ld]], h=1.0)
-                            q_simple_[:, -1, ld] = gp.compute_sq_err_all(x_trains, y_trains_w[:, :, [ld]])
-                            snr_aux[:, -1, ld] = self.compute_snr(y_trains_w[:, :, ld], gp)
+                                                       y_trains[f_ind_new, :, [ld]], h=1.0)
+                            q_simple_[:, -1, ld] = gp.compute_sq_err_all(x_trains, y_trains_w[:, :, [ld], -1])
+                            q_simple_[:, -1, ld] = q_simple_[:, -1, ld] + liks[:, -1, ld]
+                            snr_aux[:, -1, ld] = self.compute_snr(y_trains_w[:, :, ld, -1], gp)
                         # Compute resp
                         q_mean = self.weight_mean(q_simple_, snr_aux)
                         q_norm, _ = self.LogLik(q_mean)
@@ -1703,6 +1704,8 @@ class GPI_HDP():
                                                                                                                  snr_=snr_aux,
                                                                                                                  startPi=startPi,
                                                                                                                  transPi=transPi,
+                                                                                                                 q_def=q_def__,
+                                                                                                                 elbo_def=elbo_def__,
                                                                                                                  gpmodels=gpmodels_temp,
                                                                                                                  reparam=reparam,
                                                                                                                  f_ind_old=f_ind_old_temp)
@@ -2831,7 +2834,7 @@ class GPI_HDP():
         return q_new
 
     def estimate_q_all(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q_, q_lat_, snr_, startPi, transPi,
-                       gpmodels=None, reparam=False, post=True, f_ind_old=None):
+                       q_def, elbo_def, gpmodels=None, reparam=False, post=True, f_ind_old=None):
         """ Internal method to converge the ELBO using the most recent assignation of the examples.
         """
         if gpmodels is None:
