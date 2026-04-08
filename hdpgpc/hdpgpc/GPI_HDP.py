@@ -1321,8 +1321,8 @@ class GPI_HDP():
                 for m in range(M):
                     if self.verbose:
                         print("\n   -----------Model " + str(m + 1) + "-----------")
-                    gp = self.gpmodel_deepcopy(self.gpmodels[ld][reorder[m]])
                     if not torch.equal(resp[:, reorder[m]].long(), resp_temp[:, m].long()):
+                        gp = self.gpmodel_deepcopy(self.gpmodels[ld][reorder[m]])
                         if gp.fitted:
                             gp.reinit_LDS(save_last=False)
                             gp.reinit_GP(save_last=False)
@@ -1333,6 +1333,7 @@ class GPI_HDP():
                         q[:, m, ld] = q[:, m, ld] + liks[:, reorder[m], ld]
                         snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld, reorder[m]], gp)
                     else:
+                        gp = self.gpmodels[ld][reorder[m]]
                         q[:, m, ld] = torch.clone(q_[:, reorder[m], ld])
                         snr_aux[:, m, ld] = torch.clone(snr_[:, reorder[m], ld])
                     gpmodels_temp[ld].append(gp)
@@ -1634,8 +1635,8 @@ class GPI_HDP():
                                 q[:, m, ld] = q[:, m, ld] + liks[:, reorder[m], ld]
                                 snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld, reorder[m]], gp)
                             else:
-                                gp = self.gpmodel_deepcopy(self.gpmodels[ld][reorder[m]])
                                 if not torch.equal(resp[:, reorder[m]].long(), resp_temp[:, m].long()):
+                                    gp = self.gpmodel_deepcopy(self.gpmodels[ld][reorder[m]])
                                     if gp.fitted:
                                         gp.reinit_LDS(save_last=False)
                                         gp.reinit_GP(save_last=False)
@@ -1649,6 +1650,7 @@ class GPI_HDP():
                                     q[:, m, ld] = q[:, m, ld] + liks[:, reorder[m], ld]
                                     snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld, reorder[m]], gp)
                                 else:
+                                    gp = self.gpmodels[ld][reorder[m]]
                                     q[:, m, ld] = torch.clone(q__[:, reorder[m], ld])
                                     q_lat[:, m, ld] = torch.clone(q_lat__[:, reorder[m], ld])
                                     snr_aux[:, m, ld] = torch.clone(snr__[:, reorder[m], ld])
@@ -2877,9 +2879,9 @@ class GPI_HDP():
                     print("\n   -----------Model " + str(m + 1) + "-----------")
                 indexes_[ld].append(torch.where(resp_temp[:, m] == self.cond_cuda(torch.tensor(1.0)))[0].int())
                 if len(gpmodels[ld]) > reorder[m]:
-                    gp = self.gpmodel_deepcopy(gpmodels[ld][reorder[m]])
-                    gp_indexes = torch.tensor(gp.indexes, device=indexes_[ld][m].device).int()
                     if not torch.equal(indexes_[ld][m], gp_indexes):
+                        gp = self.gpmodel_deepcopy(gpmodels[ld][reorder[m]])
+                        gp_indexes = torch.tensor(gp.indexes, device=indexes_[ld][m].device).int()
                         if gp.fitted:
                             if reparam:
                                 gp.reinit_LDS(save_last=False)
@@ -2898,6 +2900,8 @@ class GPI_HDP():
                         q[:, m, ld] = q[:, m, ld] + liks[:, reorder[m], ld]
                         snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld, reorder[m]], gp)
                     else:
+                        gp = gpmodels[ld][reorder[m]]
+                        gp_indexes = torch.tensor(gp.indexes, device=indexes_[ld][m].device).int()
                         q[:, m, ld] = q_[:, reorder[m], ld]
                         q_lat[:, m, ld] = q_lat_[:, reorder[m], ld]
                         snr_aux[:, m, ld] = torch.clone(snr_[:, m, ld])
@@ -2917,17 +2921,7 @@ class GPI_HDP():
                         q_lat[:, m, ld] = q_lat_[:, m, ld]
                         snr_aux[:, m, ld] = torch.zeros(snr_.shape[0])
                 gpmodels_temp[ld].append(gp)
-        # q_norm, _ = self.LogLik(self.weight_mean(q, snr_aux))
-        # alpha, margprob = self.forward(startPi, transPi, q_norm)
-        # beta = self.backward(transPi, q_norm, margprob)
-        # logresp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
-        # logrespPair, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
-        # resp_temp = torch.exp(logresp)
-        # respPair_temp = torch.exp(logrespPair)
 
-        # resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
-        # Finally see if it is worthy to birth new cluster
-        # new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
         print(">>> Q_all_loop -------")
         q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_),
                                               self.weight_mean(q_lat_, snr_), gpmodels, self.M, snr=snr_, post=post)
