@@ -2567,7 +2567,7 @@ class GPI_HDP():
                 self.wp_sys[ld].append(self.create_wp_sys_default())
             self.x_basis.append(self.x_basis_ini)
         if force_model is None:
-            resp, respPair, q_chos, q_lat_chos = self.reorder(resp, respPair, q_chos, q_lat_chos)
+            resp, respPair, q_chos, q_lat_chos, reorder = self.reorder(resp, respPair, q_chos, q_lat_chos)
 
         # Update HDP global params
         M_eff = self.M
@@ -2879,9 +2879,10 @@ class GPI_HDP():
                     print("\n   -----------Model " + str(m + 1) + "-----------")
                 indexes_[ld].append(torch.where(resp_temp[:, m] == self.cond_cuda(torch.tensor(1.0)))[0].int())
                 if len(gpmodels[ld]) > reorder[m]:
+                    gp = gpmodels[ld][reorder[m]]
+                    gp_indexes = torch.tensor(gp.indexes, device=indexes_[ld][m].device).int()
                     if not torch.equal(indexes_[ld][m], gp_indexes):
                         gp = self.gpmodel_deepcopy(gpmodels[ld][reorder[m]])
-                        gp_indexes = torch.tensor(gp.indexes, device=indexes_[ld][m].device).int()
                         if gp.fitted:
                             if reparam:
                                 gp.reinit_LDS(save_last=False)
@@ -2895,13 +2896,12 @@ class GPI_HDP():
                         q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains_w[:, :, [ld], reorder[m]],
                                                                              resp_temp[:, m],
                                                                              q=q_[:, reorder[m], ld],
-                                                                             q_lat=q_lat[:, reorder[m], ld],
+                                                                             q_lat=q_lat_[:, reorder[m], ld],
                                                                              snr=self.snr_norm[:, ld])
                         q[:, m, ld] = q[:, m, ld] + liks[:, reorder[m], ld]
                         snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld, reorder[m]], gp)
                     else:
                         gp = gpmodels[ld][reorder[m]]
-                        gp_indexes = torch.tensor(gp.indexes, device=indexes_[ld][m].device).int()
                         q[:, m, ld] = q_[:, reorder[m], ld]
                         q_lat[:, m, ld] = q_lat_[:, reorder[m], ld]
                         snr_aux[:, m, ld] = torch.clone(snr_[:, m, ld])
