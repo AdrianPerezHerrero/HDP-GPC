@@ -363,6 +363,10 @@ class GPI_model():
 
             q_lat: accumulated squared error of the latent process.
         """
+        if len(torch.nonzero(self.Gamma[-1])) < 1:
+            model_type = 'static'
+        else:
+            model_type = 'dynamic'
         q_ = torch.zeros(len(x_trains), device=self.device)
         q_lat_ = torch.zeros(1, device=self.device)
         ind = torch.where(resp == self.cond_to_cuda(self.cond_to_torch(1.0)))[0]
@@ -374,9 +378,11 @@ class GPI_model():
             for index in trange(n_samp, desc="Forward_pass", disable=self.disable):
                 self.include_weighted_sample(index, x_trains[index], x_trains[index],
                                              y_trains[index], resp[index])#, snr=snr_)
-                self.backwards_pair(resp[index])  # , snr=snr_)
-                self.bayesian_new_params(resp[index])
-            self.backwards()
+                if model_type.lower() == 'dynamic':
+                    self.backwards_pair(resp[index])  # , snr=snr_)
+                    self.bayesian_new_params(resp[index])
+            if model_type.lower() == 'dynamic':
+                self.backwards()
         q_ = self.compute_sq_err_all(x_trains, y_trains)
         q_lat_ = self.compute_q_lat_all(x_trains)
         return q_, q_lat_
@@ -620,10 +626,17 @@ class GPI_model():
     def backwards(self, h=1.0):
         """Method to compute backward recursion weighted by the responsibility.
         """
+        if len(torch.nonzero(self.Gamma[-1])) < 1:
+            model_type = 'static'
+        else:
+            model_type = 'dynamic'
         if h == 1.0:
             mean = list(self.f_star[1:])
             covs = list(self.cov_f[1:])
-            aux_f_star, aux_cov_f = self.gp.backward(self.A[1:], self.Gamma[1:], mean, covs)
+            if model_type == 'dynamic':
+                aux_f_star, aux_cov_f = self.gp.backward(self.A[1:], self.Gamma[1:], mean, covs)
+            else:
+                aux_f_star, aux_cov_f = self.gp.backward(self.A[0], self.Gamma[0], mean, covs)
             for i in range(len(mean)):
                 self.f_star_sm[i + 1] = aux_f_star[i]
                 self.cov_f_sm[i + 1] = aux_cov_f[i]
