@@ -468,21 +468,51 @@ class GPI_model():
         return elb_LDS / ini_A.shape[0] * 100
 
     def compute_sq_err_all(self, x_trains, y_trains, no_first=False):
-        """ Method to compute the squared error over all provided examples y_trains.
-        """
+        """Method to compute the squared error over all provided examples y_trains."""
         n_samps = x_trains.shape[0]
-        sq_err = torch.zeros(n_samps, device=x_trains[0].device)
+        device = x_trains.device if torch.is_tensor(x_trains) else x_trains[0].device
+        sq_err = torch.zeros(n_samps, device=device)
+
+        if len(self.indexes) == 0:
+            return sq_err
+
+        # As self.indexes is sorted
+        idx_t = torch.as_tensor(self.indexes, device=device, dtype=torch.long)
+        sample_ids = torch.arange(n_samps, device=device, dtype=torch.long)
+
+        # Exact membership map:
+        # pos_of_sample[j] = 0-based position of j inside self.indexes, or -1 if not present
+        pos_of_sample = torch.full((n_samps,), -1, device=device, dtype=torch.long)
+        pos_of_sample[idx_t] = torch.arange(idx_t.numel(), device=device, dtype=torch.long)
+
+        exact_mask = pos_of_sample >= 0
+
+        # 0-based position of the closest lower stored sample
+        closest_pos0 = torch.searchsorted(idx_t, sample_ids, right=True) - 1
+        closest_pos0 = torch.clamp(closest_pos0, min=0)
+
+        # - exact match    -> i = self.indexes.index(index) + 1
+        # - non-exact      -> i = max(find_closest_lower(index), 1)
+        i_vals = torch.where(
+            exact_mask,
+            pos_of_sample + 1,
+            torch.clamp(closest_pos0, min=1)
+        )
+
+        first_mask = exact_mask & (i_vals == 1) & (not no_first)
+
+        # Optional: move these small tensors once to CPU to avoid .item() sync every iteration
+        i_vals_cpu = i_vals.cpu().tolist()
+        first_mask_cpu = first_mask.cpu().tolist()
+
         for index in trange(n_samps, desc="Compute_sq_error", disable=self.disable):
-            if len(self.indexes) > 0:
-                if index in self.indexes:
-                    ind = self.indexes.index(index) + 1
-                    if ind == 1 and not no_first:
-                        sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], i=ind, first=True)
-                    else:
-                        sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], i=ind)
-                else:
-                    ind = np.max([self.find_closest_lower(index), 1])
-                    sq_err[index] = self.log_sq_error(x_trains[index], y_trains[index], i=ind)
+            sq_err[index] = self.log_sq_error(
+                x_trains[index],
+                y_trains[index],
+                i=i_vals_cpu[index],
+                first=first_mask_cpu[index],
+            )
+
         return sq_err
 
     def compute_q_lat_all(self, x_trains, h_ini=1.0):

@@ -3439,16 +3439,16 @@ class GPI_HDP():
         #     self._warp_cache_full.clear()
         #     self._warp_cache_full_shape = (N, T, self.n_outputs, M)
 
-        y_trains_w = y_trains.unsqueeze(-1).repeat(1, 1, 1, M)  # (N,T,D,M)
-        x_w = torch.zeros((N, T, self.n_outputs, M), device=self.device, dtype=torch.float64)
-        liks_full = torch.zeros((N, M, self.n_outputs), device=self.device, dtype=torch.float64)
-
         if not self.warp:
+            y_trains_w = y_trains.unsqueeze(-1).expand(-1, -1, -1, M)
+            x_w = x_trains.unsqueeze(-1).expand(-1, -1, -1, M)
+            liks_full = torch.zeros((N, M, self.n_outputs),
+                                    device=self.device, dtype=torch.float64)
             return y_trains_w, x_w, liks_full
 
-        def _theta_to_key(theta):
-            arr = np.atleast_1d(np.array(theta, dtype=np.float64)).ravel()
-            return tuple(arr.tolist())
+        y_trains_w = torch.empty((N, T, D_out, M), device=self.device, dtype=torch.float64)
+        x_w = torch.empty((N, T, self.n_outputs, M), device=self.device, dtype=torch.float64)
+        liks_full = torch.zeros((N, M, self.n_outputs), device=self.device, dtype=torch.float64)
 
         def _base_score_batch(ld, x0, xwB_2d):
             base_gp = self.wp_sys[ld][-1].warp_gp
