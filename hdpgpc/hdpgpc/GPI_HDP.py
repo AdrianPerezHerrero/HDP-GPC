@@ -815,6 +815,7 @@ class GPI_HDP():
         # self.transAlpha = 0.1
         # self.startAlpha = 0.1
         # self.kappa = 0.0
+        self.warp = warp
         print("------ HDP Hyperparameters ------", flush=True)
         print("gamma: " + str(self.gamma))
         print("transAlpha: " + str(self.transAlpha))
@@ -3441,6 +3442,9 @@ class GPI_HDP():
         y_trains_w = y_trains.unsqueeze(-1).repeat(1, 1, 1, M)  # (N,T,D,M)
         x_w = torch.zeros((N, T, self.n_outputs, M), device=self.device, dtype=torch.float64)
         liks_full = torch.zeros((N, M, self.n_outputs), device=self.device, dtype=torch.float64)
+
+        if not self.warp:
+            return y_trains_w, x_w, liks_full
 
         def _theta_to_key(theta):
             arr = np.atleast_1d(np.array(theta, dtype=np.float64)).ravel()
