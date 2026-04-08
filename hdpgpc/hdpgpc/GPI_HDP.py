@@ -710,37 +710,68 @@ class GPI_HDP():
         self.gpmodels = [self.gpmodels[ld] for ld in final_outputs]
         return y_trains[:, :, final_outputs]
 
-    def compute_snr_ini(self, y_trains):
-        """ Initial computation of snr
+    def _snr_batch_db(self, preds: torch.Tensor, target: torch.Tensor, eps: float = 1e-12):
         """
+        preds  : (N, T)
+        target : (N, T)
+        returns: (N,)
+        """
+        signal_power = target.pow(2).sum(dim=1).clamp_min(eps)
+        noise_power = (target - preds).pow(2).sum(dim=1).clamp_min(eps)
+        return 10.0 * torch.log10(signal_power / noise_power)
+
+    def compute_snr_ini(self, y_trains):
+        """Initial computation of snr."""
+        y_trains = self.cond_cuda(self.cond_to_torch(y_trains))
+
         if self.use_snr:
-            n_samples = np.array(y_trains).shape[0]
-            n_outputs = np.array(y_trains).shape[2]
-            snr = torch.zeros(n_samples, n_outputs)
-            snr_comp = SignalNoiseRatio()
-            for ld in range(n_outputs):
-                snr[:, ld] = torch.tensor(
-                    [snr_comp(torch.from_numpy(y),
-                              torch.mean(torch.from_numpy(y_trains)[:, :, ld], dim=0)) for y in
-                     y_trains[:, :, ld]])
-            self.snr_norm = 1-torch.softmax(snr, dim=1)
+            # y_trains: (N, T, D)
+            ref = y_trains.mean(dim=0, keepdim=True)  # (1, T, D)
+            ref = ref.expand(y_trains.shape[0], -1, -1)  # (N, T, D)
+
+            signal_power = ref.pow(2).sum(dim=1).clamp_min(1e-12)  # (N, D)
+            noise_power = (ref - y_trains).pow(2).sum(dim=1).clamp_min(1e-12)  # (N, D)
+            snr = 10.0 * torch.log10(signal_power / noise_power)  # (N, D)
+
+            self.snr_norm = torch.softmax(snr, dim=1)
         else:
-            self.snr_norm = torch.ones(y_trains.shape[0], y_trains.shape[2])
+            snr = torch.log(torch.sum(y_trains, dim=1))
+            self.snr_norm = torch.softmax(snr, dim=1)
 
     def compute_snr(self, y_trains, gp):
-        """ Iterative computation of snr
-        """
+        """Iterative computation of snr."""
+        y_trains = self.cond_cuda(self.cond_to_torch(y_trains))
+
         if self.use_snr:
-            snr = torch.zeros(y_trains.shape[0])
-            snr_comp = SignalNoiseRatio()
-            for t in range(y_trains.shape[0]):
-                j = np.min([np.max([gp.find_closest_lower(t), 1]), len(gp.f_star_sm) - 1])
-                snr[t] = snr_comp(y_trains[t], gp.f_star_sm[j].T[0])
-            # snr = torch.tensor([0.5] * y_trains.shape[0])
-            return snr
+            N = y_trains.shape[0]
+            device = y_trains.device
+
+            # No learned states yet
+            if len(gp.f_star_sm) <= 1:
+                return torch.zeros(N, device=device, dtype=y_trains.dtype)
+
+            # self.indexes is assumed sorted
+            idx_t = torch.as_tensor(gp.indexes, device=device, dtype=torch.long)
+            sample_ids = torch.arange(N, device=device, dtype=torch.long)
+
+            # This reproduces:
+            # j = min(max(gp.find_closest_lower(t), 1), len(gp.f_star_sm)-1)
+            pos0 = torch.searchsorted(idx_t, sample_ids, right=True) - 1
+            j_idx = torch.clamp(pos0, min=1, max=len(gp.f_star_sm) - 1)
+
+            # Stack latent means once: shape (L, T)
+            # Current code uses gp.f_star_sm[j].T[0]
+            means_bank = torch.stack(
+                [self.cond_cuda(self.cond_to_torch(f)).T[0] for f in gp.f_star_sm],
+                dim=0
+            )  # (L, T)
+
+            refs = means_bank[j_idx]  # (N, T)
+
+            return self._snr_batch_db(y_trains, refs)
+
         else:
-            snr = torch.ones(y_trains.shape[0])
-            return snr
+            return torch.log(torch.sum(y_trains, dim=1))
 
     def normalize_snr(self, snr):
         """ Normalize snr using softmax
