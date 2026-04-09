@@ -131,23 +131,23 @@ class IterativeGaussianProcess():
             K_cov = id
         else:
             K_cov = torch.linalg.solve((K_X_X + jitter).T, K_Xs_X.T).T
-        P_t = torch.linalg.multi_dot([A, x_basis_cov, A.T]) + Gamma
+        P_t = A @ x_basis_cov @ A.T + Gamma
         # First step where initial covariance is needed as a prior, using initial Sigma computed by the GP optim.
         if torch.equal(cov_prior, K_X_X):
             P_t = x_basis_cov
             f_star = torch.zeros(x_warped.shape, device=self.device)
             cov_f = (self.cond_to_torch(self.kernel(x_train)) - self.cond_to_torch(self.kernel(x_train, x_train))) / h
         else:
-            mean = torch.matmul(C, x_basis_mean)
+            mean = C @ x_basis_mean
             f_star, cov_f = self.pred_dist(x_warped, self.x_basis, mean, Sigma)
         # Forward equations of Kalman.
-        K_t = torch.linalg.solve((torch.linalg.multi_dot([K_cov, C, P_t, C.T, K_cov.T]) + cov_f).T,
-                                 torch.linalg.multi_dot([K_cov, C, P_t.T])).T
-        mean_post = x_basis_mean + torch.matmul(K_t, (y - f_star))
+        KC = K_cov @ C
+        K_t = torch.linalg.solve((KC @ P_t @ KC.T + cov_f).T,
+                                 (KC @ P_t.T)).T
+        mean_post = x_basis_mean + K_t @ (y - f_star)
         # Joshep form
-        cov_post = torch.linalg.multi_dot([id - torch.linalg.multi_dot([K_t, K_cov, C]), P_t,
-                                           (id - torch.linalg.multi_dot([K_t, K_cov, C])).T]) \
-                   + torch.linalg.multi_dot([K_t, cov_f, K_t.T])
+        IKC = id - K_t @ KC
+        cov_post = IKC @ P_t @ IKC.T + K_t @ cov_f @ K_t.T
         return mean_post, cov_post
 
     def projection_matrix(self, x_basis=None, x_train=None):
@@ -485,23 +485,22 @@ class IterativeGaussianProcess():
             if torch.cuda.is_available() and self.cuda:
                 id = id.cuda()
                 id_Xs = id_Xs.cuda()
+            K_X_X = self.cond_to_torch(ker(x_f, x_f))
             K_X_Xs = self.cond_to_torch(ker(x_f, x_p))
-            K_Xs_X = self.cond_to_torch(ker(x_p, x_f))
             K_Xs_Xs = self.cond_to_torch(self.kernel(x_p))
-            if torch.cuda.is_available() and self.cuda:
-                K_X_X = K_X_X.cuda()
-                K_X_Xs = K_X_Xs.cuda()
-                K_Xs_X = K_Xs_X.cuda()
-                K_Xs_Xs = K_Xs_Xs.cuda()
+
             jitter = 1e-4 * torch.mean(torch.diag(Sigma)) * id
             cov = K_X_X + jitter
-            cov_inv = torch.linalg.solve(cov.T, K_X_Xs).T
-            f_star = x_post_mean + torch.linalg.multi_dot([cov_inv, (mean_prior - x_train_mean)])
+
+            rhs = torch.linalg.solve(cov.T, K_X_Xs).T
+            delta = mean_prior - x_train_mean
+
+            f_star = x_post_mean + rhs @ delta
+
             if torch.all(torch.isclose(torch.diag(Sigma), torch.mean(torch.diag(Sigma)))):
                 cov_f = torch.mean(torch.diag(Sigma)) * id_Xs
             else:
-                cov_f = K_Xs_Xs - torch.linalg.multi_dot([cov_inv, K_X_Xs]) + \
-                        torch.linalg.multi_dot([cov_inv, Sigma, cov_inv.T])
+                cov_f = K_Xs_Xs - rhs @ K_X_Xs + rhs @ Sigma @ rhs.T
                 cov_f = cov_f + 1e-6 * id_Xs
                 while torch.any(torch.diag(cov_f) < 0.0):
                     cov_f = cov_f + 1e-2 * torch.mean(torch.diag(Sigma)) * id_Xs

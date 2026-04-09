@@ -251,13 +251,11 @@ class GPI_model():
             #cov_f = 0.01 * cov_f + 0.99 * torch.diag(torch.diag(cov_f))
         #exp_t_t_ = lat_cov + torch.matmul(lat_f, lat_f.T)
         #exp_t_t = lat_cov + torch.matmul(f_star, f_star.T)
-        Sigma_inv = torch.linalg.solve(cov_f, self.cond_to_cuda(torch.eye(t)))
         q = y.shape[0]
-        err = -1 / 2 * torch.linalg.multi_dot([y.T, Sigma_inv, y])\
-              + 1 / 2 * torch.linalg.multi_dot([y.T, Sigma_inv, f_star]) \
-              + 1 / 2 * torch.linalg.multi_dot([f_star.T, Sigma_inv, y]) \
-              - 1 / 2 * torch.linalg.multi_dot([f_star.T, Sigma_inv, f_star]) \
-              - 1 / 2 * q * torch.log(torch.tensor(2.0) * torch.pi)
+        diff = y - f_star
+        sol = torch.linalg.solve(cov_f, diff)
+        log2pi = torch.log(torch.tensor(2.0, device=diff.device, dtype=diff.dtype) * torch.pi)
+        err = -0.5 * torch.sum(diff * sol) - 0.5 * q * log2pi
               #- 1 / 2 * torch.trace(torch.linalg.multi_dot([C.T, Sigma_inv, C, exp_t_t_])) \
               #- 1 / 2 * torch.trace(torch.linalg.multi_dot([Sigma_inv, exp_t_t]))
               # - 1 / 2 * torch.trace(cov_f)
@@ -271,16 +269,19 @@ class GPI_model():
         if i == 0:
             cov_f_ = self.cov_f_sm[i + 1]
             lat_f_ = self.f_star_sm[i + 1]
-            Gamma_inv = torch.linalg.solve(self.Gamma[-1] * h_ini, self.cond_to_cuda(torch.eye(self.Gamma[-1].shape[0])))
+            #Gamma_inv = torch.linalg.solve(self.Gamma[-1] * h_ini, self.cond_to_cuda(torch.eye(self.Gamma[-1].shape[0])))
+            Gamma_inv_source = self.Gamma[-1] * h_ini
             A = self.A[-1]
         else:
             cov_f_ = self.cov_f_sm[i]
             lat_f_ = self.f_star_sm[i]
             if i+1 < len(self.Gamma):
-                Gamma_inv = torch.linalg.solve(self.Gamma[i+1], self.cond_to_cuda(torch.eye(self.Gamma[i].shape[0])))
+                #Gamma_inv = torch.linalg.solve(self.Gamma[i+1], self.cond_to_cuda(torch.eye(self.Gamma[i].shape[0])))
+                Gamma_inv_source = self.Gamma[i+1]
                 A = self.A[i+1]
             else:
-                Gamma_inv = torch.linalg.solve(self.Gamma[-1], self.cond_to_cuda(torch.eye(self.Gamma[-1].shape[0])))
+                #Gamma_inv = torch.linalg.solve(self.Gamma[-1], self.cond_to_cuda(torch.eye(self.Gamma[-1].shape[0])))
+                Gamma_inv_source = self.Gamma[-1]
                 A = self.A[-1]
         #cov_f = self.cov_f_sm[i + 1]
         lat_f = self.f_star_sm[i + 1]#
@@ -292,10 +293,20 @@ class GPI_model():
         #A = self.A[i + 1]
         #Gamma_inv = torch.linalg.solve(Gamma, self.cond_to_cuda(torch.eye(Gamma.shape[0])))
         q = lat_f.shape[0]
-        err = -1 / 2 * torch.linalg.multi_dot([lat_f.T, Gamma_inv, lat_f]) \
-              + torch.linalg.multi_dot([lat_f.T, Gamma_inv, A, lat_f_]) \
-              - 1 / 2 * torch.trace(torch.linalg.multi_dot([A.T, Gamma_inv, A, exp_t_t_])) \
-              - 1 / 2 * q * torch.log(torch.tensor(2.0) * torch.pi)
+        rhs1 = lat_f
+        rhs2 = A @ lat_f_
+        rhs3 = A @ exp_t_t_
+
+        sol1 = torch.linalg.solve(Gamma_inv_source, rhs1)
+        sol2 = torch.linalg.solve(Gamma_inv_source, rhs2)
+        sol3 = torch.linalg.solve(Gamma_inv_source, rhs3)
+
+        log2pi = torch.log(torch.tensor(2.0, device=lat_f.device, dtype=lat_f.dtype) * torch.pi)
+
+        err = -0.5 * torch.sum(lat_f * sol1) \
+              + torch.sum(lat_f * sol2) \
+              - 0.5 * torch.trace(A.T @ sol3) \
+              - 0.5 * q * log2pi
               #- 1 / 2 * torch.trace(torch.linalg.multi_dot([lat_f_.T, A.T, Gamma_inv, A, lat_f_])) \
               #- 1 / 2 * torch.trace(torch.linalg.multi_dot([Gamma_inv, exp_t_t]))
               # - 1 / 2 * torch.trace(Gamma)
@@ -375,12 +386,17 @@ class GPI_model():
         n_samp = x_trains.shape[0]
         step_lik = 0
         if len(ind) > 0:
-            for index in trange(n_samp, desc="Forward_pass", disable=self.disable):
-                self.include_weighted_sample(index, x_trains[index], x_trains[index],
-                                             y_trains[index], resp[index])#, snr=snr_)
+            active = torch.where(resp == self.cond_to_cuda(self.cond_to_torch(1.0)))[0]
+            if len(active) == 0:
+                return q, q_lat
+
+            for index in trange(len(active), desc="Forward_pass", disable=self.disable):
+                idx = int(active[index])
+                self.include_weighted_sample(idx, x_trains[idx], x_trains[idx],
+                                             y_trains[idx], resp[idx])
                 if model_type.lower() == 'dynamic':
-                    self.backwards_pair(resp[index])  # , snr=snr_)
-                    self.bayesian_new_params(resp[index])
+                    self.backwards_pair(resp[idx])
+                    self.bayesian_new_params(resp[idx])
             if model_type.lower() == 'dynamic':
                 self.backwards()
         q_ = self.compute_sq_err_all(x_trains, y_trains)
@@ -501,17 +517,43 @@ class GPI_model():
 
         first_mask = exact_mask & (i_vals == 1) & (not no_first)
 
-        # Optional: move these small tensors once to CPU to avoid .item() sync every iteration
-        i_vals_cpu = i_vals.cpu().tolist()
-        first_mask_cpu = first_mask.cpu().tolist()
+        shared_grid = torch.equal(x_trains, x_trains[0:1].expand_as(x_trains))
+        if shared_grid:
+            x0 = x_trains[0]
+            group_code = i_vals * 2 + first_mask.to(i_vals.dtype)
+            log2pi = torch.log(torch.tensor(2.0, device=device, dtype=torch.float64) * torch.pi)
 
-        for index in trange(n_samps, desc="Compute_sq_error", disable=self.disable):
-            sq_err[index] = self.log_sq_error(
-                x_trains[index],
-                y_trains[index],
-                i=i_vals_cpu[index],
-                first=first_mask_cpu[index],
-            )
+            for code in torch.unique(group_code):
+                ids = torch.nonzero(group_code == code, as_tuple=False).squeeze(1)
+                i_cur = int((code // 2).item())
+                first_cur = bool((code % 2).item())
+
+                f_star, cov_f = self.observe(x0, i_cur, params=None, proj=False)
+                if first_cur:
+                    ini_noise = torch.mean(torch.diag(self.Sigma[0])) * 1e-2
+                    cov_f = cov_f + ini_noise * torch.eye(len(x0), device=cov_f.device, dtype=cov_f.dtype)
+
+                Y = y_trains[ids]
+                if Y.ndim == 3:
+                    Y = Y[..., 0]  # (B,T)
+
+                f = f_star[:, 0] if f_star.ndim == 2 else f_star
+                diff = Y.T - f.unsqueeze(1)  # (T,B)
+                sol = torch.linalg.solve(cov_f, diff)
+
+                sq_err[ids] = -0.5 * torch.sum(diff * sol, dim=0) - 0.5 * diff.shape[0] * log2pi
+        else:
+            # Optional: move these small tensors once to CPU to avoid .item() sync every iteration
+            i_vals_cpu = i_vals.cpu().tolist()
+            first_mask_cpu = first_mask.cpu().tolist()
+
+            for index in trange(n_samps, desc="Compute_sq_error", disable=self.disable):
+                sq_err[index] = self.log_sq_error(
+                    x_trains[index],
+                    y_trains[index],
+                    i=i_vals_cpu[index],
+                    first=first_mask_cpu[index],
+                )
 
         return sq_err
 
@@ -970,13 +1012,13 @@ class GPI_model():
                                 samples_A_ = torch.stack(self.f_star_sm[1:n_f+1])[:, :, 0].T
                                 cov = torch.sum(torch.stack(self.cov_f_sm[2:n_f+2]), axis=0)
                                 cov_ = torch.sum(torch.stack(self.cov_f_sm[1:n_f+1]), axis=0)
-                                cov_cross = torch.zeros(cov.shape, device=cov.device)
                                 A, Gamma = self.A[-1], self.Gamma[-1]
-                                for t in range(n_f+1):
-                                    P = torch.matmul(A, torch.matmul(self.cov_f_sm[t], A.T)) + Gamma
-                                    cov_cross = cov_cross + torch.matmul(
-                                        torch.linalg.solve(P.T, torch.matmul(A, self.cov_f_sm[t].T)).T,
-                                        self.cov_f_sm[t + 1])
+                                cov_list = self.cov_f_sm
+
+                                cov_cross = torch.zeros_like(cov)
+                                for cov_t, cov_tp1 in zip(cov_list[:n_f + 1], cov_list[1:n_f + 2]):
+                                    P = A @ cov_t @ A.T + Gamma
+                                    cov_cross = cov_cross + (torch.linalg.solve(P.T, A @ cov_t.T).T @ cov_tp1)
                                 cov_cross = (cov_cross + cov_cross.T)/2.0
                             if not full_data:
                                 N_k = 1
@@ -1016,13 +1058,11 @@ class GPI_model():
                             samples_C_ = torch.stack(self.f_star_sm[1:n_f+1])[:, :, 0].T
                             cov_ = torch.sum(torch.stack(self.cov_f_sm[1:n_f+1]), axis=0)
                             cov = torch.zeros(cov_.shape, device=cov_.device)
-                            cov_cross = torch.zeros(cov_.shape, device=cov_.device)
                             C, Sigma = self.C[-1], self.Sigma[-1]
-                            for t in range(n_f+1):
-                                P = torch.matmul(C, torch.matmul(self.cov_f_sm[t], C.T)) + Sigma
-                                cov_cross = cov_cross + torch.matmul(
-                                    torch.linalg.solve(P.T, torch.matmul(C, self.cov_f_sm[t].T)).T,
-                                    Sigma)
+                            cov_cross = torch.zeros_like(cov_)
+                            for cov_t in cov_list[:n_f + 1]:
+                                P = C @ cov_t @ C.T + Sigma
+                                cov_cross = cov_cross + (torch.linalg.solve(P.T, C @ cov_t.T).T @ Sigma)
                             cov = cov + Sigma
                             if False:
                                 cov = torch.zeros(cov.shape, device=cov.device)
@@ -1283,17 +1323,17 @@ class matrix_normal_inv_wishart():
         scale = (scale + scale.T)/2 + jitter
         scale_c = torch.linalg.cholesky(scale)
         #
-        if n_k == 1:
-            scale_inv = torch.cholesky_solve(id, scale_c)
-        else:
-            scale_inv = torch.cholesky_solve(id, scale_c)
-        exp_f_f_ = torch.linalg.multi_dot([sse_matrix, torch.linalg.multi_dot([y_k_, y_k_.T]) + cov_, sse_matrix.T])
-        exp_ff_ = torch.linalg.multi_dot([sse_matrix, torch.linalg.multi_dot([y_k, y_k_.T]) + cov_cross, sse_matrix.T])
-        exp_ff = torch.linalg.multi_dot([sse_matrix,torch.linalg.multi_dot([y_k, y_k.T]) + cov, sse_matrix.T])
+        scale_inv = torch.cholesky_solve(id, scale_c)
+        ykyk_prev = y_k @ y_k_.T
+        y_prevprev = y_k_ @ y_k_.T
+        #ykyk = y_k @ y_k.T
 
+        exp_f_f_ = sse_matrix @ (y_prevprev + cov_) @ sse_matrix.T
+        exp_ff_ = sse_matrix @ (ykyk_prev + cov_cross) @ sse_matrix.T
+        #exp_ff = sse_matrix @ (ykyk + cov) @ sse_matrix.T
         S__ = exp_f_f_ + scale_inv
         S_ = exp_ff_ + torch.linalg.multi_dot([self.m_mean, scale_inv])
-        S = exp_ff + torch.matmul(self.m_mean, torch.matmul(scale_inv, self.m_mean.T))
+        #S = exp_ff + torch.matmul(self.m_mean, torch.matmul(scale_inv, self.m_mean.T))
         S__c = torch.linalg.cholesky(S__)
         S__inv = torch.cholesky_solve(id, S__c)
         part_mean = torch.linalg.multi_dot([S_, S__inv])
