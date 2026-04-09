@@ -746,9 +746,9 @@ class GPI_HDP():
         """ Normalize snr using softmax
         """
         if self.use_snr:
-            return 1 - torch.softmax(torch.max(torch.clone(snr), dim=1)[0], dim=1)
+            return torch.softmax(torch.max(torch.clone(snr), dim=1)[0], dim=1)
         else:
-            return 1 - torch.softmax(torch.max(torch.clone(snr), dim=1)[0], dim=1)
+            return torch.softmax(torch.max(torch.clone(snr), dim=1)[0], dim=1)
 
     def compute_joint_xy_q(self, x_trains, y_trains, gpmodels, outputs=(0, 1), jitter=1e-6):
         ld_x, ld_y = outputs
