@@ -673,8 +673,8 @@ class GPI_HDP():
         """
         signal_series = pd.Series(signal)
         rolling_mean = signal_series.rolling(window=window_size).mean()[window_size:].mean()
-        rolling_max = signal_series.rolling(window=window_size).max().max() ** 2
-        rolling_min = signal_series.rolling(window=window_size).min().min() ** 2
+        #rolling_max = signal_series.rolling(window=window_size).max().max() ** 2
+        #rolling_min = signal_series.rolling(window=window_size).min().min() ** 2
         rolling_std = signal_series.rolling(window=window_size).std()[window_size:].mean()
         rolling_snr = 10 * np.log10(
             (rolling_mean ** 2) / (rolling_std ** 2))  # .replace(0, np.finfo(float).eps))  # type: ignore
