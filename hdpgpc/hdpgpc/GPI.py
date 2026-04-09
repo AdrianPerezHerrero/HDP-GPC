@@ -455,73 +455,61 @@ class IterativeGaussianProcess():
         return A_new, Gamma_new, C_new, Sigma_new
 
     def pred_dist(self, x_post, x_fixed, mean_prior, Sigma):
-        """Compute posterior distribution using prior given and over a domain X of x_post.
-            It also defines likelihood of y targets.
-        Parameters
-        ----------
-        x_post : array-like of shape (m_samples) target inputs.
-
-        Returns
-        -------
-        self : returns an instance of self.
-        """
         x_post_mean = self.compute_mean(x_post)
         x_train_mean = self.compute_mean(x_fixed)
         x_f = x_fixed
         x_p = x_post
+
         if torch.cuda.is_available() and self.cuda:
             x_f = x_f.cpu()
             x_p = x_p.cpu()
+
         if torch.equal(x_f, x_p):
-            f_star = mean_prior
-            cov_f = Sigma
+            return mean_prior, Sigma
+
+        ker = self.kernel.clone_with_theta(self.kernel.theta)
+        x_f_np = self.cond_to_numpy(x_f)
+        x_p_np = self.cond_to_numpy(x_p)
+
+        K_X_X = self.cond_to_torch(ker(x_f_np, x_f_np))
+        K_X_Xs = self.cond_to_torch(ker(x_f_np, x_p_np))
+        K_Xs_Xs = self.cond_to_torch(self.kernel(x_p_np))
+
+        if torch.cuda.is_available() and self.cuda:
+            K_X_X = K_X_X.cuda()
+            K_X_Xs = K_X_Xs.cuda()
+            K_Xs_Xs = K_Xs_Xs.cuda()
+
+        n = K_X_X.shape[0]
+        m = K_Xs_Xs.shape[0]
+        id_n = torch.eye(n, device=K_X_X.device, dtype=K_X_X.dtype)
+        id_m = torch.eye(m, device=K_Xs_Xs.device, dtype=K_Xs_Xs.dtype)
+
+        jitter = 1e-4 * torch.mean(torch.diag(Sigma).abs()).clamp_min(torch.finfo(Sigma.dtype).eps)
+        L = torch.linalg.cholesky(0.5 * (K_X_X + K_X_X.T) + jitter * id_n)
+
+        # Solve K^{-1} K_X_Xs
+        K_solve = torch.cholesky_solve(K_X_Xs, L)  # (n,m)
+
+        delta = mean_prior - x_train_mean
+        f_star = x_post_mean + K_solve.T @ delta
+
+        if torch.all(torch.isclose(torch.diag(Sigma), torch.mean(torch.diag(Sigma)))):
+            cov_f = torch.mean(torch.diag(Sigma)) * id_m
         else:
-            ker = self.kernel.clone_with_theta(self.kernel.theta)
-            x_f = self.cond_to_numpy(x_f)
-            x_p = self.cond_to_numpy(x_p)
-            K_X_X = self.cond_to_torch(ker(x_f, x_f))
-            id = torch.eye(K_X_X.shape[0])
-            id_Xs = torch.eye(x_p.shape[0])
-            if torch.cuda.is_available() and self.cuda:
-                id = id.cuda()
-                id_Xs = id_Xs.cuda()
-            K_X_X = self.cond_to_torch(ker(x_f, x_f))
-            K_X_Xs = self.cond_to_torch(ker(x_f, x_p))
-            K_Xs_Xs = self.cond_to_torch(self.kernel(x_p))
+            cov_f = K_Xs_Xs - K_X_Xs.T @ K_solve + K_solve.T @ Sigma @ K_solve
+            cov_f = 0.5 * (cov_f + cov_f.T) + 1e-6 * id_m
 
-            jitter = 1e-4 * torch.mean(torch.diag(Sigma)) * id
-            cov = K_X_X + jitter
-
-            rhs = torch.linalg.solve(cov.T, K_X_Xs).T
-            delta = mean_prior - x_train_mean
-
-            f_star = x_post_mean + rhs @ delta
-
-            if torch.all(torch.isclose(torch.diag(Sigma), torch.mean(torch.diag(Sigma)))):
-                cov_f = torch.mean(torch.diag(Sigma)) * id_Xs
-            else:
-                cov_f = K_Xs_Xs - rhs @ K_X_Xs + rhs @ Sigma @ rhs.T
-                cov_f = cov_f + 1e-6 * id_Xs
-                while torch.any(torch.diag(cov_f) < 0.0):
-                    cov_f = cov_f + 1e-2 * torch.mean(torch.diag(Sigma)) * id_Xs
-                    print("Error: negative diagonal")
         return f_star, cov_f
 
     def pred_latent_dist(self, x_post, x_fixed, mean_prior, cov_prior):
-        """Compute posterior distribution using prior given and over a domain X of x_post.
-            It also defines likelihood of y targets.
-        Parameters
-        ----------
-        x_post : array-like of shape (m_samples) target inputs.
-
-        Returns
-        -------
-        self : returns an instance of self.
-        """
+        """Compute posterior latent distribution using a Cholesky-based solve."""
         x_post_mean = self.compute_mean(x_post)
         x_train_mean = self.compute_mean(x_fixed)
+
         x_f = x_fixed
         x_p = x_post
+
         if torch.equal(x_f, x_p):
             f_star = mean_prior
             cov_f = cov_prior
@@ -529,26 +517,48 @@ class IterativeGaussianProcess():
             if torch.cuda.is_available() and self.cuda:
                 x_f = x_f.cpu()
                 x_p = x_p.cpu()
+
             x_f = self.cond_to_numpy(x_f)
             x_p = self.cond_to_numpy(x_p)
+
             K_X_X = self.cond_to_torch(self.kernel(x_f, x_f))
-            id = torch.eye(K_X_X.shape[0])
-            if torch.cuda.is_available() and self.cuda:
-                id = id.cuda()
             K_X_Xs = self.cond_to_torch(self.kernel(x_f, x_p))
             K_Xs_X = self.cond_to_torch(self.kernel(x_p, x_f))
             K_Xs_Xs = self.cond_to_torch(self.kernel(x_p, x_p))
+
             if torch.cuda.is_available() and self.cuda:
                 K_X_X = K_X_X.cuda()
                 K_X_Xs = K_X_Xs.cuda()
                 K_Xs_X = K_Xs_X.cuda()
                 K_Xs_Xs = K_Xs_Xs.cuda()
-            jitter = 1e-4 * id
-            cov = K_X_X + jitter
-            cov_inv = torch.linalg.solve(cov, id)
-            f_star = x_post_mean + torch.linalg.multi_dot([K_Xs_X, cov_inv, mean_prior - x_train_mean])
-            cov_f = K_Xs_Xs - torch.linalg.multi_dot([K_Xs_X, cov_inv, K_X_Xs]) + \
-                    torch.linalg.multi_dot([K_Xs_X, cov_inv, cov_prior, cov_inv.T, K_X_Xs])
+
+            eye = torch.eye(K_X_X.shape[0], device=K_X_X.device, dtype=K_X_X.dtype)
+
+            # Same jitter scale as original code
+            cov = K_X_X + 1e-4 * eye
+
+            # Cholesky factorization of cov
+            L = torch.linalg.cholesky(cov)
+
+            delta = mean_prior - x_train_mean
+
+            # f_star = x_post_mean + K_Xs_X @ cov^{-1} @ delta
+            sol_delta = torch.cholesky_solve(delta, L)
+            f_star = x_post_mean + K_Xs_X @ sol_delta
+
+            # term_data = K_Xs_X @ cov^{-1} @ K_X_Xs
+            sol_K = torch.cholesky_solve(K_X_Xs, L)
+            term_data = K_Xs_X @ sol_K
+
+            # term_prior = K_Xs_X @ cov^{-1} @ cov_prior @ cov^{-T} @ K_X_Xs
+            # First solve cov^T Z = K_X_Xs, but since cov is symmetric after jitter,
+            # cov^{-T} = cov^{-1}, so reusing cholesky_solve is consistent here.
+            middle = cov_prior @ sol_K
+            sol_middle = torch.cholesky_solve(middle, L)
+            term_prior = K_Xs_X @ sol_middle
+
+            cov_f = K_Xs_Xs - term_data + term_prior
+
         return f_star, cov_f
 
     def sample_y(self, f_mean, f_cov, C, Sigma, n_samples=1, random_state=0):
