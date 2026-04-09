@@ -723,7 +723,7 @@ class GPI_HDP():
                     [snr_comp(torch.from_numpy(y),
                               torch.mean(torch.from_numpy(y_trains)[:, :, ld], dim=0)) for y in
                      y_trains[:, :, ld]])
-            self.snr_norm = 1-torch.softmax(snr, dim=1)
+            self.snr_norm = torch.softmax(snr, dim=1)
         else:
             self.snr_norm = torch.ones(y_trains.shape[0], y_trains.shape[2])
 
