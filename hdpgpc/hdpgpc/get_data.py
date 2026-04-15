@@ -14,24 +14,26 @@ from sklearn.preprocessing import scale
 from wfdb import processing
 import pandas as pd
 
-#Class to get data from UCR or MIT-BIH 
+# Class to get data from UCR or MIT-BIH
 included_labels = ['N', 'L', 'R', 'a', 'A', 'J', 'S', 'e', 'j', 'V', 'E', 'F', '/', 'f', 'Q', '!', 'n']
 
-def get_data(database = "mitdb", record = "100", deriv = 0, test = False, d2_data = False, scale_data = True,
-             scale_type ="all", samples = [0,220], ann='atr', filter_labels=True, return_annotations=False, return_snr=False):
-    #Define workbench
+
+def get_data(database="mitdb", record="100", deriv=0, test=False, d2_data=False, scale_data=True,
+             scale_type="all", samples=[0, 220], ann='atr', filter_labels=True, return_annotations=False,
+             return_snr=False):
+    # Define workbench
     homedir = os.getenv('HOME')
     if not homedir is None:
-        #We are on linux
+        # We are on linux
         if homedir == '/root':
-            homedir = '/home' 
+            homedir = '/home'
         direct = homedir + "/Documents/just-experiments/data/"
     else:
-        #We are on windows
+        # We are on windows
         direct = "D:/Programs/Workspaces/spyder-workspace/just-experiments/data/"
-    
+
     use_wfdb = True
-    
+
     if database == "ucr":
         database = "ucr/UCRArchive_2018/"
         use_wfdb = False
@@ -45,19 +47,19 @@ def get_data(database = "mitdb", record = "100", deriv = 0, test = False, d2_dat
         database = "mitdb/"
     elif database == "filtered":
         database = "datos_registros_mit/mit_MEDIAN_OFFLINE_filtered_2023/"
-        #database = "datos_registros_mit/mit_WAVELET_filtered_2023/"
+        # database = "datos_registros_mit/mit_WAVELET_filtered_2023/"
         record = record + "_filtered"
     elif database == "stt":
         database = "stt-1.0.0/"
     full_path = direct + database + record
-    
+
     if not use_wfdb:
         file_path_train = full_path + "/" + record + "_TRAIN.tsv"
         file_path_test = full_path + "/" + record + "_TEST.tsv"
-    
-        data_train = np.genfromtxt(fname = file_path_train, delimiter="\t", skip_header=0)
-        labels_train = data_train[:,0].astype(int)
-        data_train = data_train[:,1:].astype(np.float64)
+
+        data_train = np.genfromtxt(fname=file_path_train, delimiter="\t", skip_header=0)
+        labels_train = data_train[:, 0].astype(int)
+        data_train = data_train[:, 1:].astype(np.float64)
         data_train_2d = []
         for d in data_train:
             if scale_data:
@@ -67,11 +69,11 @@ def get_data(database = "mitdb", record = "100", deriv = 0, test = False, d2_dat
             data_train_2d.append(d)
         data_train = np.array(data_train_2d)
         labels_train = np.array(labels_train)
-        
+
         if test:
-            data_test = np.genfromtxt(fname = file_path_test, delimiter="\t", skip_header=0)
-            labels_test = data_test[:,0].astype(int)
-            data_test = data_test[:,1:].astype(np.float64)
+            data_test = np.genfromtxt(fname=file_path_test, delimiter="\t", skip_header=0)
+            labels_test = data_test[:, 0].astype(int)
+            data_test = data_test[:, 1:].astype(np.float64)
             data_test_2d = []
             for d in data_test:
                 if scale_data:
@@ -81,7 +83,7 @@ def get_data(database = "mitdb", record = "100", deriv = 0, test = False, d2_dat
                 data_test_2d.append(d)
             data_test = np.array(data_test_2d)
             labels_test = np.array(labels_test)
-            
+
             return data_train, labels_train, data_test, labels_test
         else:
             return data_train, labels_train
@@ -90,7 +92,7 @@ def get_data(database = "mitdb", record = "100", deriv = 0, test = False, d2_dat
         file_path = full_path
         record = wfdb.rdrecord(file_path, return_res=32, physical=False)
         if database == "apnea-ecg-database-1.0.0/":
-            #labels = wfdb.rdann(file_path, 'qrs', return_label_elements=['symbol']).symbol
+            # labels = wfdb.rdann(file_path, 'qrs', return_label_elements=['symbol']).symbol
             labels = []
             labels.append(wfdb.rdann(file_path, 'apn', return_label_elements=['symbol']).symbol)
             labels.append(wfdb.rdann(file_path, 'qrs', return_label_elements=['symbol']).symbol)
@@ -167,9 +169,7 @@ def get_data(database = "mitdb", record = "100", deriv = 0, test = False, d2_dat
                 annotation = np.append(annotation, comparer.unmatched_ref_sample)
                 annotation = np.sort(annotation)
                 print("Removed unmatched reference index.")
-            
 
-        
         data = []
         if scale_data and scale_type == "all":
             signal = scale(record.d_signal)
@@ -184,7 +184,7 @@ def get_data(database = "mitdb", record = "100", deriv = 0, test = False, d2_dat
         for i in range(len(annotation)):
             # aux = signal[annotation.sample[i+1]-87+samples[0]:annotation.sample[i+1]+samples[1]-87, deriv]
             if annotation[i] + samples[1] - 87 < signal.shape[0]:
-                if deriv==None:
+                if deriv == None:
                     aux = signal[annotation[i] - 87 + samples[0]:annotation[i] + samples[1] - 87, :]
                 else:
                     aux = signal[annotation[i] - 87 + samples[0]:annotation[i] + samples[1] - 87, deriv]
@@ -195,7 +195,7 @@ def get_data(database = "mitdb", record = "100", deriv = 0, test = False, d2_dat
                 if scale_data and scale_type == "single" and aux.shape[0] > 0:
                     aux = scale(aux)
                 elif scale_type == "first":
-                    aux = (aux - first_mean)/first_sd
+                    aux = (aux - first_mean) / first_sd
                 elif scale_type == "mean":
                     aux = aux - np.mean(aux, axis=0)
                 if d2_data:
@@ -217,7 +217,7 @@ def get_data(database = "mitdb", record = "100", deriv = 0, test = False, d2_dat
                 else:
                     return data, labels,
         else:
-            #snr = np.array([rolling_snr(signal[:,i], window_size=250) for i in range(signal.shape[1])])
+            # snr = np.array([rolling_snr(signal[:,i], window_size=250) for i in range(signal.shape[1])])
             snr = signaltonoise(signal, axis=0)
             if return_annotations:
                 if record_breath is not None:
@@ -232,18 +232,21 @@ def get_data(database = "mitdb", record = "100", deriv = 0, test = False, d2_dat
                 else:
                     return data, labels, snr
 
+
 def rolling_snr(signal, window_size: int):
     signal_series = pd.Series(signal)
     rolling_mean = signal_series.rolling(window=window_size).mean()[window_size:]
     rolling_std = signal_series.rolling(window=window_size).std()[window_size:]
     rolling_snr = 10 * np.log10(
-        (rolling_mean ** 2).replace(0, np.finfo(float).eps) / (rolling_std ** 2).replace(0, np.finfo(float).eps))  # type: ignore
+        (rolling_mean ** 2).replace(0, np.finfo(float).eps) / (rolling_std ** 2).replace(0, np.finfo(
+            float).eps))  # type: ignore
     return rolling_snr
+
 
 def signaltonoise(a, axis=0, ddof=0):
     a = np.asanyarray(a)
-    m = a.mean(axis)** 2
-    #m = 100.0
+    m = a.mean(axis) ** 2
+    # m = 100.0
     sd = a.std(axis=axis, ddof=ddof) ** 2
     return np.where(sd == 0, 0, m / sd)
 
@@ -265,7 +268,7 @@ def take_standard_labels(data, labels, permutation=False, filter=None):
             for ld in range(data.shape[2]):
                 for d in range(data.shape[0]):
                     if labels[d] in included_lab:
-                        subdata[d, :,ld] = np.array([0 if np.isnan(i) else i for i in data[d,:, ld]])
+                        subdata[d, :, ld] = np.array([0 if np.isnan(i) else i for i in data[d, :, ld]])
         else:
             for d in range(data.shape[0]):
                 if labels[d] in included_lab:
@@ -274,7 +277,7 @@ def take_standard_labels(data, labels, permutation=False, filter=None):
         labels = [lab for lab in labels if lab in included_lab]
     if len(data.shape) > 2:
         data_2d = data
-        #data_2d = np.transpose(data, (0, 2, 1))
+        # data_2d = np.transpose(data, (0, 2, 1))
     else:
         data_2d = []
         # mean_data = np.mean(data,axis=0)
@@ -292,11 +295,12 @@ def take_standard_labels(data, labels, permutation=False, filter=None):
     else:
         return data, data_2d, labels
 
-def compute_estimators_LDS(samples, n_f=None, dim=0):
+
+def compute_estimators_LDS(samples, n_f=None):
     if n_f is None:
         n_f = samples.shape[0] - 2
-    samples_ = torch.from_numpy(samples[:n_f][:, :, dim].T)
-    samples__ = torch.from_numpy(samples[1:n_f + 1][:, :, dim].T)
+    samples_ = torch.from_numpy(samples[:n_f][:, :, 0].T)
+    samples__ = torch.from_numpy(samples[1:n_f + 1][:, :, 0].T)
 
     std = torch.mean(torch.diag(torch.linalg.multi_dot(
         [(samples_ - torch.mean(samples_, dim=1)[:, np.newaxis]),
@@ -312,11 +316,11 @@ def compute_estimators_LDS(samples, n_f=None, dim=0):
         std = std.item()
         std_dif = std_dif.item()
     std_dif = np.min([np.max([std, std_dif]), std * 1.5]) * 1.0
-    #std_dif = np.max([std * 1.1, std_dif]) * 1.0
-    #std = std * 0.5
-    #std_dif = std_dif * 1.5
+    # std_dif = np.max([std * 1.1, std_dif]) * 1.0
+    # std = std * 0.5
+    # std_dif = std_dif * 1.5
     print("Sigma estimated:", str(std))
     print("Gamma estimated:", str(std_dif))
-    bound_std = (std * 1e-5, 1.0)
-    bound_std_dif = (std_dif * 1e-5,  1.0)
+    bound_std = (std * 1e-5, std * 2.0)
+    bound_std_dif = (std_dif * 1e-5, 1.0)
     return std, std_dif, bound_std, bound_std_dif

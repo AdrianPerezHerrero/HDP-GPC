@@ -17,6 +17,7 @@ import gpytorch
 from hdpgpc.GPI_models_pytorch import ExactGPModel, ProjectedGPModel, VarProjectedGPModel
 from hdpgpc.util_plots import print_hyperparams
 from tqdm import trange
+
 torch.set_default_dtype(torch.float64)
 
 
@@ -24,7 +25,7 @@ torch.set_default_dtype(torch.float64)
 # sklearn gaussian_process class.
 class IterativeGaussianProcess():
     """Gaussian Process from an iterative point of view, can compute posterior and
-    update them recursively from new observations. It works by storing the posterior distribution 
+    update them recursively from new observations. It works by storing the posterior distribution
     and mixing a standard GP of 0 mean and kernel covariance function with posterior
     mean and posterior covariance between inputs.
 
@@ -130,25 +131,25 @@ class IterativeGaussianProcess():
             K_cov = id
         else:
             K_cov = torch.linalg.solve((K_X_X + jitter).T, K_Xs_X.T).T
-        P_t = torch.linalg.multi_dot([A, x_basis_cov, A.T]) + Gamma
+        P_t = A @ x_basis_cov @ A.T + Gamma
         # First step where initial covariance is needed as a prior, using initial Sigma computed by the GP optim.
         if torch.equal(cov_prior, K_X_X):
             P_t = x_basis_cov
             f_star = torch.zeros(x_warped.shape, device=self.device)
             cov_f = (self.cond_to_torch(self.kernel(x_train)) - self.cond_to_torch(self.kernel(x_train, x_train))) / h
         else:
-            mean = torch.matmul(C, x_basis_mean)
+            mean = C @ x_basis_mean
             f_star, cov_f = self.pred_dist(x_warped, self.x_basis, mean, Sigma)
         # Forward equations of Kalman.
-        K_t = torch.linalg.solve((torch.linalg.multi_dot([K_cov, C, P_t, C.T, K_cov.T]) + cov_f).T,
-                                 torch.linalg.multi_dot([K_cov, C, P_t.T])).T
-        mean_post = x_basis_mean + torch.matmul(K_t, (y - f_star))
+        KC = K_cov @ C
+        K_t = torch.linalg.solve((KC @ P_t @ KC.T + cov_f).T,
+                                 (KC @ P_t.T)).T
+        mean_post = x_basis_mean + K_t @ (y - f_star)
         # Joshep form
-        cov_post = torch.linalg.multi_dot([id - torch.linalg.multi_dot([K_t, K_cov, C]), P_t,
-                                           (id - torch.linalg.multi_dot([K_t, K_cov, C])).T]) \
-                                            + torch.linalg.multi_dot([K_t, cov_f, K_t.T])
+        IKC = id - K_t @ KC
+        cov_post = IKC @ P_t @ IKC.T + K_t @ cov_f @ K_t.T
         return mean_post, cov_post
-    
+
     def projection_matrix(self, x_basis=None, x_train=None):
         """Compute projection matrix using the optimised GP:
             K_t = K_{t,t_n}K_{t_n,t_n}^{-1}
@@ -190,7 +191,7 @@ class IterativeGaussianProcess():
             K_nn_inv = torch.linalg.solve(K_nn.T, K_mn.T).T
         return K_nn_inv
 
-    def project_y(self, x_train, y, cov, C, Sigma, x_basis = None):
+    def project_y(self, x_train, y, cov, C, Sigma, x_basis=None):
         """
         Compute projection of observations into basis dimension.
 
@@ -260,9 +261,11 @@ class IterativeGaussianProcess():
         """
         T = len(means)
         for t in trange(T - 2, -1, -1, desc="Backward_pass", disable=self.disable):
-            P_t = torch.linalg.multi_dot([A_prior[t], covars[t], A_prior[t].T]) + Gamma_prior[t]
-            J_t = torch.matmul(torch.matmul(covars[t],A_prior[t].T),torch.linalg.inv(P_t))
-            means[t] = means[t] + torch.matmul(J_t, (means[t + 1] - torch.matmul(A_prior[t], means[t])))
+            A_prior_ = A_prior[t] if t < len(A_prior) else A_prior[-1]
+            Gamma_prior_ = Gamma_prior[t] if t < len(Gamma_prior) else Gamma_prior[-1]
+            P_t = torch.linalg.multi_dot([A_prior_, covars[t], A_prior_.T]) + Gamma_prior_
+            J_t = torch.matmul(torch.matmul(covars[t], A_prior_.T), torch.linalg.inv(P_t))
+            means[t] = means[t] + torch.matmul(J_t, (means[t + 1] - torch.matmul(A_prior_, means[t])))
             covars[t] = covars[t] + torch.linalg.multi_dot([J_t, (covars[t + 1] - P_t), J_t.T])
         return means, covars
 
@@ -452,74 +455,61 @@ class IterativeGaussianProcess():
         return A_new, Gamma_new, C_new, Sigma_new
 
     def pred_dist(self, x_post, x_fixed, mean_prior, Sigma):
-        """Compute posterior distribution using prior given and over a domain X of x_post.
-            It also defines likelihood of y targets.
-        Parameters
-        ----------
-        x_post : array-like of shape (m_samples) target inputs.
-
-        Returns
-        -------
-        self : returns an instance of self.
-        """
         x_post_mean = self.compute_mean(x_post)
         x_train_mean = self.compute_mean(x_fixed)
         x_f = x_fixed
         x_p = x_post
+
         if torch.cuda.is_available() and self.cuda:
             x_f = x_f.cpu()
             x_p = x_p.cpu()
+
         if torch.equal(x_f, x_p):
-            f_star = mean_prior
-            cov_f = Sigma
+            return mean_prior, Sigma
+
+        ker = self.kernel.clone_with_theta(self.kernel.theta)
+        x_f_np = self.cond_to_numpy(x_f)
+        x_p_np = self.cond_to_numpy(x_p)
+
+        K_X_X = self.cond_to_torch(ker(x_f_np, x_f_np))
+        K_X_Xs = self.cond_to_torch(ker(x_f_np, x_p_np))
+        K_Xs_Xs = self.cond_to_torch(self.kernel(x_p_np))
+
+        if torch.cuda.is_available() and self.cuda:
+            K_X_X = K_X_X.cuda()
+            K_X_Xs = K_X_Xs.cuda()
+            K_Xs_Xs = K_Xs_Xs.cuda()
+
+        n = K_X_X.shape[0]
+        m = K_Xs_Xs.shape[0]
+        id_n = torch.eye(n, device=K_X_X.device, dtype=K_X_X.dtype)
+        id_m = torch.eye(m, device=K_Xs_Xs.device, dtype=K_Xs_Xs.dtype)
+
+        jitter = 1e-4 * torch.mean(torch.diag(Sigma).abs()).clamp_min(torch.finfo(Sigma.dtype).eps)
+        L = torch.linalg.cholesky(0.5 * (K_X_X + K_X_X.T) + jitter * id_n)
+
+        # Solve K^{-1} K_X_Xs
+        K_solve = torch.cholesky_solve(K_X_Xs, L)  # (n,m)
+
+        delta = mean_prior - x_train_mean
+        f_star = x_post_mean + K_solve.T @ delta
+
+        if torch.all(torch.isclose(torch.diag(Sigma), torch.mean(torch.diag(Sigma)))):
+            cov_f = torch.mean(torch.diag(Sigma)) * id_m
         else:
-            ker = self.kernel.clone_with_theta(self.kernel.theta)
-            x_f = self.cond_to_numpy(x_f)
-            x_p = self.cond_to_numpy(x_p)
-            K_X_X = self.cond_to_torch(ker(x_f, x_f))
-            id = torch.eye(K_X_X.shape[0])
-            id_Xs = torch.eye(x_p.shape[0])
-            if torch.cuda.is_available() and self.cuda:
-                id = id.cuda()
-                id_Xs = id_Xs.cuda()
-            K_X_Xs = self.cond_to_torch(ker(x_f, x_p))
-            K_Xs_X = self.cond_to_torch(ker(x_p, x_f))
-            K_Xs_Xs = self.cond_to_torch(self.kernel(x_p))
-            if torch.cuda.is_available() and self.cuda:
-                K_X_X = K_X_X.cuda()
-                K_X_Xs = K_X_Xs.cuda()
-                K_Xs_X = K_Xs_X.cuda()
-                K_Xs_Xs = K_Xs_Xs.cuda()
-            jitter = 1e-4 * torch.mean(torch.diag(Sigma)) * id
-            cov = K_X_X + jitter
-            cov_inv = torch.linalg.solve(cov.T,K_X_Xs).T
-            f_star = x_post_mean + torch.linalg.multi_dot([cov_inv, (mean_prior - x_train_mean)])
-            if torch.all(torch.isclose(torch.diag(Sigma), torch.mean(torch.diag(Sigma)))):
-                cov_f = torch.mean(torch.diag(Sigma)) * id_Xs
-            else:
-                cov_f = K_Xs_Xs - torch.linalg.multi_dot([cov_inv, K_X_Xs]) + \
-                        torch.linalg.multi_dot([cov_inv, Sigma, cov_inv.T])
-                cov_f = cov_f + 1e-6 * id_Xs
-                while torch.any(torch.diag(cov_f) < 0.0):
-                    cov_f = cov_f + 1e-2 * torch.mean(torch.diag(Sigma)) * id_Xs
-                    print("Error: negative diagonal")
+            cov_f = K_Xs_Xs - K_X_Xs.T @ K_solve + K_solve.T @ Sigma @ K_solve
+            cov_f = 0.5 * (cov_f + cov_f.T) + 1e-6 * id_m
+
         return f_star, cov_f
 
     def pred_latent_dist(self, x_post, x_fixed, mean_prior, cov_prior):
-        """Compute posterior distribution using prior given and over a domain X of x_post.
-            It also defines likelihood of y targets.
-        Parameters
-        ----------
-        x_post : array-like of shape (m_samples) target inputs.
-
-        Returns
-        -------
-        self : returns an instance of self.
-        """
+        """Compute posterior latent distribution using a Cholesky-based solve."""
         x_post_mean = self.compute_mean(x_post)
         x_train_mean = self.compute_mean(x_fixed)
+
         x_f = x_fixed
         x_p = x_post
+
         if torch.equal(x_f, x_p):
             f_star = mean_prior
             cov_f = cov_prior
@@ -527,28 +517,49 @@ class IterativeGaussianProcess():
             if torch.cuda.is_available() and self.cuda:
                 x_f = x_f.cpu()
                 x_p = x_p.cpu()
+
             x_f = self.cond_to_numpy(x_f)
             x_p = self.cond_to_numpy(x_p)
+
             K_X_X = self.cond_to_torch(self.kernel(x_f, x_f))
-            id = torch.eye(K_X_X.shape[0])
-            if torch.cuda.is_available() and self.cuda:
-                id = id.cuda()
             K_X_Xs = self.cond_to_torch(self.kernel(x_f, x_p))
             K_Xs_X = self.cond_to_torch(self.kernel(x_p, x_f))
             K_Xs_Xs = self.cond_to_torch(self.kernel(x_p, x_p))
+
             if torch.cuda.is_available() and self.cuda:
                 K_X_X = K_X_X.cuda()
                 K_X_Xs = K_X_Xs.cuda()
                 K_Xs_X = K_Xs_X.cuda()
                 K_Xs_Xs = K_Xs_Xs.cuda()
-            jitter = 1e-4 * id
-            cov = K_X_X + jitter
-            cov_inv = torch.linalg.solve(cov, id)
-            f_star = x_post_mean + torch.linalg.multi_dot([K_Xs_X, cov_inv, mean_prior - x_train_mean])
-            cov_f = K_Xs_Xs - torch.linalg.multi_dot([K_Xs_X, cov_inv, K_X_Xs]) + \
-                    torch.linalg.multi_dot([K_Xs_X, cov_inv, cov_prior, cov_inv.T, K_X_Xs])
-        return f_star, cov_f
 
+            eye = torch.eye(K_X_X.shape[0], device=K_X_X.device, dtype=K_X_X.dtype)
+
+            # Same jitter scale as original code
+            cov = K_X_X + 1e-4 * eye
+
+            # Cholesky factorization of cov
+            L = torch.linalg.cholesky(cov)
+
+            delta = mean_prior - x_train_mean
+
+            # f_star = x_post_mean + K_Xs_X @ cov^{-1} @ delta
+            sol_delta = torch.cholesky_solve(delta, L)
+            f_star = x_post_mean + K_Xs_X @ sol_delta
+
+            # term_data = K_Xs_X @ cov^{-1} @ K_X_Xs
+            sol_K = torch.cholesky_solve(K_X_Xs, L)
+            term_data = K_Xs_X @ sol_K
+
+            # term_prior = K_Xs_X @ cov^{-1} @ cov_prior @ cov^{-T} @ K_X_Xs
+            # First solve cov^T Z = K_X_Xs, but since cov is symmetric after jitter,
+            # cov^{-T} = cov^{-1}, so reusing cholesky_solve is consistent here.
+            middle = cov_prior @ sol_K
+            sol_middle = torch.cholesky_solve(middle, L)
+            term_prior = K_Xs_X @ sol_middle
+
+            cov_f = K_Xs_Xs - term_data + term_prior
+
+        return f_star, cov_f
 
     def sample_y(self, f_mean, f_cov, C, Sigma, n_samples=1, random_state=0):
         """Draw samples from Gaussian process and evaluate at X.
@@ -601,7 +612,7 @@ class IterativeGaussianProcess():
          Parameters
         ----------
         x : array (s_array) x train of the example y
-        
+
         y : array (s_array) example y
 
         Returns
@@ -630,7 +641,7 @@ class IterativeGaussianProcess():
             if reduced_points or not torch.equal(x_basis, x_):
                 if not reduced_points:
                     lik = gpytorch.likelihoods.GaussianLikelihood(
-                    noise_constraint=gpytorch.constraints.GreaterThan(alpha_ini_bounds[0]))
+                        noise_constraint=gpytorch.constraints.GreaterThan(alpha_ini_bounds[0]))
                 else:
                     lik = gpytorch.likelihoods.GaussianLikelihood(
                         noise_constraint=gpytorch.constraints.Interval(alpha_ini_bounds[0], alpha_ini_bounds[1]))
@@ -647,10 +658,10 @@ class IterativeGaussianProcess():
             gp.train()
 
             training_iter = 4000
-            
+
             if not reduced_points and not torch.equal(x_basis, x_):
                 optimizer = torch.optim.Adam([{'params': gp.covar_module.base_kernel.parameters(), 'lr': 0.05},
-                                                {'params': gp.likelihood.parameters()}], lr=0.05)
+                                              {'params': gp.likelihood.parameters()}], lr=0.05)
                 training_iter = 2000
             elif hasattr(gp.covar_module, 'inducing_points'):
                 optimizer = torch.optim.Adam([{'params': gp.covar_module.inducing_points, 'lr': 0.1},
@@ -691,23 +702,25 @@ class IterativeGaussianProcess():
 
             if verbose:
                 print_hyperparams(gp, self.cuda)
-                
+
             if type(gp) is ExactGPModel:
                 if hasattr(self.kernel.k1, "k1"):
                     self.kernel.k1.k1.theta = np.log(np.array([gp.covar_module.outputscale.item()]))
                 if hasattr(self.kernel.k1, "k2"):
-                    self.kernel.k1.k2.theta = np.log(np.array([gp.covar_module.base_kernel.lengthscale.item()]))
+                    #self.kernel.k1.k2.theta = np.log(np.array([gp.covar_module.base_kernel.lengthscale.item()]))
+                    self.kernel.k1.k2.theta = np.log(np.array([1.2]))
                 else:
                     self.kernel.k1.theta = np.log(np.array([gp.covar_module.base_kernel.lengthscale.item()]))
                 self.kernel.k2.theta = np.log(np.array([lik.noise.item()]))
             elif type(gp) is ProjectedGPModel:
                 self.x_basis, _ = torch.sort(torch.atleast_2d(x_basis).T, axis=0)
-                #Check if some points collapsed
+                # Check if some points collapsed
                 if reduced_points:
                     x_basis_clean = torch.clone(self.x_basis.detach())
                     collapsed = False
-                    for i in torch.arange(self.x_basis.shape[0]-1):
-                        if self.x_basis[i+1] - self.x_basis[i] < torch.log(gp.covar_module.base_kernel.base_kernel.lengthscale):
+                    for i in torch.arange(self.x_basis.shape[0] - 1):
+                        if self.x_basis[i + 1] - self.x_basis[i] < torch.log(
+                                gp.covar_module.base_kernel.base_kernel.lengthscale):
                             print("Inducing point removed, ", str(self.x_basis[i]))
                             x_basis_clean = x_basis_clean[x_basis_clean != self.x_basis[i]]
                             collapsed = True
@@ -718,9 +731,11 @@ class IterativeGaussianProcess():
                 if hasattr(self.kernel.k1, "k1"):
                     self.kernel.k1.k1.theta = np.log(np.array([gp.covar_module.base_kernel.outputscale.item()]))
                 if hasattr(self.kernel.k1, "k2"):
-                    self.kernel.k1.k2.theta = np.log(np.array([gp.covar_module.base_kernel.base_kernel.lengthscale.item()]))
+                    self.kernel.k1.k2.theta = np.log(
+                        np.array([gp.covar_module.base_kernel.base_kernel.lengthscale.item()]))
                 else:
-                    self.kernel.k1.theta = np.log(np.array([gp.covar_module.base_kernel.base_kernel.lengthscale.item()]))
+                    self.kernel.k1.theta = np.log(
+                        np.array([gp.covar_module.base_kernel.base_kernel.lengthscale.item()]))
                 self.kernel.k2.theta = np.log(np.array([lik.noise.item()]))
             elif type(gp) is VarProjectedGPModel:
                 self.x_basis = torch.clone(torch.sort(gp.variational_strategy.inducing_points, axis=0)[0]).detach()
@@ -891,7 +906,7 @@ class IterativeGaussianProcess():
         Negative scalar, log-likelihood of the model with given parameters.
 
         """
-        #Ensure y is a tensor
+        # Ensure y is a tensor
         if type(y) is list:
             if type(y[0]) is torch.Tensor:
                 y = y
@@ -932,7 +947,7 @@ class IterativeGaussianProcess():
                 for t in range(max(t0, 1), t1):
                     exp_t_t = covars[t] + torch.matmul(means[t], means[t].T)
                     sum_1 = sum_1 - torch.linalg.multi_dot([means[t + 1].T, C_t_inv, means[t + 1]]) \
-                            + 2 * torch.linalg.multi_dot([means[t + 1].T, C_t_inv, C, means[t]])\
+                            + 2 * torch.linalg.multi_dot([means[t + 1].T, C_t_inv, C, means[t]]) \
                             - torch.trace(torch.linalg.multi_dot([C.T, C_t_inv, C, exp_t_t])) - det
                 sum_1 = sum_1 - T * n * np.log(2 * np.pi)
                 sum_1 = 0.5 * sum_1
