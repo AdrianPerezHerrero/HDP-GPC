@@ -1,0 +1,36 @@
+# Thesis-like clean plotting style for runtime figures
+font.family: serif
+font.serif: DejaVu Serif, Times New Roman, Times, STIXGeneral
+mathtext.fontset: stix
+font.size: 12
+axes.titlesize: 15
+axes.labelsize: 13
+axes.titlepad: 8
+axes.linewidth: 0.8
+axes.facecolor: white
+axes.edgecolor: 0.15
+axes.grid: True
+grid.color: 0.85
+grid.linewidth: 0.8
+grid.alpha: 1.0
+grid.linestyle: -
+legend.frameon: True
+legend.framealpha: 0.95
+legend.facecolor: white
+legend.edgecolor: 0.82
+legend.fontsize: 11
+xtick.labelsize: 11
+ytick.labelsize: 11
+xtick.direction: out
+ytick.direction: out
+xtick.major.size: 4
+ytick.major.size: 4
+xtick.major.width: 0.8
+ytick.major.width: 0.8
+lines.linewidth: 2.0
+lines.markersize: 6
+patch.linewidth: 0.8
+figure.facecolor: white
+figure.dpi: 120
+savefig.facecolor: white
+savefig.transparent: False
