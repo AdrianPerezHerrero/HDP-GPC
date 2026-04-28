@@ -108,7 +108,7 @@ class GPI_HDP():
                  check_var=False, bayesian_params=True, cuda=False, inducing_points=False, estimation_limit=None,
                  reestimate_initial_params=False,
                  n_explore_steps=10, free_deg_MNIV=5, share_gp=False, use_snr=True, reduce_outputs=False,
-                 reduce_outputs_ratio=1.0):
+                 reduce_outputs_ratio=1.0, hdp_hyp='balanced'):
         if M is None:
             M = 1
         self.M = M
@@ -270,23 +270,25 @@ class GPI_HDP():
         # startAlpha represent a factor of prior probability of starting state
         # kappa represent the sticky factor of self transition
 
-        #Less clusters scheme
-        # self.gamma = 0.01
-        # self.transAlpha = 0.01
-        # self.startAlpha = 0.01
-        # self.kappa = 0.0
-
-        #Balanced scheme
-        # self.gamma = 1.0
-        # self.transAlpha = 1.0
-        # self.startAlpha = 0.1
-        # self.kappa = 0.0
-
-        #More clusters scheme
-        self.gamma = 10.0
-        self.transAlpha = 10.0
-        self.startAlpha = 1.0
-        self.kappa = 0.0
+        # HDP Hyperparams
+        if hdp_hyp == 'less':
+            # Less clusters scheme
+            self.gamma = 0.01
+            self.transAlpha = 0.01
+            self.startAlpha = 0.01
+            self.kappa = 0.0
+        elif hdp_hyp == 'balanced':
+            #Balanced scheme
+            self.gamma = 1.0
+            self.transAlpha = 1.0
+            self.startAlpha = 0.1
+            self.kappa = 0.0
+        elif hdp_hyp == 'more':
+            #More clusters scheme
+            self.gamma = 10.0
+            self.transAlpha = 10.0
+            self.startAlpha = 1.0
+            self.kappa = 0.0
 
         # Model associated with each state
         # Default hyperparameters of GP defining the model.
@@ -735,7 +737,10 @@ class GPI_HDP():
             snr_comp = SignalNoiseRatio()
             for t in range(y_trains.shape[0]):
                 j = np.min([np.max([gp.find_closest_lower(t), 1]), len(gp.f_star_sm) - 1])
-                snr[t] = snr_comp(y_trains[t], gp.f_star_sm[j].T[0])
+                if self.inducing_points:
+                    snr[t] = snr_comp(y_trains[t], gp.resample_latent_mean(self.x_train[-1], t=j)[0].T[0])
+                else:
+                    snr[t] = snr_comp(y_trains[t], gp.f_star_sm[j].T[0])
             # snr = torch.tensor([0.5] * y_trains.shape[0])
             return snr
         else:
@@ -2123,7 +2128,7 @@ class GPI_HDP():
             self.trans_A = transPi
         else:
             if force_model is None:
-                resp, respPair, q_chos, q_lat_chos = self.reorder(resp, respPair, q_chos, q_lat_chos)
+                resp, respPair, q_chos, q_lat_chos, reorder = self.reorder(resp, respPair, q_chos, q_lat_chos)
             startStateCount = resp[0, :M]
             transStateCount = torch.sum(respPair[:, :M, :M], axis=0)
             if M > 2:
@@ -2452,7 +2457,7 @@ class GPI_HDP():
                 prov_gp.include_weighted_sample(t, self.x_train[-1], self.x_train[-1], y_birth, 1.0)
                 # q_lat for a new model is non-zero only at t (indexes contains only t) :contentReference[oaicite:7]{index=7}
                 if self.model_type_def == 'dynamic':
-                    q_lat_prev[:, -1, ld] = self._update_q_lat_tail(prov_gp, q_lat_prev[:, -1, ld], [t], h_ini=0.5)
+                    q_lat_prev[:, -1, ld] = self._update_q_lat_tail(prov_gp, q_lat_prev[:, -1, ld], [t], h_ini=0.5) * 5.0
 
                 prov_gps.append(prov_gp)
 
