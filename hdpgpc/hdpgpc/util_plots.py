@@ -722,7 +722,7 @@ def plot_MDS_plotly(sw_gp, main_model, labels, N_0, lead=0, save=None):
         plt.show()
 
 
-def plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, N_0, save=None, lead=0, step=0.1, plot_latent=False, ticks=False):
+def plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, N_0, save=None, lead=0, step=0.1, plot_latent=False, ticks=False, y_share=False):
     num_models = len(selected_gpmodels)
     num_cols = int(np.ceil(np.sqrt(num_models)))
     num_rows = int(np.ceil(num_models / num_cols))
@@ -773,6 +773,21 @@ def plot_models_plotly(sw_gp, selected_gpmodels, main_model, labels, N_0, save=N
 
         ax.set_title(f"ECG CLUSTER {m + 1} ({main_model[m]})")
         #ax.grid(True)
+    if y_share:
+        y_all = sw_gp.y_train[:, :, lead]
+
+        if isinstance(y_all, torch.Tensor):
+            y_all = y_all.detach().cpu().numpy()
+        else:
+            y_all = np.asarray(y_all)
+
+        y_min = float(np.nanmin(y_all))
+        y_max = float(np.nanmax(y_all))
+
+        pad = 0.05 * (y_max - y_min) if y_max > y_min else 1.0
+
+        for ax in fig.get_axes():
+            ax.set_ylim(y_min - pad, y_max + pad)
 
     if not ticks:
         for ax in fig.get_axes():
