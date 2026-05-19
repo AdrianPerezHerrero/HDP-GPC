@@ -1306,7 +1306,31 @@ class GPI_HDP():
                     print("Reallocating beats into existing groups.")
                     reallocate = True
                     self.gpmodels = gpmodels_temp
-                    self.f_ind_old = f_ind_old[reorder]
+                    f_ind_old_new = torch.full_like(f_ind_old, -1)
+                    used_representers = set()
+
+                    for k in range(M):
+                        # Samples assigned to cluster k
+                        indexes_k = torch.where(resp_temp[:, k] == 1.0)[0]
+
+                        # Rank candidates by weight, best first
+                        order = torch.argsort(self.weight_mean(q_simple, snr_aux)[indexes_k, k], descending=True)
+                        sorted_candidates = indexes_k[order]
+
+                        candidate = None
+                        for idx in sorted_candidates:
+                            idx_val = int(idx.item())
+                            if idx_val not in used_representers:
+                                candidate = idx_val
+                                break
+
+                        # Fallback if all candidates were already used
+                        if candidate is None:
+                            candidate = int(sorted_candidates[0].item())
+
+                        f_ind_old_new[k] = candidate
+                        used_representers.add(candidate)
+                    self.f_ind_old = torch.clone(f_ind_old_new)
                     if update_snr:
                         self.snr_norm = self.normalize_snr(snr_aux)
                     else:
