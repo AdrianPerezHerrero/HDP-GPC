@@ -483,7 +483,7 @@ class GPI_model():
             log_lik_A_Gam = int_params.log_likelihood_MNIW(A_, Gam_, n0)
         obs_params = matrix_normal_inv_wishart(ini_C, torch.eye(ini_C.shape[0], device=self.device), self.free_deg_MNIV, ini_Sigma)
         elb_LDS = elb_LDS + log_lik_A_Gam + obs_params.log_likelihood_MNIW(C_, Sig_, n0)
-        return elb_LDS / ini_A.shape[0] * 100
+        return elb_LDS / ini_A.shape[0] #* 100
 
     def compute_sq_err_all(self, x_trains, y_trains, no_first=False):
         """Method to compute the squared error over all provided examples y_trains."""

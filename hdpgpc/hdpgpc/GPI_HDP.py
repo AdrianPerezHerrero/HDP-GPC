@@ -271,7 +271,13 @@ class GPI_HDP():
         # kappa represent the sticky factor of self transition
 
         # HDP Hyperparams
-        if hdp_hyp == 'less':
+        if hdp_hyp == 'min':
+            # Less clusters scheme
+            self.gamma = 0.001
+            self.transAlpha = 0.001
+            self.startAlpha = 0.001
+            self.kappa = 0.0
+        elif hdp_hyp == 'less':
             # Less clusters scheme
             self.gamma = 0.01
             self.transAlpha = 0.01
