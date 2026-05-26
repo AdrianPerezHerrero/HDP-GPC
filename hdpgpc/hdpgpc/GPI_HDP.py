@@ -1455,9 +1455,11 @@ class GPI_HDP():
                     reorder = torch.argsort(resp_per_group_temp, descending=True)
                     self.f_ind_old = self.f_ind_old[reorder]
                     return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, reallocate
+                elif torch.sum(resp[torch.where(resp == 1.0)[0]], axis=0)[-1] == 0.0:
+                    print("Empty group detected")
+                    empty_estimation = True
                 else:
                     print("Bad estimation")
-                    empty_estimation = True
         # f_ind_new_potential = torch.argsort(self.weight_mean(q_simple)[torch.where(resp == 1.0)])
         q_sim_s = self.weight_mean(q_simple)[torch.where(resp == 1.0)]
         q_sim_s = (q_sim_s - torch.max(q_sim_s)) / (torch.max(q_sim_s) - torch.min(q_sim_s))
@@ -2202,6 +2204,7 @@ class GPI_HDP():
         # for ld in range(self.n_outputs):
         #     q_[:,:,ld] = self.compute_q(y=y_mod, gpmodels=self.gpmodels[ld], ld=ld)
         self.resp_assigned.append(torch.argmax(resp, axis=1))
+        self.labels.append(np.where(self.resp_assigned[-1]))
         self.q.append(q_chos)
         for ld in range(self.n_outputs):
             if len(self.gpmodels[ld][model].indexes) > 1 and self.warp_updating[model] and with_warp:
