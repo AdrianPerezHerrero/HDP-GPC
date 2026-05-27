@@ -415,9 +415,9 @@ class GPI_model():
             self.f_star_sm = [torch.clone(self.f_star[0]),torch.clone(self.f_star[-1])]
             self.cov_f = [self.cov_f[0],self.cov_f[-1]]
             self.cov_f_sm = [self.cov_f_sm[0],self.cov_f_sm[-1]]
-            self.y_train = []
-            self.x_train = []
             if not save_index:
+                self.y_train = []
+                self.x_train = []
                 self.indexes = [0]
 
         else:

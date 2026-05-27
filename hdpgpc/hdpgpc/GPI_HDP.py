@@ -283,9 +283,9 @@ class GPI_HDP():
         # self.kappa = 0.0
 
         #More clusters scheme
-        self.gamma = 10.0
-        self.transAlpha = 10.0
-        self.startAlpha = 1.0
+        self.gamma = 100.0
+        self.transAlpha = 100.0
+        self.startAlpha = 10.0
         self.kappa = 0.0
 
         # Model associated with each state
