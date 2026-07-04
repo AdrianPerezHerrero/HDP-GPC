@@ -1766,30 +1766,32 @@ class GPI_HDP():
                             self.y_w = y_trains_w
                             self.y_train = self.select_assigned_warp(y_trains_w, resp_temp)
                             f_ind_old_new = torch.full_like(f_ind_old, -1)
-                            used_representers = set()
-
-                            for k in range(M):
-                                # Samples assigned to cluster k
-                                indexes_k = torch.where(resp_temp[:, k] == 1.0)[0]
-
-                                # Rank candidates by weight, best first
-                                order = torch.argsort(self.weight_mean(q_simple_, snr_aux)[indexes_k, k],
-                                                      descending=True)
-                                sorted_candidates = indexes_k[order]
-
-                                candidate = None
-                                for idx in sorted_candidates:
-                                    idx_val = int(idx.item())
-                                    if idx_val not in used_representers:
-                                        candidate = idx_val
-                                        break
-
-                                # Fallback if all candidates were already used
-                                if candidate is None:
-                                    candidate = int(sorted_candidates[0].item())
-
-                                f_ind_old_new[k] = candidate
-                                used_representers.add(candidate)
+                            f_ind_old_new[:-1] = f_ind_old[:-1]
+                            f_ind_old_new[-1] = torch.where(resp_temp[:, -1] == 1.0)[0][0]
+                            # used_representers = set()
+                            #
+                            # for k in range(M):
+                            #     # Samples assigned to cluster k
+                            #     indexes_k = torch.where(resp_temp[:, k] == 1.0)[0]
+                            #
+                            #     # Rank candidates by weight, best first
+                            #     order = torch.argsort(self.weight_mean(q_simple_, snr_aux)[indexes_k, k],
+                            #                           descending=True)
+                            #     sorted_candidates = indexes_k[order]
+                            #
+                            #     candidate = None
+                            #     for idx in sorted_candidates:
+                            #         idx_val = int(idx.item())
+                            #         if idx_val not in used_representers:
+                            #             candidate = idx_val
+                            #             break
+                            #
+                            #     # Fallback if all candidates were already used
+                            #     if candidate is None:
+                            #         candidate = int(sorted_candidates[0].item())
+                            #
+                            #     f_ind_old_new[k] = candidate
+                            #     used_representers.add(candidate)
                             self.f_ind_old = torch.clone(f_ind_old_new)
                             if update_snr:
                                 self.snr_norm = self.normalize_snr(snr_aux)
@@ -1838,7 +1840,7 @@ class GPI_HDP():
             print(
                 f"Q_em: {q_bas.item():.2f}, Q_lat: {elbo_latent.item():.2f}, Elbo_linear: {elbo_bas:.2f}, Elbo_LDS: {elbo_bas_LDS.item():.2f}")
         if self.hmm_switch:
-            elbo_bas = elbo_bas + elbo_bas_LDS + elbo_latent
+            elbo_bas = elbo_bas + elbo_latent #+ elbo_bas_LDS
         else:
             elbo_bas = elbo_latent
         return q_bas, elbo_bas
