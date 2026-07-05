@@ -3,43 +3,8 @@
 """
 Extract an ordered HDP-GPC wave-spectra transition subdataset.
 
-This script reads a labelled HDP-GPC NetCDF file, such as
-
-    ds_hdpgpc_2017_2018_combined.nc
-
-and extracts an artificial ordered sequence formed by:
-
-    1. n samples from cluster_from, preserving their original order;
-    2. n samples from cluster_to, preserving their original order.
-
-The intended use is to build a small sequence in which the morphology moves
-from one wave-spectral regime to another, for example from cluster 2 to
-cluster 4 when both are similar but differ mainly by directional rotation.
-
-The output dataset uses a new dimension called `sample`, while preserving the
-original timestamp and original position in the source file.
-
-Example
--------
-python extract_hdpgpc_rotation_transition.py \
-    --input-nc ./hdpgpc_wave_results/ds_hdpgpc_2017_2018_combined.nc \
-    --output-nc ./hdpgpc_wave_results/rotation_transition_c2_c4.nc \
-    --output-csv ./hdpgpc_wave_results/rotation_transition_c2_c4_metadata.csv \
-    --cluster-from 2 \
-    --cluster-to 4 \
-    --n-per-cluster 100
-
-If you want the script to search for a pair of 100-sample windows whose
-frequency spectra are similar but whose directional distributions are rotated,
-add:
-
-    --auto-match-windows
-
-By default, "consecutive" means consecutive occurrences after filtering by
-cluster label, not necessarily consecutive calendar-time samples. This usually
-works better for wave-regime data, because cluster assignments often alternate.
-Use --require-temporal-contiguity only if you need strict uninterrupted runs in
-the original time series.
+This version adds an animated GIF of the ordered spectra across the selected
+samples. The GIF is saved after the NetCDF, NumPy array, and diagnostic plot.
 """
 
 from __future__ import annotations
@@ -52,6 +17,9 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 import matplotlib.pyplot as plt
+from matplotlib import animation
+from matplotlib.colors import Normalize
+from matplotlib.cm import ScalarMappable
 
 
 def _find_label_variable(ds: xr.Dataset, preferred: str = "cluster_label") -> str:
@@ -96,14 +64,6 @@ def select_order_preserving_cluster_samples(
 ) -> np.ndarray:
     """
     Select n samples from a cluster while preserving original order.
-
-    If require_temporal_contiguity is False, the function selects consecutive
-    occurrences after filtering by the cluster label. For example, if cluster 2
-    appears at original positions [4, 9, 13, 20, ...], the returned indices are
-    the first n positions of that ordered list, unless occurrence_start is set.
-
-    If require_temporal_contiguity is True, the function requires a strict run
-    of n adjacent time indices all assigned to cluster_id.
     """
     labels = np.asarray(labels, dtype=int).reshape(-1)
 
@@ -185,14 +145,6 @@ def _mean_direction_signature(ds: xr.Dataset, idx: np.ndarray) -> np.ndarray:
 def circular_shift_distance(a: np.ndarray, b: np.ndarray) -> Tuple[float, int]:
     """
     Minimum L1 distance between two circular direction signatures after shifting b.
-
-    Returns
-    -------
-    distance : float
-        Minimum L1 distance.
-    shift_bins : int
-        Number of bins by which b must be rolled to best match a.
-        Positive values correspond to np.roll(b, shift_bins).
     """
     a = _normalise(a)
     b = _normalise(b)
@@ -258,15 +210,6 @@ def auto_match_cluster_windows(
     """
     Choose two order-preserving cluster windows that are frequency-similar and
     directionally rotation-related.
-
-    The score is
-
-        frequency_weight * L1(freq_from, freq_to)
-        +
-        rotation_weight * circular_L1(dir_from, dir_to)
-
-    where circular_L1 is computed after allowing a circular shift of the second
-    directional signature. Lower is better.
     """
     labels = np.asarray(labels, dtype=int).reshape(-1)
 
@@ -337,10 +280,6 @@ def build_transition_dataset(
 ) -> xr.Dataset:
     """
     Build the ordered transition dataset.
-
-    Output order:
-        sample 0 ... n-1: cluster_from
-        sample n ... 2n-1: cluster_to
     """
     ds = ds_labeled.sortby("time")
     labels = ds[label_var].values.astype(int).reshape(-1)
@@ -451,7 +390,6 @@ def build_transition_dataset(
     return ds_seq
 
 
-
 def _axis_edges_from_centers(values: np.ndarray) -> np.ndarray:
     """Build plotting edges from regularly or irregularly spaced bin centres."""
     values = np.asarray(values, dtype=float)
@@ -470,8 +408,6 @@ def _direction_edges_deg(directions: np.ndarray) -> np.ndarray:
     if directions.ndim != 1 or directions.size < 2:
         raise ValueError("Need at least two directions to build angular edges.")
 
-    # Most NDBC reconstructions use a regular 0, 10, ..., 350 grid.  This also
-    # works for shifted regular grids.
     spacing = float(np.nanmedian(np.diff(np.sort(directions))))
     return np.r_[directions - 0.5 * spacing, directions[-1] + 0.5 * spacing]
 
@@ -525,10 +461,6 @@ def _sample_dominant_direction_series(ds_seq: xr.Dataset) -> np.ndarray:
 def _sample_direction_resultant_series(ds_seq: xr.Dataset) -> Tuple[np.ndarray, np.ndarray]:
     """
     Circular mean direction and resultant length per sample.
-
-    The resultant length is a rough concentration measure: values close to 1
-    indicate a concentrated directional distribution; values close to 0 indicate
-    broad or multi-directional energy.
     """
     dir_energy = np.asarray(ds_seq["efth"].sum(dim="freq").values, dtype=float)
     directions = np.deg2rad(np.asarray(ds_seq["dir"].values, dtype=float))
@@ -546,6 +478,119 @@ def _sample_direction_resultant_series(ds_seq: xr.Dataset) -> Tuple[np.ndarray, 
     mean_dir[total <= 0.0] = np.nan
     resultant[total <= 0.0] = np.nan
     return mean_dir, resultant
+
+
+
+def _direction_range_mask(direction_deg: np.ndarray, min_deg: float, max_deg: float) -> np.ndarray:
+    """
+    Return a mask for directions inside [min_deg, max_deg] on the circle.
+
+    The usual case min_deg <= max_deg keeps min_deg <= direction <= max_deg.
+    If the interval crosses 360 degrees, for example [300, 60], the mask keeps
+    direction >= 300 or direction <= 60.
+    """
+    direction = np.asarray(direction_deg, dtype=float) % 360.0
+    lo = float(min_deg) % 360.0
+    hi = float(max_deg) % 360.0
+
+    if lo <= hi:
+        return (direction >= lo) & (direction <= hi)
+    return (direction >= lo) | (direction <= hi)
+
+
+def sort_and_filter_by_direction(
+    ds_seq: xr.Dataset,
+    min_deg: float = 90.0,
+    max_deg: float = 180.0,
+    metric: str = "mean",
+) -> xr.Dataset:
+    """
+    Sort selected observations by direction and keep only a direction interval.
+
+    The filter is applied after the 2*n_per_cluster transition dataset has been
+    built. By default, it keeps only spectra whose sample-wise circular mean
+    direction lies between 90 and 180 degrees, then sorts the retained spectra
+    by that direction.
+
+    Parameters
+    ----------
+    ds_seq:
+        Extracted transition dataset with dimensions sample, freq, dir.
+    min_deg, max_deg:
+        Inclusive direction range in degrees. Circular ranges that cross 360
+        degrees are supported.
+    metric:
+        "mean" uses the circular mean direction from the frequency-integrated
+        directional spectrum. "dominant" uses the direction bin with maximum
+        frequency-integrated energy.
+    """
+    if "sample" not in ds_seq.dims:
+        raise ValueError("Direction filtering expects the extracted dataset with dimension `sample`.")
+    if "efth" not in ds_seq.variables:
+        raise ValueError("Direction filtering expects variable `efth` in the dataset.")
+
+    metric = metric.lower().strip()
+    if metric == "mean":
+        direction_deg, resultant = _sample_direction_resultant_series(ds_seq)
+    elif metric == "dominant":
+        direction_deg = _sample_dominant_direction_series(ds_seq)
+        resultant = np.full_like(direction_deg, np.nan, dtype=float)
+    else:
+        raise ValueError("metric must be either 'mean' or 'dominant'.")
+
+    valid = np.isfinite(direction_deg)
+    in_range = _direction_range_mask(direction_deg, min_deg=min_deg, max_deg=max_deg)
+    keep_idx = np.flatnonzero(valid & in_range)
+
+    if keep_idx.size == 0:
+        raise ValueError(
+            f"No samples remain after filtering by {metric} direction in "
+            f"[{min_deg}, {max_deg}] degrees."
+        )
+
+    # Sort circularly relative to min_deg. For the default [90, 180] this is the
+    # same as ordinary ascending direction, but this also works for intervals
+    # that cross 0/360 degrees.
+    sort_key = (direction_deg[keep_idx] - float(min_deg)) % 360.0
+    sorted_keep_idx = keep_idx[np.argsort(sort_key)]
+
+    old_sample = np.asarray(ds_seq["sample"].values)[sorted_keep_idx]
+    selected_direction = direction_deg[sorted_keep_idx]
+    selected_sort_key = (selected_direction - float(min_deg)) % 360.0
+    selected_resultant = resultant[sorted_keep_idx]
+
+    ds_filtered = ds_seq.isel(sample=sorted_keep_idx).copy()
+    ds_filtered = ds_filtered.assign_coords(sample=np.arange(sorted_keep_idx.size, dtype=int))
+
+    ds_filtered["pre_direction_filter_sample"] = ("sample", old_sample.astype(int, copy=False))
+    ds_filtered["direction_for_filter_deg"] = ("sample", selected_direction.astype(float, copy=False))
+    ds_filtered["direction_filter_sort_key_deg"] = ("sample", selected_sort_key.astype(float, copy=False))
+    if metric == "mean":
+        ds_filtered["direction_resultant_length"] = ("sample", selected_resultant.astype(float, copy=False))
+
+    ds_filtered.attrs.update({
+        "direction_filter_applied": "true",
+        "direction_filter_metric": metric,
+        "direction_filter_min_deg": float(min_deg),
+        "direction_filter_max_deg": float(max_deg),
+        "direction_filter_input_samples": int(ds_seq.sizes["sample"]),
+        "direction_filter_output_samples": int(ds_filtered.sizes["sample"]),
+        "direction_filter_sorted": "true",
+    })
+
+    print("")
+    print("Direction filter")
+    print("----------------")
+    print(f"Metric:         {metric}")
+    print(f"Range:          [{min_deg:.1f}, {max_deg:.1f}] deg")
+    print(f"Input samples:  {ds_seq.sizes['sample']}")
+    print(f"Output samples: {ds_filtered.sizes['sample']}")
+    print(
+        "Direction span: "
+        f"{np.nanmin(selected_direction):.1f} to {np.nanmax(selected_direction):.1f} deg"
+    )
+
+    return ds_filtered
 
 
 def _rolling_nanmean(x: np.ndarray, window: int) -> np.ndarray:
@@ -571,14 +616,6 @@ def plot_rotation_diagnostics(
     """
     Save a diagnostic figure to assess whether the selected subdataset is mainly
     affected by a directional rotation.
-
-    The figure contains:
-        1. mean 2D directional spectrum for the first cluster block;
-        2. mean 2D directional spectrum for the second cluster block;
-        3. direction-integrated frequency spectra for both blocks;
-        4. frequency-integrated directional distributions, including the shifted
-           second distribution that best aligns with the first;
-        5. sample-wise dominant/mean direction along the synthetic sequence.
     """
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -599,7 +636,6 @@ def plot_rotation_diagnostics(
     freq = np.asarray(ds_seq["freq"].values, dtype=float)
     directions = np.asarray(ds_seq["dir"].values, dtype=float)
 
-    # Integrated signatures.
     freq_from = np.asarray(ds_from["efth"].sum(dim="dir").mean(dim="sample").values, dtype=float)
     freq_to = np.asarray(ds_to["efth"].sum(dim="dir").mean(dim="sample").values, dtype=float)
     dir_from_raw = np.asarray(ds_from["efth"].sum(dim="freq").mean(dim="sample").values, dtype=float)
@@ -619,7 +655,6 @@ def plot_rotation_diagnostics(
     dom_dir = _sample_dominant_direction_series(ds_seq)
     mean_dir, resultant = _sample_direction_resultant_series(ds_seq)
 
-    # Unwrap for visualising the evolution over the artificial sample index.
     dom_unwrapped = np.rad2deg(np.unwrap(np.deg2rad(dom_dir)))
     mean_unwrapped = np.rad2deg(np.unwrap(np.deg2rad(mean_dir)))
     mean_smooth = _rolling_nanmean(mean_unwrapped, rolling_window)
@@ -647,7 +682,6 @@ def plot_rotation_diagnostics(
     )
     fig.colorbar(mesh1, ax=[ax0, ax1], shrink=0.75, pad=0.08, label="Spectral density")
 
-    # Directional distributions.
     x_dir, y_from = _append_circular_point(directions, dir_from)
     _, y_to = _append_circular_point(directions, dir_to)
     _, y_to_shifted = _append_circular_point(directions, dir_to_shifted)
@@ -667,7 +701,6 @@ def plot_rotation_diagnostics(
     ax2.grid(alpha=0.25)
     ax2.legend(fontsize=8, frameon=False)
 
-    # Frequency marginals.
     ax3.plot(freq, freq_from, label=f"cluster {cluster_from}")
     ax3.plot(freq, freq_to, label=f"cluster {cluster_to}")
     ax3.set_xlabel("Frequency (Hz)")
@@ -676,7 +709,6 @@ def plot_rotation_diagnostics(
     ax3.grid(alpha=0.25)
     ax3.legend(fontsize=8, frameon=False)
 
-    # Sample-wise direction evolution.
     sample = np.asarray(ds_seq["sample"].values, dtype=int)
     ax4.scatter(sample, dom_unwrapped, s=12, alpha=0.45, label="dominant direction")
     ax4.plot(sample, mean_unwrapped, linewidth=1.0, alpha=0.65, label="circular mean direction")
@@ -688,12 +720,6 @@ def plot_rotation_diagnostics(
     ax4.grid(alpha=0.25)
     ax4.legend(fontsize=8, frameon=False, loc="best")
 
-    # # Add a small concentration axis on top of ax4 for context.
-    # ax4b = ax4.twinx()
-    # ax4b.plot(sample, resultant, linewidth=0.8, alpha=0.35, label="directional concentration")
-    # ax4b.set_ylabel("Resultant length")
-    # ax4b.set_ylim(0, 1.05)
-
     fig.suptitle(
         "Rotation diagnostic for extracted HDP-GPC wave-spectra sequence\n"
         f"estimated dominant-direction rotation = {rotation_attr:+.1f}°, "
@@ -704,6 +730,156 @@ def plot_rotation_diagnostics(
 
     fig.tight_layout(rect=(0, 0, 1, 0.93))
     fig.savefig(output_path, dpi=250, bbox_inches="tight")
+    plt.close(fig)
+
+
+# -----------------------------------------------------------------------------
+# Animated GIF of the ordered sequence
+# -----------------------------------------------------------------------------
+
+def plot_ordered_spectra_gif(
+    ds_seq: xr.Dataset,
+    output_path: Path,
+    frame_step: int = 1,
+    fps: int = 6,
+    max_frames: int = 200,
+) -> None:
+    """
+    Save an animated GIF showing the selected spectra in sample order.
+
+    The animation is a polar frequency-direction heatmap. It also overlays:
+      - a white curve with the direction-integrated energy profile;
+      - a dashed line with the sample circular mean direction;
+      - a vertical line marking the transition from cluster_from to cluster_to.
+
+    Parameters
+    ----------
+    ds_seq:
+        Extracted dataset with dimensions sample, freq, dir and variable efth.
+    output_path:
+        GIF file path.
+    frame_step:
+        Use every `frame_step`-th sample.
+    fps:
+        Frames per second of the saved GIF.
+    max_frames:
+        Maximum number of animation frames. If the selected sequence has more
+        frames than this, frames are sampled evenly across the full sequence.
+    """
+    if "sample" not in ds_seq.dims:
+        raise ValueError("GIF plot expects the extracted dataset with dimension `sample`.")
+    if "efth" not in ds_seq.variables:
+        raise ValueError("GIF plot expects variable `efth` in the dataset.")
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    frame_step = max(1, int(frame_step))
+    fps = max(1, int(fps))
+    max_frames = max(1, int(max_frames))
+
+    spectra = (
+        ds_seq["efth"]
+        .transpose("sample", "freq", "dir")
+        .values
+        .astype(float, copy=False)
+    )
+    spectra = np.nan_to_num(spectra, nan=0.0, posinf=0.0, neginf=0.0)
+    spectra[spectra < 0.0] = 0.0
+
+    n_samples = spectra.shape[0]
+    frame_idx = np.arange(0, n_samples, frame_step, dtype=int)
+    if frame_idx.size > max_frames:
+        frame_idx = np.unique(np.linspace(0, n_samples - 1, max_frames, dtype=int))
+
+    freq = np.asarray(ds_seq["freq"].values, dtype=float)
+    directions = np.asarray(ds_seq["dir"].values, dtype=float)
+    theta_centres = np.deg2rad(directions)
+    theta_line = np.r_[theta_centres, theta_centres[0] + 2.0 * np.pi]
+
+    theta_edges = np.deg2rad(_direction_edges_deg(directions))
+    freq_edges = _axis_edges_from_centers(freq)
+    theta_grid, freq_grid = np.meshgrid(theta_edges, freq_edges)
+
+    vmax = float(np.nanpercentile(spectra[frame_idx], 99.5))
+    if not np.isfinite(vmax) or vmax <= 0.0:
+        vmax = 1.0
+    norm = Normalize(vmin=0.0, vmax=vmax)
+
+    mean_dir, resultant = _sample_direction_resultant_series(ds_seq)
+    n_per_cluster = int(ds_seq.attrs.get("n_per_cluster", n_samples // 2))
+    cluster_from = int(ds_seq.attrs.get("cluster_from", -1))
+    cluster_to = int(ds_seq.attrs.get("cluster_to", -1))
+
+    original_times = ds_seq["original_time"].values if "original_time" in ds_seq.coords else None
+    source_cluster = ds_seq["source_cluster"].values if "source_cluster" in ds_seq.variables else None
+
+    fig, ax = plt.subplots(figsize=(6.2, 6.2), subplot_kw={"projection": "polar"})
+    sm = ScalarMappable(norm=norm, cmap="viridis")
+    sm.set_array([])
+    cbar = fig.colorbar(sm, ax=ax, shrink=0.82, pad=0.10)
+    cbar.set_label("Spectral density")
+
+    def _format_time(i: int) -> str:
+        if original_times is None:
+            return ""
+        try:
+            return str(np.datetime_as_string(original_times[i], unit="h"))
+        except Exception:
+            return str(original_times[i])
+
+    def _draw_frame(frame_number: int):
+        sample_i = int(frame_idx[frame_number])
+        spec = spectra[sample_i]
+
+        ax.clear()
+        mesh = ax.pcolormesh(theta_grid, freq_grid, spec, shading="auto", norm=norm, cmap="viridis")
+
+        dir_profile = np.maximum(spec.sum(axis=0), 0.0)
+        if np.nanmax(dir_profile) > 0.0:
+            dir_profile = dir_profile / np.nanmax(dir_profile)
+            r_curve = freq.min() + 0.94 * (freq.max() - freq.min()) * dir_profile
+            ax.plot(theta_line, np.r_[r_curve, r_curve[0]], linewidth=1.6, color="white")
+
+        mu_deg = mean_dir[sample_i]
+        if np.isfinite(mu_deg):
+            mu = np.deg2rad(mu_deg)
+            ax.plot([mu, mu], [freq.min(), freq.max()], linestyle="--", linewidth=1.4, color="white")
+
+        if sample_i < n_per_cluster:
+            phase_txt = f"phase 0 / cluster {cluster_from}"
+        else:
+            phase_txt = f"phase 1 / cluster {cluster_to}"
+
+        if source_cluster is not None:
+            phase_txt = f"cluster {int(source_cluster[sample_i])}"
+
+        time_txt = _format_time(sample_i)
+        subtitle = f"sample {sample_i + 1}/{n_samples} · {phase_txt}"
+        if time_txt:
+            subtitle += f" · {time_txt}"
+
+        if np.isfinite(mu_deg):
+            subtitle += f"\nmean direction={mu_deg:.1f}°, concentration={resultant[sample_i]:.2f}"
+
+        ax.set_theta_zero_location("N")
+        ax.set_theta_direction(-1)
+        ax.set_thetagrids([0, 90, 180, 270], labels=["N", "E", "S", "W"])
+        ax.set_ylim(freq_edges[0], freq_edges[-1])
+        ax.grid(alpha=0.45)
+        ax.set_title(subtitle, fontsize=10, fontweight="bold")
+        return [mesh]
+
+    anim = animation.FuncAnimation(
+        fig,
+        _draw_frame,
+        frames=len(frame_idx),
+        interval=1000.0 / fps,
+        blit=False,
+        repeat=True,
+    )
+    writer = animation.PillowWriter(fps=fps)
+    anim.save(output_path, writer=writer)
     plt.close(fig)
 
 
@@ -723,6 +899,15 @@ def write_metadata_csv(ds_seq: xr.Dataset, output_csv: Path) -> None:
 
     if "wdir" in ds_seq.variables:
         df["wdir"] = np.asarray(ds_seq["wdir"].values).reshape(-1)
+
+    for optional_var in (
+        "pre_direction_filter_sample",
+        "direction_for_filter_deg",
+        "direction_filter_sort_key_deg",
+        "direction_resultant_length",
+    ):
+        if optional_var in ds_seq.variables:
+            df[optional_var] = np.asarray(ds_seq[optional_var].values).reshape(-1)
 
     output_csv.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(output_csv, index=False)
@@ -856,6 +1041,65 @@ def parse_args() -> argparse.Namespace:
         help="Rolling window used to smooth the direction series in the diagnostic plot.",
     )
 
+    parser.add_argument(
+        "--no-direction-filter",
+        action="store_true",
+        help=(
+            "Disable the post-selection direction filter. By default, the "
+            "script sorts the selected spectra by direction and keeps only "
+            "directions between --direction-filter-min and --direction-filter-max."
+        ),
+    )
+    parser.add_argument(
+        "--direction-filter-min",
+        type=float,
+        default=90.0,
+        help="Minimum direction, in degrees, kept by the post-selection filter.",
+    )
+    parser.add_argument(
+        "--direction-filter-max",
+        type=float,
+        default=180.0,
+        help="Maximum direction, in degrees, kept by the post-selection filter.",
+    )
+    parser.add_argument(
+        "--direction-filter-metric",
+        type=str,
+        choices=("mean", "dominant"),
+        default="mean",
+        help=(
+            "Direction statistic used for filtering/sorting: circular mean "
+            "direction or dominant direction bin."
+        ),
+    )
+    parser.add_argument(
+        "--output-gif",
+        type=Path,
+        default=None,
+        help=(
+            "Optional animated GIF path. If omitted, a GIF with suffix "
+            "`_ordered_spectra.gif` is saved next to --output-nc."
+        ),
+    )
+    parser.add_argument(
+        "--gif-step",
+        type=int,
+        default=1,
+        help="Use every N-th selected sample in the GIF.",
+    )
+    parser.add_argument(
+        "--gif-fps",
+        type=int,
+        default=6,
+        help="Frames per second for the ordered spectra GIF.",
+    )
+    parser.add_argument(
+        "--gif-max-frames",
+        type=int,
+        default=200,
+        help="Maximum number of frames in the GIF; frames are sampled evenly if needed.",
+    )
+
     return parser.parse_args()
 
 
@@ -879,6 +1123,14 @@ def main() -> None:
         auto_window_step=args.auto_window_step,
     )
 
+    if not args.no_direction_filter:
+        ds_seq = sort_and_filter_by_direction(
+            ds_seq=ds_seq,
+            min_deg=args.direction_filter_min,
+            max_deg=args.direction_filter_max,
+            metric=args.direction_filter_metric,
+        )
+
     args.output_nc.parent.mkdir(parents=True, exist_ok=True)
     ds_seq.to_netcdf(args.output_nc)
     print(f"\nSaved NetCDF: {args.output_nc}")
@@ -898,6 +1150,19 @@ def main() -> None:
         rolling_window=args.rolling_window,
     )
     print(f"Saved plot:    {output_plot}")
+
+    output_gif = args.output_gif
+    if output_gif is None:
+        output_gif = args.output_nc.with_name(args.output_nc.stem + "_ordered_spectra.gif")
+
+    plot_ordered_spectra_gif(
+        ds_seq=ds_seq,
+        output_path=output_gif,
+        frame_step=args.gif_step,
+        fps=args.gif_fps,
+        max_frames=args.gif_max_frames,
+    )
+    print(f"Saved GIF:     {output_gif}")
 
     if args.output_csv is not None:
         write_metadata_csv(ds_seq, args.output_csv)
