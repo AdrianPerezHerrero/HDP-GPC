@@ -1,6 +1,6 @@
 # HDP-GPC: <i>H</i>ierarchical <i>D</i>irichlet <i>P</i>rocess <i>G</i>aussian <i>P</i>rocess <i>C</i>lustering 
 
-**Version:** v0.1.0 (November 2024)
+**Version:** v0.2.0 (April 2026)
 
 **Authors:**
  - **Adrián Pérez Herrero**: [GitHub Profile](https://github.com/AdrianPerezHerrero) -
