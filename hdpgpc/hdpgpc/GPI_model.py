@@ -10,6 +10,7 @@ import torch
 from tqdm import trange
 import math
 from bisect import bisect_right
+from hdpgpc.lds import expected_residual_scatter
 dtype = torch.float64
 torch.set_default_dtype(dtype)
 
@@ -38,6 +39,7 @@ class GPI_model():
         self.f_star_sm = []
         self.cov_f = []
         self.cov_f_sm = []
+        self.cross_cov_f_sm = []
         self.y_var = []
         self.var = []
         self.A = []
@@ -311,43 +313,35 @@ class GPI_model():
 
     def log_lat_error(self, i, h_ini):
         """Compute the log-squared-error of the latent process."""
-        if i == 0:
-            cov_f_prev = self.cov_f_sm[i + 1]
-            lat_prev = self.f_star_sm[i + 1]
-            Gamma_mat = self.Gamma[-1] * h_ini
-            A = self.A[-1]
-        else:
-            cov_f_prev = self.cov_f_sm[i]
-            lat_prev = self.f_star_sm[i]
-            if i + 1 < len(self.Gamma):
-                Gamma_mat = self.Gamma[i + 1]
-                A = self.A[i + 1]
-            else:
-                Gamma_mat = self.Gamma[-1]
-                A = self.A[-1]
-
+        cov_f_prev = self.cov_f_sm[i]
+        cov_f_cur = self.cov_f_sm[i + 1]
+        lat_prev = self.f_star_sm[i]
         lat_cur = self.f_star_sm[i + 1]
+        param_index = min(i + 1, len(self.Gamma) - 1)
+        Gamma_mat = self.Gamma[param_index] * (h_ini if i == 0 else 1.0)
+        A = self.A[min(param_index, len(self.A) - 1)]
 
         if lat_prev.ndim == 1:
             lat_prev = lat_prev.unsqueeze(-1)
         if lat_cur.ndim == 1:
             lat_cur = lat_cur.unsqueeze(-1)
 
-        resid = lat_cur - A @ lat_prev
+        cross = (
+            self.cross_cov_f_sm[i]
+            if i < len(self.cross_cov_f_sm) and self.cross_cov_f_sm[i] is not None
+            else torch.zeros_like(cov_f_cur)
+        )
+        scatter = expected_residual_scatter(
+            lat_cur, lat_prev, A, cov_f_cur, cov_f_prev, cross
+        )
         Lg = self._chol_spd(Gamma_mat)
-
-        alpha_resid = torch.cholesky_solve(resid, Lg)  # Gamma^{-1} resid
-        Gamma_inv_A = torch.cholesky_solve(A, Lg)  # Gamma^{-1} A
-
-        q = resid.shape[0]
-        mahal = torch.sum(resid * alpha_resid)
-        trace_term = torch.trace(A.T @ Gamma_inv_A @ cov_f_prev)
-
+        q = lat_cur.shape[0]
+        expected_quadratic = torch.trace(torch.cholesky_solve(scatter, Lg))
         logdet = 2.0 * torch.log(torch.diag(Lg)).sum()
         err = (
-            -0.5 * (mahal + trace_term)
+            -0.5 * expected_quadratic
             - 0.5 * logdet
-            - 0.5 * q * self._log2pi(resid)
+            - 0.5 * q * self._log2pi(lat_cur)
         )
         return err
 
@@ -385,8 +379,7 @@ class GPI_model():
         y = self.cond_to_cuda(self.cond_to_torch(y))
         x_train = self.cond_to_cuda(self.cond_to_torch(x_train))
         new_x_basis = self.x_basis
-        #Responsability truncated to 0.9 for stability purposes.
-        if h == 1.0:
+        if h > 0.0:
             if self.N == 0 and not self.fitted:
                 if torch.allclose(torch.from_numpy(self.gp.kernel.theta), torch.from_numpy(self.ini_kernel_theta)):
                     new_x_basis, _ = self.fit_kernel_params(x_train, y, self.Sigma[-1], self.Gamma[-1], valid=True)
@@ -394,23 +387,26 @@ class GPI_model():
                     new_x_basis, _ = self.fit_kernel_params(x_train, y, self.Sigma[-1], self.Gamma[-1], valid=False)
             if snr is not None:
                 if snr > 0.5:
-                    self.include_sample(index, x_train, y, x_warped, h=1.0)
+                    self.include_sample(index, x_train, y, x_warped, h=h)
                 else:
                     self.include_sample(index, x_train, y, x_warped, posterior=False, include_index=True)
             else:
-                self.include_sample(index, x_train, y, x_warped, h=1.0)
+                self.include_sample(index, x_train, y, x_warped, h=h)
         else:
             self.include_sample(index, x_train, y, x_warped, posterior=False)
         return new_x_basis
 
-    def full_pass_weighted(self, x_trains, y_trains, resp, q=None, q_lat=None, snr=None):
+    def full_pass_weighted(self, x_trains, y_trains, resp, q=None, q_lat=None, snr=None,
+                           min_responsibility=None):
         """Full forward pass method used in the offline scheme."""
+        if min_responsibility is None:
+            min_responsibility = getattr(self, "min_responsibility", 1e-4)
         if len(torch.nonzero(self.Gamma[-1])) < 1:
             model_type = 'static'
         else:
             model_type = 'dynamic'
 
-        active = torch.nonzero(resp > 0.99, as_tuple=False).squeeze(1)
+        active = torch.nonzero(resp > min_responsibility, as_tuple=False).squeeze(1)
         if active.numel() == 0:
             return q, q_lat
 
@@ -461,6 +457,32 @@ class GPI_model():
             self.x_train = []
         self.likelihood = []
         self.N = 0
+
+    def start_new_batch(self, *, carry_latent_state=False):
+        """Reset sequence data without discarding learned GP/LDS distributions."""
+        if carry_latent_state:
+            mean = self.f_star_sm[-1].detach().clone()
+            covariance = self.cov_f_sm[-1].detach().clone()
+        else:
+            mean = self.compute_mean().detach().clone()
+            covariance = self.ini_cov_def.detach().clone()
+        self.f_star = [mean]
+        self.f_star_sm = [mean.clone()]
+        self.cov_f = [covariance]
+        self.cov_f_sm = [covariance.clone()]
+        self.cross_cov_f_sm = []
+        self.A = [self.A[-1].detach().clone()]
+        self.Gamma = [self.Gamma[-1].detach().clone()]
+        self.C = [self.C[-1].detach().clone()]
+        self.Sigma = [self.Sigma[-1].detach().clone()]
+        self.var = [torch.atleast_2d(torch.sqrt(torch.diag(self.Gamma[-1]))).T]
+        self.y_var = [torch.atleast_2d(torch.sqrt(torch.diag(self.Sigma[-1]))).T]
+        self.x_train = []
+        self.y_train = []
+        self.indexes = []
+        self.likelihood = []
+        self.N = 0
+        self.cross_cov_f_sm = []
 
 
     def reinit_LDS(self, save_last=False, save_last_diag=False, return_likelihood=False):
@@ -720,37 +742,56 @@ class GPI_model():
             model_type = 'static'
         else:
             model_type = 'dynamic'
-        if h == 1.0:
+        if h > 0.0:
             mean = list(self.f_star[1:])
             covs = list(self.cov_f[1:])
             if model_type == 'dynamic':
-                aux_f_star, aux_cov_f = self.gp.backward(self.A[1:], self.Gamma[1:], mean, covs)
+                aux_f_star, aux_cov_f, cross = self.gp.backward(
+                    self.A[1:], self.Gamma[1:], mean, covs, return_cross=True
+                )
             else:
-                aux_f_star, aux_cov_f = self.gp.backward(self.A[0], self.Gamma[0], mean, covs)
+                aux_f_star, aux_cov_f, cross = self.gp.backward(
+                    self.A[0], self.Gamma[0], mean, covs, return_cross=True
+                )
             for i in range(len(mean)):
                 self.f_star_sm[i + 1] = aux_f_star[i]
                 self.cov_f_sm[i + 1] = aux_cov_f[i]
+            self.cross_cov_f_sm = cross
 
     def backwards_pair(self, h, snr=None):
         """ Fast method to compute the last two backward iterations.
         """
         if len(self.indexes) > 1:
-            if h == 1.0:
+            if h > 0.0:
                 if snr is None:
                     mean = list(self.f_star[-2:])
                     covs = list(self.cov_f[-2:])
-                    aux_f_star, aux_cov_f = self.gp.backward_notrange(self.A[-1], self.Gamma[-1], mean, covs)
+                    aux_f_star, aux_cov_f, cross = self.gp.backward_notrange(
+                        self.A[-1], self.Gamma[-1], mean, covs, return_cross=True
+                    )
                     for i in range(len(mean)):
                         self.f_star_sm[-(i + 1)] = aux_f_star[-(i + 1)]
                         self.cov_f_sm[-(i + 1)] = aux_cov_f[-(i + 1)]
+                    if cross:
+                        if self.cross_cov_f_sm:
+                            self.cross_cov_f_sm[-1] = cross[-1]
+                        else:
+                            self.cross_cov_f_sm = [cross[-1]]
                 else:
                     if snr > 0.5:
                         mean = self.f_star_sm[-2:]
                         covs = self.cov_f_sm[-2:]
-                        aux_f_star, aux_cov_f = self.gp.backward_notrange(self.A[-1], self.Gamma[-1], mean, covs)
+                        aux_f_star, aux_cov_f, cross = self.gp.backward_notrange(
+                            self.A[-1], self.Gamma[-1], mean, covs, return_cross=True
+                        )
                         for i in range(len(mean)):
                             self.f_star_sm[-(i + 1)] = aux_f_star[-(i + 1)]
                             self.cov_f_sm[-(i + 1)] = aux_cov_f[-(i + 1)]
+                        if cross:
+                            if self.cross_cov_f_sm:
+                                self.cross_cov_f_sm[-1] = cross[-1]
+                            else:
+                                self.cross_cov_f_sm = [cross[-1]]
 
     def smoother_weighted(self, x_train, y, h):
         """ Method to compute the conditioned posterior and distribution if a sample is added.
@@ -998,7 +1039,7 @@ class GPI_model():
         """
         if len(torch.nonzero(self.Gamma[-1]))< 1:
             model_type = 'static'
-        if h == 1.0:
+        if h > 0.0:
             if snr > 0.5:
                 if (full_data and 1 < self.N) or 1 < self.N < self.estimation_limit or force:
                     try:
@@ -1014,17 +1055,14 @@ class GPI_model():
                                 #samples_A_ = torch.matmul(A, self.f_star_sm[-2])
                                 cov = self.cov_f_sm[-1]
                                 cov_ = self.cov_f_sm[-2]
-                                cov_f_ = self.cov_f[-1]
-                                cov_f__ = self.cov_f[-2]
                                 P = A @ cov_ @ A.T + Gamma
                                 L_P = self._chol_spd(P)
                                 J = torch.cholesky_solve(A @ cov_.T, L_P).T
-                                cov_cross = J @ cov
-                                cov_cross = 0.5 * (cov_cross + cov_cross.T)
-                                if True:
-                                    cov = torch.zeros(cov.shape, device=cov.device)
-                                    cov_ = torch.zeros(cov.shape, device=cov.device)
-                                    cov_cross = torch.zeros(cov.shape, device=cov.device)
+                                cov_cross = (
+                                    self.cross_cov_f_sm[-1]
+                                    if self.cross_cov_f_sm
+                                    else cov @ J.T
+                                )
                             else:
                                 n_f = min(self.estimation_limit,len(self.f_star_sm)-2) if (
                                         self.estimation_limit != np.PINF) else len(self.f_star_sm)-2
@@ -1032,16 +1070,14 @@ class GPI_model():
                                 samples_A_ = torch.stack(self.f_star_sm[1:n_f+1])[:, :, 0].T
                                 cov = torch.sum(torch.stack(self.cov_f_sm[2:n_f+2]), axis=0)
                                 cov_ = torch.sum(torch.stack(self.cov_f_sm[1:n_f+1]), axis=0)
-                                cov_cross = torch.zeros_like(cov)
-                                A, Gamma = self.A[-1], self.Gamma[-1]
-                                for t in range(n_f + 1):
-                                    P = A @ self.cov_f_sm[t] @ A.T + Gamma
-                                    L_P = self._chol_spd(P)
-                                    J = torch.cholesky_solve(A @ self.cov_f_sm[t].T, L_P).T
-                                    cov_cross = cov_cross + J @ self.cov_f_sm[t + 1]
-                                cov_cross = 0.5 * (cov_cross + cov_cross.T)
+                                available_cross = self.cross_cov_f_sm[:n_f]
+                                cov_cross = (
+                                    torch.sum(torch.stack(available_cross), axis=0)
+                                    if available_cross
+                                    else torch.zeros_like(cov)
+                                )
                             if not full_data:
-                                N_k = 1
+                                N_k = h
                             elif self.estimation_limit != np.PINF:
                                 N_k = self.estimation_limit
                             else:
@@ -1056,18 +1092,17 @@ class GPI_model():
                             new_int_dist = self.internal_params
                         if not full_data:
                             samples_C = self.y_train[-1]
-                            #samples_C_, _ = self.observe_last(self.x_train[-1])
+                            C, Sigma = self.C[-1], self.Sigma[-1]
                             if torch.equal(self.x_basis, self.x_train[-1]):
                                 samples_C_ = self.f_star_sm[-1]
-                                C, Sigma = self.C[-1], self.Sigma[-1]
-                                cov = torch.zeros(Sigma.shape, device=Sigma.device)
-                                cov_ = torch.zeros(cov.shape, device=cov.device)
-                                cov_cross = torch.zeros(cov.shape, device=cov.device)
+                                cov = torch.zeros_like(Sigma)
+                                cov_ = self.cov_f_sm[-1]
+                                cov_cross = torch.zeros_like(cov_)
                             else:
                                 samples_C_, cov = self.resample_latent_mean(self.x_train[-1])
-                                cov = torch.zeros(cov.shape, device=cov.device)
-                                cov_ = torch.zeros(cov.shape, device=cov.device)
-                                cov_cross = torch.zeros(cov.shape, device=cov.device)
+                                cov_ = cov
+                                cov = torch.zeros_like(cov_)
+                                cov_cross = torch.zeros_like(cov_)
                             if model_type == 'static':
                                 samples_C_, _ = self.resample_latent_mean(self.x_train[-1])
                             samples_C_ = self.cond_to_cuda(samples_C_)
@@ -1078,16 +1113,6 @@ class GPI_model():
                             cov = torch.zeros(cov_.shape, device=cov_.device)
                             C, Sigma = self.C[-1], self.Sigma[-1]
                             cov_cross = torch.zeros_like(cov_)
-                            for t in range(n_f + 1):
-                                P = C @ self.cov_f_sm[t] @ C.T + Sigma
-                                L_P = self._chol_spd(P)
-                                J = torch.cholesky_solve(C @ self.cov_f_sm[t].T, L_P).T
-                                cov_cross = cov_cross + J @ Sigma
-                            cov = cov + Sigma
-                            if False:
-                                cov = torch.zeros(cov.shape, device=cov.device)
-                                cov_ = torch.zeros(cov.shape, device=cov.device)
-                                cov_cross = torch.zeros(cov.shape, device=cov.device)
                         if torch.equal(self.x_basis, self.x_train[-1]):
                             project_mat = None
                         else:
@@ -1307,70 +1332,75 @@ class GPI_model():
         self.gp.cuda = False
 
 class matrix_normal_inv_wishart():
-    """ Class to define the Matrix Normal Inverse Wishart distribution (MNIW) for the LDS parameters.
+    """Matrix-normal inverse-Wishart with explicit natural parameters.
+
+    ``n0`` is a prior strength. Internally the inverse-Wishart degrees of
+    freedom are ``dimension + 1 + n0`` and ``scale`` stores Psi.
     """
-    def __init__(self, m_mean, m_r_cov, n0, scale):
-        if type(m_mean) is torch.Tensor:
-            self.m_mean = m_mean
-        else:
-            self.m_mean = torch.from_numpy(m_mean)
-        if type(m_r_cov) is torch.Tensor:
-            self.m_r_cov = m_r_cov
-        else:
-            self.m_r_cov = torch.from_numpy(m_r_cov)
-        self.n0 = n0
-        self.scale = scale
-        if type(scale) is torch.Tensor:
-            self.set_scale(scale)
-        else:
-            self.set_scale(scale)
+
+    def __init__(self, m_mean, m_r_cov, n0, scale, _natural=False):
+        self.m_mean = torch.as_tensor(m_mean).detach().clone()
+        self.m_r_cov = torch.as_tensor(
+            m_r_cov, device=self.m_mean.device, dtype=self.m_mean.dtype
+        ).detach().clone()
+        self.n0 = float(n0)
+        if self.n0 <= 0:
+            raise ValueError("inverse-Wishart strength must be positive")
+        value = torch.as_tensor(
+            scale, device=self.m_mean.device, dtype=self.m_mean.dtype
+        ).detach().clone()
+        self.scale = value if _natural else value * self.n0
         self.b = 0.7
 
+    @property
+    def degrees_of_freedom(self):
+        return self.scale.shape[0] + 1.0 + self.n0
+
     def posterior(self, n_k, y1, y2, cov, cov_, cov_cross, sse_matrix=None, annealing=False):
-        y_k = y1
-        y_k_ = y2
-        new_n0 = self.n0 + n_k
+        weight = float(n_k)
+        if weight <= 0:
+            return self
+        y1 = torch.as_tensor(y1, device=self.scale.device, dtype=self.scale.dtype)
+        y2 = torch.as_tensor(y2, device=self.scale.device, dtype=self.scale.dtype)
+        cov = torch.as_tensor(cov, device=self.scale.device, dtype=self.scale.dtype)
+        cov_ = torch.as_tensor(cov_, device=self.scale.device, dtype=self.scale.dtype)
+        cov_cross = torch.as_tensor(cov_cross, device=self.scale.device, dtype=self.scale.dtype)
+        if y1.ndim == 1:
+            y1 = y1[:, None]
+        if y2.ndim == 1:
+            y2 = y2[:, None]
+        if sse_matrix is not None:
+            projection = torch.as_tensor(
+                sse_matrix, device=self.scale.device, dtype=self.scale.dtype
+            )
+            y1 = projection @ y1
+            y2 = projection @ y2
+            cov = projection @ cov @ projection.T
+            cov_ = projection @ cov_ @ projection.T
+            cov_cross = projection @ cov_cross @ projection.T
 
-        device = self.scale.device
-        dtype = self.scale.dtype
-        d = self.scale.shape[0]
-        id_d = torch.eye(d, device=device, dtype=dtype)
-
-        if sse_matrix is None:
-            sse_matrix = id_d
-
-        scale = 0.5 * (self.m_r_cov + self.m_r_cov.T)
-        jitter = 1e-2 * torch.mean(torch.diag(self.scale).abs()).clamp_min(torch.finfo(dtype).eps)
-        L_scale = torch.linalg.cholesky(scale + jitter * id_d)
-        scale_inv = torch.cholesky_solve(id_d, L_scale)
-
-        y2p = sse_matrix @ y_k_
-        y1p = sse_matrix @ y_k
-
-        exp_f_f_ = y2p @ y2p.T + sse_matrix @ cov_ @ sse_matrix.T
-        exp_ff_ = y1p @ y2p.T + sse_matrix @ cov_cross @ sse_matrix.T
-        #exp_ff = y1p @ y1p.T + sse_matrix @ cov @ sse_matrix.T
-
-        S__ = exp_f_f_ + scale_inv
-        S_ = exp_ff_ + self.m_mean @ scale_inv
-        #S = exp_ff + self.m_mean @ scale_inv @ self.m_mean.T
-
-        L_S__ = torch.linalg.cholesky(0.5 * (S__ + S__.T) + 1e-8 * id_d)
-        part_mean = torch.cholesky_solve(S_.T, L_S__).T
-
-        if n_k == 1:
-            new_m_mean = ((self.n0 - 2) * self.m_mean + part_mean) / (new_n0 - 2)
-            e = y1p - y2p
-            e2 = e @ e.T
-            new_scale = ((self.n0 - 2) * self.scale + e2) / (new_n0 - 2)
-        else:
-            new_m_mean = part_mean
-            e = y_k - new_m_mean @ y_k_
-            e2 = e @ e.T
-            new_scale = ((self.n0 - 2) * self.scale + e2) / (new_n0 - 2)
-
-        new_m_r_cov = S__
-        return matrix_normal_inv_wishart(new_m_mean, new_m_r_cov, new_n0, new_scale)
+        statistic_weight = weight if y1.shape[1] == 1 else 1.0
+        s_xx = statistic_weight * (y2 @ y2.T + cov_)
+        s_yx = statistic_weight * (y1 @ y2.T + cov_cross)
+        s_yy = statistic_weight * (y1 @ y1.T + cov)
+        prior_precision = self.m_r_cov
+        posterior_precision = prior_precision + s_xx
+        rhs = self.m_mean @ prior_precision + s_yx
+        posterior_mean = torch.linalg.solve(posterior_precision.T, rhs.T).T
+        posterior_psi = (
+            self.scale
+            + s_yy
+            + self.m_mean @ prior_precision @ self.m_mean.T
+            - posterior_mean @ posterior_precision @ posterior_mean.T
+        )
+        posterior_psi = 0.5 * (posterior_psi + posterior_psi.T)
+        return matrix_normal_inv_wishart(
+            posterior_mean,
+            posterior_precision,
+            self.n0 + weight,
+            posterior_psi,
+            _natural=True,
+        )
 
     def log_likelihood_MNIW(self, M, Sigma, n0=None):
         """Compute MNIW log-likelihood with cheaper SPD solves."""
@@ -1396,20 +1426,12 @@ class matrix_normal_inv_wishart():
         return self.m_mean
 
     def get_scale(self, final=False):
-        if final:
-            return self.scale
-        else:
-            return self.scale * self.n0 / (self.n0 - 2)
+        return self.scale / self.n0
 
 
     def set_scale(self, scale):
-        if type(self.scale) is torch.Tensor:
-            if self.scale.is_cuda:
-                self.scale = scale.cuda()
-            else:
-                self.scale = scale
-        else:
-            self.scale = torch.from_numpy(scale)
+        value = torch.as_tensor(scale, device=self.m_mean.device, dtype=self.m_mean.dtype)
+        self.scale = value * self.n0
 
     def cond_to_numpy(self, x):
         if x is not None:
@@ -1446,48 +1468,64 @@ class matrix_normal_inv_wishart():
 
 
 class inv_wishart():
-    """ Class to define the Inverse Wishart distribution (IW) for the LDS static parameters.
-    """
-    def __init__(self, n0, scale, C_fixed):
-        if type(C_fixed) is torch.Tensor:
-            self.C_fixed = C_fixed
-        else:
-            self.C_fixed = torch.from_numpy(np.asarray(C_fixed))
-        if type(scale) is torch.Tensor:
-            self.scale = scale
-        else:
-            self.scale = torch.from_numpy(scale)
-        self.n0 = n0
+    """Inverse-Wishart posterior for a fixed observation transform."""
+
+    def __init__(self, n0, scale, C_fixed, _natural=False):
+        self.C_fixed = torch.as_tensor(C_fixed).detach().clone()
+        self.n0 = float(n0)
+        if self.n0 <= 0:
+            raise ValueError("inverse-Wishart strength must be positive")
+        value = torch.as_tensor(
+            scale, device=self.C_fixed.device, dtype=self.C_fixed.dtype
+        ).detach().clone()
+        self.scale = value if _natural else value * self.n0
         self.b = 0.7
 
+    @property
+    def degrees_of_freedom(self):
+        return self.scale.shape[0] + 1.0 + self.n0
+
     def posterior(self, n_k, y1, y2, cov, cov_, cov_cross, sse_matrix=None, annealing=False):
-        y_k = y1
-        y_k_ = y2
-        new_n0 = self.n0 + n_k
-        id = torch.eye(self.scale.shape[0])
-        if torch.cuda.is_available() and self.scale.is_cuda:
-            id = id.cuda()
-        if sse_matrix is None:
-            sse_matrix = id
-        # e = (y_k - torch.matmul(self.C_fixed, y_k_))
-        e = (y_k - y_k_)
-        e2 =  torch.matmul(e, e.T)
-        e2 = torch.linalg.multi_dot([sse_matrix, e2, sse_matrix.T])
-        new_scale = ((self.n0 - 2) * self.scale + e2) / (new_n0 - 2)
-        return inv_wishart(new_n0, new_scale, self.C_fixed)
+        weight = float(n_k)
+        if weight <= 0:
+            return self
+        y1 = torch.as_tensor(y1, device=self.scale.device, dtype=self.scale.dtype)
+        y2 = torch.as_tensor(y2, device=self.scale.device, dtype=self.scale.dtype)
+        cov = torch.as_tensor(cov, device=self.scale.device, dtype=self.scale.dtype)
+        cov_ = torch.as_tensor(cov_, device=self.scale.device, dtype=self.scale.dtype)
+        cov_cross = torch.as_tensor(cov_cross, device=self.scale.device, dtype=self.scale.dtype)
+        if y1.ndim == 1:
+            y1 = y1[:, None]
+        if y2.ndim == 1:
+            y2 = y2[:, None]
+        transform = self.C_fixed
+        if sse_matrix is not None:
+            projection = torch.as_tensor(
+                sse_matrix, device=self.scale.device, dtype=self.scale.dtype
+            )
+            y1 = projection @ y1
+            y2 = projection @ y2
+            cov = projection @ cov @ projection.T
+            cov_ = projection @ cov_ @ projection.T
+            cov_cross = projection @ cov_cross @ projection.T
+        scatter = expected_residual_scatter(
+            y1, y2, transform, cov, cov_, cov_cross
+        )
+        if y1.shape[1] == 1:
+            scatter = weight * scatter
+        return inv_wishart(
+            self.n0 + weight,
+            self.scale + scatter,
+            self.C_fixed,
+            _natural=True,
+        )
 
     def get_scale(self, final=False):
-        # return self.scale / (self.n0 - self.scale.shape[0] - 1)
-        return self.scale * self.n0 / (self.n0 - 2)
+        return self.scale / self.n0
 
     def set_scale(self, scale):
-        if type(scale) is torch.Tensor and type(self.scale) is torch.Tensor:
-            if self.scale.is_cuda:
-                self.scale = scale.cuda()
-            else:
-                self.scale = scale
-        else:
-            self.scale = torch.from_numpy(scale)
+        value = torch.as_tensor(scale, device=self.C_fixed.device, dtype=self.C_fixed.dtype)
+        self.scale = value * self.n0
 
     def get_C(self):
         return self.C_fixed

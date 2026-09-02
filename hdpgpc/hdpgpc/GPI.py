@@ -237,7 +237,7 @@ class IterativeGaussianProcess():
             y_p_cov = Sigma
         return y_p, y_p_cov
 
-    def backward(self, A_prior, Gamma_prior, means, covars):
+    def backward(self, A_prior, Gamma_prior, means, covars, return_cross=False):
         """
         Compute backward mean and cov incorporating full sequence
         information to previous latent states.
@@ -260,16 +260,20 @@ class IterativeGaussianProcess():
 
         """
         T = len(means)
+        cross_covars = [None] * max(T - 1, 0)
         for t in trange(T - 2, -1, -1, desc="Backward_pass", disable=self.disable):
             A_prior_ = A_prior[t] if t < len(A_prior) else A_prior[-1]
             Gamma_prior_ = Gamma_prior[t] if t < len(Gamma_prior) else Gamma_prior[-1]
             P_t = torch.linalg.multi_dot([A_prior_, covars[t], A_prior_.T]) + Gamma_prior_
-            J_t = torch.matmul(torch.matmul(covars[t], A_prior_.T), torch.linalg.inv(P_t))
+            J_t = torch.linalg.solve(P_t.T, torch.matmul(A_prior_, covars[t].T)).T
             means[t] = means[t] + torch.matmul(J_t, (means[t + 1] - torch.matmul(A_prior_, means[t])))
             covars[t] = covars[t] + torch.linalg.multi_dot([J_t, (covars[t + 1] - P_t), J_t.T])
+            cross_covars[t] = covars[t + 1] @ J_t.T
+        if return_cross:
+            return means, covars, cross_covars
         return means, covars
 
-    def backward_notrange(self, A_prior, Gamma_prior, means, covars):
+    def backward_notrange(self, A_prior, Gamma_prior, means, covars, return_cross=False):
         """
         Compute backward mean and cov incorporating full sequence
         information to previous latent states.
@@ -292,11 +296,15 @@ class IterativeGaussianProcess():
 
         """
         T = len(means)
+        cross_covars = [None] * max(T - 1, 0)
         for t in range(T - 2, -1, -1):
             P_t = torch.linalg.multi_dot([A_prior, covars[t], A_prior.T]) + Gamma_prior
             J_t = torch.linalg.solve(P_t.T, torch.matmul(A_prior, covars[t].T)).T
             means[t] = means[t] + torch.matmul(J_t, (means[t + 1] - torch.matmul(A_prior, means[t])))
             covars[t] = covars[t] + torch.linalg.multi_dot([J_t, (covars[t + 1] - P_t), J_t.T])
+            cross_covars[t] = covars[t + 1] @ J_t.T
+        if return_cross:
+            return means, covars, cross_covars
         return means, covars
 
     def new_params_LDS(self, A_prior, Gamma_prior, C_prior, Sigma_prior, y_samples, means, covars, model='dynamic'):
@@ -650,6 +658,18 @@ class IterativeGaussianProcess():
                 lik = gpytorch.likelihoods.GaussianLikelihood(
                     noise_constraint=gpytorch.constraints.Interval(alpha_ini_bounds[0], alpha_ini_bounds[1]))
                 gp = ExactGPModel(x_, y_, lik)
+
+            initial_noise = float(torch.as_tensor(alpha_ini).detach().cpu().reshape(-1)[0])
+            lower_noise, upper_noise = map(float, alpha_ini_bounds)
+            margin = max(
+                np.finfo(np.float64).eps,
+                (upper_noise - lower_noise) * 1e-12,
+            )
+            lik.noise = np.clip(
+                initial_noise,
+                lower_noise + margin,
+                upper_noise - margin,
+            )
 
             lik.train()
             gp.train()

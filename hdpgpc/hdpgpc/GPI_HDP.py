@@ -14,9 +14,10 @@ from hdpgpc.convergence import ConvergenceConfig, ConvergenceMonitor, StopReason
 from hdpgpc.inference import (
     expected_log_dirichlet,
     forward_backward,
-    hard_assignments,
     normalize_log_scores,
+    responsibilities_from_log_scores,
 )
+from hdpgpc.lds import hdp_top_level_term
 from hdpgpc.validation import validate_batch
 
 import numpy as np
@@ -114,7 +115,9 @@ class GPI_HDP():
                  check_var=False, bayesian_params=True, cuda=False, inducing_points=False, estimation_limit=None,
                  reestimate_initial_params=False,
                  n_explore_steps=10, free_deg_MNIV=5, share_gp=False, use_snr=True, reduce_outputs=False,
-                 reduce_outputs_ratio=1.0, hdp_hyp='balanced', convergence=None):
+                 reduce_outputs_ratio=1.0, hdp_hyp='balanced', convergence=None,
+                 hdp_hyperparameters=None, responsibility_mode='hard', min_responsibility=1e-4,
+                 hdp_elbo_scale=1.0):
         if M is None:
             M = 1
         if M < 1 or n_outputs < 1:
@@ -139,6 +142,15 @@ class GPI_HDP():
         self.cuda = cuda
         self.device = 'cuda' if self.cuda else 'cpu'
         self.n_outputs = n_outputs
+        if responsibility_mode not in {'hard', 'variational'}:
+            raise ValueError("responsibility_mode must be 'hard' or 'variational'")
+        if not 0.0 <= min_responsibility < 1.0:
+            raise ValueError("min_responsibility must be in [0, 1)")
+        if hdp_elbo_scale <= 0:
+            raise ValueError("hdp_elbo_scale must be positive")
+        self.responsibility_mode = responsibility_mode
+        self.min_responsibility = float(min_responsibility)
+        self.hdp_elbo_scale = float(hdp_elbo_scale)
         self.convergence = convergence or ConvergenceConfig()
         if not isinstance(self.convergence, ConvergenceConfig):
             raise TypeError("convergence must be a ConvergenceConfig instance")
@@ -187,9 +199,7 @@ class GPI_HDP():
                 # Outputscale should be bounded if a learning with few t basis will be performed
                 kernels.append(ConstantKernel(ini_outputscale[m], (ini_outputscale[m], ini_outputscale[m] * 5.0)) * RBF(
                     ini_lengthscale[m], bound_lengthscale[m])
-                               + WhiteKernel(bound_sigma[m][0], bound_sigma[m]))
-                # kernels.append(RBF(ini_lengthscale[m], bound_lengthscale[m])
-                #                + WhiteKernel(ini_sigma[m], bound_sigma[m]))
+                               + WhiteKernel(ini_sigma[m], bound_sigma[m]))
         # Save default options to generate new model
         self.set_default_options(kernels[0], ini_sigma[0], ini_gamma[0], ini_outputscale[0], bound_sigma[0],
                                  bound_gamma[0], bound_noise_warp[0],
@@ -295,7 +305,12 @@ class GPI_HDP():
         # kappa represent the sticky factor of self transition
 
         # HDP Hyperparams
-        hdp = HDPHyperparameters.from_preset(hdp_hyp)
+        if hdp_hyperparameters is None:
+            hdp = HDPHyperparameters.from_preset(hdp_hyp)
+        elif isinstance(hdp_hyperparameters, HDPHyperparameters):
+            hdp = hdp_hyperparameters
+        else:
+            raise TypeError("hdp_hyperparameters must be an HDPHyperparameters instance")
         self.gamma = hdp.gamma
         self.transAlpha = hdp.transition_alpha
         self.startAlpha = hdp.start_alpha
@@ -317,6 +332,7 @@ class GPI_HDP():
                     gp_ = gp.GPI_model(kernels[m], x_basis[m], annealing=self.annealing[m], cuda=self.cuda,
                                        inducing_points=inducing_points[m], estimation_limit=estimation_limit[m],
                                        free_deg_MNIV=self.free_deg_MNIV, verbose=self.verbose)
+                gp_.min_responsibility = self.min_responsibility
                 # Initiate GP
                 if model_type[m] == 'static':
                     cond = gp_.GPR_static(ini_sigma[m])
@@ -339,6 +355,26 @@ class GPI_HDP():
         self._warp_cache_ref = None
         self._y_trains_w_cache = None
 
+    def start_new_batch(self, *, carry_latent_state=False):
+        """Clear sequence-local state while retaining learned cluster parameters."""
+        for output_models in self.gpmodels:
+            for gpmodel in output_models:
+                gpmodel.start_new_batch(carry_latent_state=carry_latent_state)
+        self.T = 0
+        self.x_train = []
+        self.y_train = torch.tensor([], device=self.device)
+        self.train_elbo = []
+        self.resp_assigned = []
+        self.q = []
+        for name in (
+            'q_last', 'q_lat_last', 'snr_last', 'startStateCount_last',
+            'transStateCount_last', 'resp_last', 'respPair_last', 'elbo_last',
+        ):
+            if hasattr(self, name):
+                delattr(self, name)
+        self.convergence_reason_ = None
+        self.reset_warp_cache()
+
     #Methods to compute HDP variational computations.
     # def _safe_exp(self, x):
     #     if len(x.shape)==2:
@@ -347,7 +383,22 @@ class GPI_HDP():
     #         return torch.nan_to_num(torch.exp(torch.sub(x, torch.max(torch.max(x, axis=1)[0], axis=1)[0][:,None,None])), 1e-8)
 
     def _safe_exp(self, x):
-        return hard_assignments(x)
+        return responsibilities_from_log_scores(x, self.responsibility_mode)
+
+    def _cluster_mass(self, resp):
+        return torch.sum(resp, dim=0)
+
+    def _active_members(self, resp, state):
+        return torch.where(resp[:, state] > self.min_responsibility)[0]
+
+    @staticmethod
+    def _map_members(resp, state):
+        return torch.where(torch.argmax(resp, dim=1) == state)[0]
+
+    @staticmethod
+    def _assigned_values(values, resp):
+        rows = torch.arange(resp.shape[0], device=resp.device)
+        return values[rows, torch.argmax(resp, dim=1)]
 
     # Methods to compute HDP variational computations.
     def init_global_params(self, d_dim, M):
@@ -368,9 +419,11 @@ class GPI_HDP():
         if omega is None:
             omega = self.omega
         rho_ = self.create_initrho(M)
-        rho_[:rho.shape[0]] = rho
+        rho_count = min(rho_.shape[0], rho.shape[0])
+        rho_[:rho_count] = rho[:rho_count]
         omega_ = (1.0 + self.gamma) * torch.ones(M)
-        omega_[:omega.shape[0]] = omega
+        omega_count = min(omega_.shape[0], omega.shape[0])
+        omega_[:omega_count] = omega[:omega_count]
         transTheta_, startTheta_ = self._calcThetaFull(transStateCount_, startStateCount_, M + 1, rho_)
         return rho_, omega_, transTheta_, startTheta_
 
@@ -388,11 +441,16 @@ class GPI_HDP():
         transTheta = self.cond_cuda(torch.zeros((M, M)))
         transTheta += alphaEbeta[np.newaxis, :]
         # coef = self.M / M
-        transTheta[:M - 1, :M - 1] += self.transTheta * 0.8
+        previous_rows = min(M - 1, self.transTheta.shape[0])
+        previous_cols = min(M - 1, self.transTheta.shape[1])
+        transTheta[:previous_rows, :previous_cols] += (
+            self.transTheta[:previous_rows, :previous_cols] * 0.8
+        )
         transTheta[:M, :M] += transStateCount_[:M, :M] * 0.2 + self.kappa * self.cond_cuda(torch.eye(M))
 
         startTheta = self.startAlpha * Ebeta
-        startTheta[:M - 1] += self.startTheta
+        previous_start = min(M - 1, self.startTheta.shape[0])
+        startTheta[:previous_start] += self.startTheta[:previous_start]
         startTheta[:M] += startStateCount[:M]
         # return transTheta / torch.sum(transTheta), startTheta / torch.sum(startTheta)
         return transTheta, startTheta
@@ -503,6 +561,7 @@ class GPI_HDP():
                                cuda=self.cuda,
                                inducing_points=inducing_points, estimation_limit=estimation_limit,
                                free_deg_MNIV=free_deg_MNIV, verbose=self.verbose)
+            gp_.min_responsibility = self.min_responsibility
             if model_type == 'static':
                 cond = gp_.GPR_static(ini_sigma)
             elif model_type == 'dynamic':
@@ -537,6 +596,7 @@ class GPI_HDP():
             gp_ = gp.GPI_model(kernel, self.x_basis_ini, annealing=annealing, bayesian=self.bayesian_params,
                                cuda=self.cuda, inducing_points=inducing_points, estimation_limit=estimation_limit,
                                free_deg_MNIV=free_deg_MNIV, verbose=self.verbose)
+            gp_.min_responsibility = self.min_responsibility
             if model_type == 'static':
                 cond = gp_.GPR_static(ini_sigma)
             elif model_type == 'dynamic':
@@ -841,8 +901,7 @@ class GPI_HDP():
             y_trains = self.reduce_num_outputs(y_trains)
         n_samples = np.array(y_trains).shape[0]
         n_outputs = np.array(y_trains).shape[2]
-        t = self.T
-        self.T = self.T + n_samples
+        self.T = n_samples
         # Compute SNR to ponderate q on each lead.
         self.compute_snr_ini(y_trains)
         M = self.M
@@ -1030,7 +1089,7 @@ class GPI_HDP():
         self.y_train = y_trains_w
         return q, q_lat, warp_computed, y_trains_w
 
-    def elbo_Linears(self, resp, respPair, post=False, one_sample=False):
+    def elbo_Linears(self, resp, respPair, post=False, one_sample=False, return_components=False):
         """ Compute ELBO for linear terms. HDP.
         """
         startStateCount = resp[0]
@@ -1079,12 +1138,13 @@ class GPI_HDP():
                                          startTheta=self.cond_to_numpy(self.cond_cpu(startTheta_)),
                                          startStateCount=self.cond_to_numpy(self.cond_cpu(startStateCount)),
                                          transStateCount=self.cond_to_numpy(
-                                             torch.clone(self.cond_cpu(transStateCount))))
+                                             torch.clone(self.cond_cpu(transStateCount))),
+                                         return_components=return_components)
 
     def refill(self, resp, respPair, startStateCount, transStateCount, q, q_lat, snr):
         """ Redistribute the responsibility for not letting empty clusters and generate a new model if needed.
         """
-        resp_per_group = torch.sum(resp[np.where(resp == 1.0)[0]], axis=0)
+        resp_per_group = self._cluster_mass(resp)
         print("Group responsability estimated: " + str(resp_per_group.detach().cpu().numpy().astype(np.int64)),
               flush=True)
         if torch.any(resp_per_group[:-1] < 1.0):
@@ -1099,7 +1159,7 @@ class GPI_HDP():
     def reorder(self, resp, respPair, q, q_lat):
         """ Reorder the responsibility to have a sorted assignation.
         """
-        resp_per_group = torch.sum(resp[np.where(resp == 1)[0]], axis=0)
+        resp_per_group = self._cluster_mass(resp)
         reorder = torch.argsort(resp_per_group, descending=True)
         resp = resp[:, reorder]
         respPair = respPair[:, reorder, :]
@@ -1149,7 +1209,7 @@ class GPI_HDP():
     def refill_resp(self, resp, respPair=None):
         """ Refill HDP parameters if a model is reasignated.
         """
-        resp_per_group = torch.sum(resp[np.where(resp == 1.0)[0]], axis=0)
+        resp_per_group = self._cluster_mass(resp)
         if torch.any(resp_per_group[:-1] < 1.0):
             empty_group_ind = torch.where(resp_per_group < torch.tensor(1.0, device=self.device))[0]
             if empty_group_ind.shape[0] > 1:
@@ -1288,7 +1348,7 @@ class GPI_HDP():
         for m in range(M):
             indexes_.append(torch.tensor(self.gpmodels[0][m].indexes).long())
             if indexes_[m].shape[0] == 0:
-                indexes_[m] = torch.where(resp[:, m] == self.cond_cuda(torch.tensor(1.0)))[0].long()
+                indexes_[m] = self._active_members(resp, m).long()
         f_ind_old = torch.clone(self.f_ind_old)
 
         # Compute q with best index of the old model.
@@ -1337,7 +1397,7 @@ class GPI_HDP():
                 for m in range(M):
                     if self.verbose:
                         print("\n   -----------Model " + str(m + 1) + "-----------")
-                    if not torch.equal(resp[:, reorder[m]].long(), resp_temp[:, m].long()):
+                    if not torch.allclose(resp[:, reorder[m]], resp_temp[:, m]):
                         gp = self.gpmodel_deepcopy(self.gpmodels[ld][reorder[m]])
                         if gp.fitted:
                             gp.reinit_LDS(save_last=False)
@@ -1418,7 +1478,9 @@ class GPI_HDP():
 
                     for k in range(M):
                         # Samples assigned to cluster k
-                        indexes_k = torch.where(resp_temp[:, k] == 1.0)[0]
+                        indexes_k = self._map_members(resp_temp, k)
+                        if indexes_k.numel() == 0:
+                            indexes_k = self._active_members(resp_temp, k)
 
                         # Rank candidates by weight, best first
                         order = torch.argsort(self.weight_mean(q_simple, snr_aux)[indexes_k, k],
@@ -1468,21 +1530,24 @@ class GPI_HDP():
                         resp_temp, respPair_temp, q, q_lat, snr_aux = self.remove_last_group(resp_temp,
                                                                                              respPair_temp, q,
                                                                                              q_lat, snr_aux)
-                        resp_per_group_temp = torch.sum(resp_temp[torch.where(resp_temp == 1.0)[0]], axis=0)
+                        resp_per_group_temp = self._cluster_mass(resp_temp)
                         reorder = torch.argsort(resp_per_group_temp, descending=True)
                         self.f_ind_old = self.f_ind_old[reorder]
                     return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, reallocate
                 else:
                     print("Bad estimation")
                     empty_estimation = True
-        # f_ind_new_potential = torch.argsort(self.weight_mean(q_simple)[torch.where(resp == 1.0)])
-        q_sim_s = self.weight_mean(q_simple)[torch.where(resp == 1.0)]
+        if self.max_models is not None and M >= self.max_models:
+            return resp, respPair, q_, q_lat_, snr_, y_trains_w_, False
+
+        # Rank samples that could seed an exploratory birth state.
+        q_sim_s = self._assigned_values(self.weight_mean(q_simple), resp)
         q_sim_span = torch.max(q_sim_s) - torch.min(q_sim_s)
         q_sim_s = torch.zeros_like(q_sim_s) if q_sim_span == 0 else (q_sim_s - torch.max(q_sim_s)) / q_sim_span
-        q_s = self.weight_mean(q_)[torch.where(resp == 1.0)]
+        q_s = self._assigned_values(self.weight_mean(q_), resp)
         q_span = torch.max(q_s) - torch.min(q_s)
         q_s = torch.zeros_like(q_s) if q_span == 0 else (q_s - torch.max(q_s)) / q_span
-        q_lat_s = self.weight_mean(q_lat_)[torch.where(resp == 1.0)]
+        q_lat_s = self._assigned_values(self.weight_mean(q_lat_), resp)
         q_lat_span = torch.max(q_lat_s) - torch.min(q_lat_s)
         q_lat_s = torch.zeros_like(q_lat_s) if q_lat_span == 0 else (q_lat_s - torch.max(q_lat_s)) / q_lat_span
         f_ind_new_potential = torch.argsort(q_sim_s)
@@ -1783,7 +1848,9 @@ class GPI_HDP():
 
                             for k in range(M):
                                 # Samples assigned to cluster k
-                                indexes_k = torch.where(resp_temp[:, k] == 1.0)[0]
+                                indexes_k = self._map_members(resp_temp, k)
+                                if indexes_k.numel() == 0:
+                                    indexes_k = self._active_members(resp_temp, k)
 
                                 # Rank candidates by weight, best first
                                 order = torch.argsort(self.weight_mean(q_simple_, snr_aux)[indexes_k, k],
@@ -1822,14 +1889,21 @@ class GPI_HDP():
             n_points = 1
         else:
             n_points = self.x_basis[0].shape[0]
-        # TODO: here is so simple to implement the non-clipped resposability assignation just by multiplying q by the resp term.
-        q_bas = torch.sum(q[torch.where(resp == 1.0)]) * self.static_factor
-        elbo_latent = torch.sum(q_lat[torch.where(resp == 1.0)]) * self.dynamic_factor
-        if post:
-            elbo_bas = self.elbo_Linears(resp, respPair, post=post,
-                                         one_sample=one_sample) * n_points  # / self.n_outputs
-        else:
-            elbo_bas = self.elbo_Linears(resp, respPair, one_sample=one_sample) * n_points  # / self.n_outputs
+        q_bas = torch.sum(resp * q) * self.static_factor
+        elbo_latent = torch.sum(resp * q_lat) * self.dynamic_factor
+        linear_terms = self.elbo_Linears(
+            resp,
+            respPair,
+            post=post,
+            one_sample=one_sample,
+            return_components=True,
+        )
+        elbo_bas = linear_terms["total"] * self.hdp_elbo_scale
+        self.last_hdp_linear_terms_ = {
+            **linear_terms,
+            "scale": self.hdp_elbo_scale,
+            "scaled_total": float(elbo_bas),
+        }
         elbo_bas_LDS = 0
         if snr is None:
             frac = torch.ones(self.n_outputs, device=resp.device) / self.n_outputs  # / self.M
@@ -1849,7 +1923,11 @@ class GPI_HDP():
             print("Sum resp_temp: " + str(torch.sum(resp, dim=0).int().numpy()) + " - Total samples: " + str(
                 torch.sum(resp).int().numpy()))
             print(
-                f"Q_em: {q_bas.item():.2f}, Q_lat: {elbo_latent.item():.2f}, Elbo_linear: {elbo_bas:.2f}, Elbo_LDS: {elbo_bas_LDS.item():.2f}")
+                f"Q_em(log-density): {q_bas.item():.2f}, NLL_em: {-q_bas.item():.2f}, "
+                f"Q_lat: {elbo_latent.item():.2f}, Elbo_linear: {elbo_bas:.2f}, "
+                f"Elbo_LDS: {elbo_bas_LDS.item():.2f}")
+            if self.verbose:
+                print("HDP linear components: " + str(self.last_hdp_linear_terms_))
         if self.hmm_switch:
             elbo_bas = elbo_bas + elbo_bas_LDS + elbo_latent
         else:
@@ -1857,31 +1935,21 @@ class GPI_HDP():
         return q_bas, elbo_bas
 
     def full_LDS_elbo(self, gpmodels, sum_resp, one_sample=False):
-        """ Method to accumulate LDS ELBO terms..
-        """
-        elb = torch.zeros(1)
-        M_ = 0
-        if one_sample:
-            frac = sum_resp / torch.sum(sum_resp)
-        else:
-            frac = sum_resp / torch.sum(sum_resp)
-        for i in sum_resp:
-            if i > 0:
-                M_ = M_ + 1
-        gp_temp = gpmodels if one_sample else gpmodels
-        for i, gp in enumerate(gp_temp):
-            if sum_resp[i] > 0:
-                if sum_resp[i] < self.free_deg_MNIV:
-                    # elb = elb + gp.return_LDS_param_likelihood(first=True)
-                    if one_sample:
-                        elb = elb + gp.return_LDS_param_likelihood(first=False) * frac[i] * 1.0
-                    else:
-                        elb = elb + gp.return_LDS_param_likelihood(first=False) * frac[i] * 1.0
-                else:
-                    elb = elb + gp.return_LDS_param_likelihood() * frac[i]
-        if one_sample or M_ == 0:
+        """Accumulate the LDS prior term over active Bayesian GP states."""
+        elb = torch.zeros(1, device=sum_resp.device, dtype=sum_resp.dtype)
+        total = torch.sum(sum_resp)
+        if total <= 0:
             return elb
-        return elb / M_
+        fractions = sum_resp / total
+        active_models = 0
+        for i, gpmodel in enumerate(gpmodels):
+            if sum_resp[i] <= 0 or not gpmodel.bayesian:
+                continue
+            active_models += 1
+            elb = elb + gpmodel.return_LDS_param_likelihood() * fractions[i]
+        if one_sample or active_models == 0:
+            return elb
+        return elb / active_models
 
     def redefine_default(self, x_trains, y_trains, resp):
         """ Method to compute Sigma and Gamma from a batch of examples and assign it to initial values.
@@ -1914,7 +1982,7 @@ class GPI_HDP():
         print("Gamma: ", ini_Gamma)
         print("-----------------------------", flush=True)
         kernel = (ConstantKernel(ini_outputscale, (ini_outputscale, ini_outputscale * 5.0)) *
-                  RBF(self.ini_lengthscale[0], self.bound_lengthscale[0]) + WhiteKernel(bound_sigma[0], bound_sigma))
+                  RBF(self.ini_lengthscale[0], self.bound_lengthscale[0]) + WhiteKernel(ini_Sigma.item(), bound_sigma))
         self.set_default_options(kernel, ini_Sigma, ini_Gamma, ini_outputscale, bound_sigma, bound_gamma,
                                  bound_noise_warp, annealing, method_compute_warp,
                                  model_type, recursive_warp, warp_updating, inducing_points, estimation_limit,
@@ -2664,7 +2732,7 @@ class GPI_HDP():
                 gp.Gamma_def = gp.Gamma_def * coef + torch.eye(gp.Gamma_def.shape[0]) * estimator_gam * (1 - coef)
 
     def calcELBO_LinearTerms(self, rho, omega, alpha, startAlpha, kappa, gamma, transTheta, startTheta, startStateCount,
-                             transStateCount):
+                             transStateCount, return_components=False):
         """ Method to compute HPD linear terms.
         """
         transStateCount_ = np.array(transStateCount, copy=True)
@@ -2692,7 +2760,16 @@ class GPI_HDP():
             (transStateCount_ - transTheta) *
             (digamma(transTheta) - digammaSum[:, None])
         )
-        return Ltop + LdiffcDir + LstartSlack + LtransSlack
+        components = {
+            "top": float(Ltop),
+            "dirichlet_normalizers": float(LdiffcDir),
+            "start_slack": float(LstartSlack),
+            "transition_slack": float(LtransSlack),
+        }
+        components["total"] = sum(components.values())
+        if return_components:
+            return components
+        return components["total"]
 
     def calcELBO_NonlinearTerms(self, resp, respPair):
         """ Method to compute H[q].
@@ -2715,34 +2792,12 @@ class GPI_HDP():
         return H_KxK
 
     def L_top(self, rho, omega, alpha, startAlpha, kappa, gamma):
-        K = rho.size
-        eta1 = rho * omega
-        eta0 = (1 - rho) * omega
-        digamma_omega = digamma(omega)
-        ElogU = digamma(eta1) - digamma_omega
-        Elog1mU = digamma(eta0) - digamma_omega
-
-        def c_Beta(a1, a0):
-            return np.sum(gammaln(a1 + a0)) - np.sum(gammaln(a1)) - np.sum(gammaln(a0))
-
-        diff_cBeta = K * c_Beta(1.0, gamma) - c_Beta(eta1, eta0)
-
-        tAlpha = K * K * np.log(alpha) + K * np.log(startAlpha)
-        if kappa > 0:
-            coefU = K + 1.0 + eta1
-            coef1mU = K * kvec(K) + 1.9 + gamma - eta0
-            sumEbeta = np.sum(self.cond_to_numpy(self.cond_cpu(self.rho2beta(rho, returnSize='K'))))
-            tBeta = sumEbeta * (np.log(alpha + kappa) - np.log(kappa))
-            tKappa = K * (np.log(kappa) - np.log(alpha + kappa))
-        else:
-            coefU = (K + 1) + 1.0 - eta1
-            coef1mU = (K + 1) * kvec(K) + gamma - eta0
-            tBeta = 0.0
-            tKappa = 0.0
-
-        diff_logU = np.inner(coefU, ElogU) \
-                    + np.inner(coef1mU, Elog1mU)
-        return tAlpha + tKappa + tBeta + diff_cBeta + diff_logU
+        expected_beta = self.cond_to_numpy(
+            self.cond_cpu(self.rho2beta(rho, returnSize='K'))
+        )
+        return hdp_top_level_term(
+            rho, omega, alpha, startAlpha, kappa, gamma, expected_beta
+        )
 
     def c_Dir(self, AMat, arem=None):
         ''' Evaluate cumulant function of the Dir distribution
@@ -2877,7 +2932,7 @@ class GPI_HDP():
         resp_temp = self._safe_exp(logresp)
         respPair_temp = self._safe_exp(logrespPair)
 
-        resp_per_group_temp = torch.sum(resp_temp[torch.where(resp_temp == 1.0)[0]], axis=0)
+        resp_per_group_temp = self._cluster_mass(resp_temp)
         reorder = torch.argsort(resp_per_group_temp, descending=True)
         resp_temp = torch.clone(resp_temp[:, reorder])
 
@@ -2898,7 +2953,7 @@ class GPI_HDP():
             for m in range(M):
                 if self.verbose:
                     print("\n   -----------Model " + str(m + 1) + "-----------")
-                indexes_[ld].append(torch.where(resp_temp[:, m] == self.cond_cuda(torch.tensor(1.0)))[0].int())
+                indexes_[ld].append(self._active_members(resp_temp, m).int())
                 if len(gpmodels[ld]) > reorder[m]:
                     gp = gpmodels[ld][reorder[m]]
                     gp_indexes = torch.tensor(gp.indexes, device=indexes_[ld][m].device).int()
@@ -2980,7 +3035,7 @@ class GPI_HDP():
                 resp_temp, respPair_temp, q, q_lat, snr_aux = self.remove_last_group(resp_temp,
                                                                                      respPair_temp, q,
                                                                                      q_lat, snr_aux)
-                resp_per_group_temp = torch.sum(resp_temp[torch.where(resp_temp == 1.0)[0]], axis=0)
+                resp_per_group_temp = self._cluster_mass(resp_temp)
                 reorder = torch.argsort(resp_per_group_temp, descending=True)
                 self.f_ind_old = self.f_ind_old[reorder]
                 return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, gpmodels_temp
@@ -3016,7 +3071,7 @@ class GPI_HDP():
             resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
             respPairlog_temp, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
             resp = self._safe_exp(resplog_temp)
-            return torch.where(resp == 1.0)[1]
+            return torch.argmax(resp, dim=1)
         if learning:
             x_trains = self.cond_cuda(self.cond_to_torch(x_trains))
             y_trains = self.cond_cuda(self.cond_to_torch(y_trains))
@@ -3143,7 +3198,7 @@ class GPI_HDP():
                     print('\n-------Start lower Bound Iteration ' + str(iteration) + '-------')
                     resp_group = torch.sum(resp, dim=0)
                     self.train_elbo.append(elbo_)
-                    self.resp_assigned.append(torch.where(resp == 1.0)[1])
+                    self.resp_assigned.append(torch.argmax(resp, dim=1))
                     self.q_last, self.q_lat_last, self.snr_last = q, q_lat, snr
                     self.startStateCount_last, self.transStateCount_last = startStateCount, transStateCount
                     self.resp_last, self.respPair_last = resp, respPair
@@ -3537,11 +3592,13 @@ class GPI_HDP():
         transPi = expected_log_dirichlet(
             self.cond_cpu(self.transTheta[:M, :M + 1]), dim=1
         )[:, :M]
-        if transPi.shape[0] == M:
+        if transPi.shape == (M, M):
             return transPi
         else:
             transPi_ = torch.zeros(M, M) - np.inf
-            transPi_[:M - 1, :M - 1] = transPi
+            rows = min(M, transPi.shape[0])
+            cols = min(M, transPi.shape[1])
+            transPi_[:rows, :cols] = transPi[:rows, :cols]
             return transPi_
 
     def compute_trans_pi(self, M, pi):
@@ -3549,7 +3606,8 @@ class GPI_HDP():
             return pi
         else:
             pi_ = torch.zeros(M) - np.inf
-            pi_[:M - 1] = pi
+            count = min(M, pi.shape[0])
+            pi_[:count] = pi[:count]
             return pi_
 
     def _resize_transition_potentials(self, transition, states, reference):
@@ -4002,7 +4060,7 @@ class GPI_HDP():
             self.cond_cpu(transTheta[:M, :M + 1]), dim=1
         )[:, :M]
         self.trans_A = transPi
-        self.resp_assigned.append(torch.where(resp == 1.0)[1])
+        self.resp_assigned.append(torch.argmax(resp, dim=1))
         self.q_last, self.q_lat_last, self.snr_last = q, q_lat, snr
         self.startStateCount_last, self.transStateCount_last = startStateCount, transStateCount
         self.resp_last, self.respPair_last = resp, respPair
@@ -4021,13 +4079,18 @@ class GPI_HDP():
 
     def gpmodel_deepcopy(self, gpmodel):
         gp_ = gp.GPI_model(gpmodel.gp.kernel.clone_with_theta(gpmodel.gp.kernel.theta), gpmodel.x_basis.clone(),
-                           verbose=self.verbose)
+                           annealing=gpmodel.annealing, bayesian=gpmodel.bayesian,
+                           cuda=gpmodel.cuda, inducing_points=gpmodel.inducing_points,
+                           estimation_limit=gpmodel.estimation_limit,
+                           free_deg_MNIV=gpmodel.free_deg_MNIV, verbose=self.verbose)
+        gp_.min_responsibility = self.min_responsibility
         gp_.y_train = gpmodel.y_train.copy()
         gp_.x_train = gpmodel.x_train.copy()
         gp_.f_star = gpmodel.f_star.copy()
         gp_.f_star_sm = gpmodel.f_star_sm.copy()
         gp_.cov_f = gpmodel.cov_f.copy()
         gp_.cov_f_sm = gpmodel.cov_f_sm.copy()
+        gp_.cross_cov_f_sm = gpmodel.cross_cov_f_sm.copy()
         gp_.y_var = gpmodel.y_var.copy()
         gp_.var = gpmodel.var.copy()
         gp_.A = gpmodel.A.copy()
@@ -4042,8 +4105,10 @@ class GPI_HDP():
         gp_.ini_cov_def = gpmodel.ini_cov_def
         gp_.A_def, gp_.Gamma_def = gpmodel.A_def, gpmodel.Gamma_def
         gp_.C_def, gp_.Sigma_def = gpmodel.C_def, gpmodel.Sigma_def
-        gp_.internal_params = gpmodel.internal_params
-        gp_.observation_params = gpmodel.observation_params
+        if hasattr(gpmodel, 'internal_params'):
+            gp_.internal_params = gpmodel.internal_params
+        if hasattr(gpmodel, 'observation_params'):
+            gp_.observation_params = gpmodel.observation_params
         gp_.ini_kernel_theta = gpmodel.ini_kernel_theta
         gp_.free_deg_MNIV = gpmodel.free_deg_MNIV
         return gp_
