@@ -77,7 +77,7 @@ homepage = "https://github.com/AdrianPerezHerrero/HDP-GPC"
 repository = "https://github.com/AdrianPerezHerrero/HDP-GPC"
 
 [project.optional-dependencies]
-dev = []
+dev = ["pytest>=8"]
 docs = []
 
 [tool.setuptools]
@@ -87,4 +87,5 @@ packages = ["hdpgpc"]
 [tool.pytest.ini_options]
 minversion = "6.0"
 addopts = "--strict-markers"
-testpaths = ["tests"]
+testpaths = ["hdpgpc/tests_unit"]
+pythonpath = ["hdpgpc"]

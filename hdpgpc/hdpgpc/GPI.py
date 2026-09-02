@@ -494,11 +494,8 @@ class IterativeGaussianProcess():
         delta = mean_prior - x_train_mean
         f_star = x_post_mean + K_solve.T @ delta
 
-        if torch.all(torch.isclose(torch.diag(Sigma), torch.mean(torch.diag(Sigma)))):
-            cov_f = torch.mean(torch.diag(Sigma)) * id_m
-        else:
-            cov_f = K_Xs_Xs - K_X_Xs.T @ K_solve + K_solve.T @ Sigma @ K_solve
-            cov_f = 0.5 * (cov_f + cov_f.T) + 1e-6 * id_m
+        cov_f = K_Xs_Xs - K_X_Xs.T @ K_solve + K_solve.T @ Sigma @ K_solve
+        cov_f = 0.5 * (cov_f + cov_f.T) + 1e-6 * id_m
 
         return f_star, cov_f
 
@@ -707,8 +704,9 @@ class IterativeGaussianProcess():
                 if hasattr(self.kernel.k1, "k1"):
                     self.kernel.k1.k1.theta = np.log(np.array([gp.covar_module.outputscale.item()]))
                 if hasattr(self.kernel.k1, "k2"):
-                    #self.kernel.k1.k2.theta = np.log(np.array([gp.covar_module.base_kernel.lengthscale.item()]))
-                    self.kernel.k1.k2.theta = np.log(np.array([1.2]))
+                    self.kernel.k1.k2.theta = np.log(
+                        np.array([gp.covar_module.base_kernel.lengthscale.item()])
+                    )
                 else:
                     self.kernel.k1.theta = np.log(np.array([gp.covar_module.base_kernel.lengthscale.item()]))
                 self.kernel.k2.theta = np.log(np.array([lik.noise.item()]))
@@ -1040,7 +1038,7 @@ class IterativeGaussianProcess():
         if y_train.ndim == 1:
             y_train = y_train[:, np.newaxis]
 
-        alpha = cho_solve((L.dot(L.T), True), y_train)  # Line 3
+        alpha = cho_solve((L, True), y_train)  # Line 3
         log_likelihood = -1 / 2 * y_train.T.dot(alpha) - np.log(np.diag(L)).sum() - K.shape[0] / 2 * np.log(2 * np.pi)
 
         if eval_gradient:  # compare Equation 5.9 from GPML

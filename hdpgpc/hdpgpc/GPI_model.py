@@ -84,7 +84,17 @@ class GPI_model():
         M = 0.5 * (M + M.T)
         eye = self._eye_cached(M.shape[0], M.device, M.dtype)
         diag_mean = torch.mean(torch.diag(M).abs()).clamp_min(torch.finfo(M.dtype).eps)
-        return torch.linalg.cholesky(M + jitter_scale * diag_mean * eye)
+        last_error = None
+        for multiplier in (1.0, 10.0, 100.0, 1_000.0, 10_000.0):
+            try:
+                return torch.linalg.cholesky(
+                    M + multiplier * jitter_scale * diag_mean * eye
+                )
+            except torch.linalg.LinAlgError as error:
+                last_error = error
+        raise torch.linalg.LinAlgError(
+            "matrix is not positive definite after adaptive jitter"
+        ) from last_error
 
     def _log2pi(self, ref):
         return torch.tensor(math.log(2.0 * math.pi), device=ref.device, dtype=ref.dtype)
@@ -110,7 +120,12 @@ class GPI_model():
         L = self._chol_spd(cov)
         alpha = torch.cholesky_solve(diff, L)
         q = diff.shape[0]
-        return -0.5 * torch.sum(diff * alpha, dim=0) - 0.5 * q * self._log2pi(diff)
+        logdet = 2.0 * torch.log(torch.diag(L)).sum()
+        return (
+            -0.5 * torch.sum(diff * alpha, dim=0)
+            - 0.5 * logdet
+            - 0.5 * q * self._log2pi(diff)
+        )
 
     def initial_conditions(self, ini_mean=None, ini_cov=None,
                            ini_A=None, ini_Gamma=None, ini_C=None, ini_Sigma=None):
@@ -153,8 +168,13 @@ class GPI_model():
             self.cov_f.append(self.cond_to_torch(ini_cov))
             self.cov_f_sm.append(self.cond_to_torch(ini_cov))
             self.ini_cov_def = ini_cov
-        if ini_A is None and ini_Gamma is None and ini_C is None and ini_Sigma is None:
+        lds_parameters = (ini_A, ini_Gamma, ini_C, ini_Sigma)
+        if all(value is None for value in lds_parameters):
             ini_A, ini_Gamma, ini_C, ini_Sigma = self.GPR_dynamic()
+        elif any(value is None for value in lds_parameters):
+            raise ValueError(
+                "ini_A, ini_Gamma, ini_C and ini_Sigma must be provided together"
+            )
 
         self.A.append(ini_A)
         self.Gamma.append(ini_Gamma)
@@ -212,8 +232,7 @@ class GPI_model():
         if valid:
             fitted = self.gp.fit_torch(self.cond_to_torch(x_train), self.cond_to_torch(y), alph_, gam_,
                                        reduced_points=self.inducing_points, verbose=self.verbose)
-        noise = self.gp.kernel.get_params()["k2__noise_level"]
-        noise = alph_
+        noise = self.cond_to_torch(self.gp.kernel.get_params()["k2__noise_level"])
         self.x_basis = self.cond_to_cuda(self.cond_to_torch(self.gp.x_basis))
         self.Sigma[-1] = self.cond_to_cuda(self.cond_to_torch(torch.mul(noise, torch.eye(len(self.x_basis), device=noise.device))))
         self.Sigma_def = torch.clone(self.Sigma[-1])
@@ -282,7 +301,12 @@ class GPI_model():
         alpha = torch.cholesky_solve(diff, L)
         q = diff.shape[0]
 
-        err = -0.5 * torch.sum(diff * alpha) - 0.5 * q * self._log2pi(diff)
+        logdet = 2.0 * torch.log(torch.diag(L)).sum()
+        err = (
+            -0.5 * torch.sum(diff * alpha)
+            - 0.5 * logdet
+            - 0.5 * q * self._log2pi(diff)
+        )
         return err
 
     def log_lat_error(self, i, h_ini):
@@ -319,7 +343,12 @@ class GPI_model():
         mahal = torch.sum(resid * alpha_resid)
         trace_term = torch.trace(A.T @ Gamma_inv_A @ cov_f_prev)
 
-        err = -0.5 * (mahal + trace_term) - 0.5 * q * self._log2pi(resid)
+        logdet = 2.0 * torch.log(torch.diag(Lg)).sum()
+        err = (
+            -0.5 * (mahal + trace_term)
+            - 0.5 * logdet
+            - 0.5 * q * self._log2pi(resid)
+        )
         return err
 
     def include_sample(self, index, x_train, y, x_warped=None, h=1.0, posterior=True, embedding=True, include_index=False):
@@ -1343,8 +1372,10 @@ class matrix_normal_inv_wishart():
         new_m_r_cov = S__
         return matrix_normal_inv_wishart(new_m_mean, new_m_r_cov, new_n0, new_scale)
 
-    def log_likelihood_MNIW(self, M, Sigma, n0):
+    def log_likelihood_MNIW(self, M, Sigma, n0=None):
         """Compute MNIW log-likelihood with cheaper SPD solves."""
+        if n0 is None:
+            n0 = self.n0
         d = M.shape[0]
         device = self.scale.device
         dtype = self.scale.dtype
@@ -1421,7 +1452,7 @@ class inv_wishart():
         if type(C_fixed) is torch.Tensor:
             self.C_fixed = C_fixed
         else:
-            self.m_mean = torch.from_numpy(C_fixed)
+            self.C_fixed = torch.from_numpy(np.asarray(C_fixed))
         if type(scale) is torch.Tensor:
             self.scale = scale
         else:

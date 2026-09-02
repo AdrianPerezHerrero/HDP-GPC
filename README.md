@@ -64,6 +64,33 @@ This data comprises each beat in the record segmented using the database-include
     hdpgpc/tests/test_step.ipynb
     ```
 
+For a programmatic workflow, the new API exposes conventional `fit`,
+`partial_fit`, and `predict` methods while retaining the specialised legacy
+options:
+
+```python
+import numpy as np
+from hdpgpc import HDPGPC, HDPGPCConfig
+
+# y shape: (examples, time points, outputs)
+y = np.load("hdpgpc/data/mitbih/100.npy")[:20, :, :1]
+x_basis = np.arange(y.shape[1], dtype=np.float64)[:, None]
+x = np.repeat(x_basis[None, :, :], y.shape[0], axis=0)
+
+model = HDPGPC(
+    x_basis,
+    config=HDPGPCConfig(n_outputs=1, max_models=20),
+    ini_sigma=1.0,
+    ini_gamma=1.0,
+)
+model.fit(x, y, warp=False, max_iterations=20)
+labels = model.labels_
+```
+
+Run the focused regression suite with `python -m pytest`. The historical
+dataset scripts remain executable examples and are intentionally not collected
+as unit tests.
+
 ## Results
 
 The clusters can be plotted using the util_plots.py class in the results folder. As an example:
